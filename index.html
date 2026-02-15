@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:;">
+  <title>Log Atlas</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="lib/zip.min.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+
+    <!-- Mobile sidebar toggle -->
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">&#9776;</button>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">Log Atlas <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">Dark</button></div>
+      <nav class="sidebar-nav" id="sidebarNav">
+        <button class="sidebar-nav-item active" data-page="overview">Overview</button>
+        <button class="sidebar-nav-item" data-page="sysinfo" id="navSysInfo" disabled>System Info</button>
+        <button class="sidebar-nav-item" data-page="browser" id="navBrowser" disabled>File Browser</button>
+        <button class="sidebar-nav-item" data-page="search" id="navSearch" disabled>Search</button>
+        <div class="sidebar-divider"></div>
+        <button class="sidebar-nav-item" data-page="passwords" id="navPasswords" disabled>Passwords</button>
+        <button class="sidebar-nav-item" data-page="cookies" id="navCookies" disabled>Cookies</button>
+        <button class="sidebar-nav-item" data-page="autofills" id="navAutofills" disabled>Autofills</button>
+        <button class="sidebar-nav-item" data-page="history" id="navHistory" disabled>History</button>
+        <button class="sidebar-nav-item" data-page="timeline" id="navTimeline" disabled>Timeline</button>
+        <button class="sidebar-nav-item" data-page="identity" id="navIdentity" disabled>Identity</button>
+        <div class="sidebar-divider"></div>
+        <button class="sidebar-nav-item" data-page="exports" id="navExports" disabled>Exports</button>
+      </nav>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content">
+
+      <!-- Drop zone -->
+      <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Drop a file here or click to browse">
+        <h2>Drop file here or click to browse</h2>
+        <p>Archives and individual files supported</p>
+        <input type="file" id="fileInput" multiple aria-hidden="true">
+      </div>
+      <div class="upload-info" id="uploadInfo">
+        <p>All processing in this tool is done client-side, with no information transmitted or stored.</p>
+        <p>You can upload an infostealer log archive, or individual files that you want to analyse. This tool will help with things such as exploring a logs content and transforming common files into easier formats.</p>
+        <p>Detection and parsing may not be perfect. You should conduct further analysis and verification for incident response.</p>
+        <p>Browser sandboxing should provide some protection from malicious files, but caution should still be taken.</p>
+      </div>
+
+      <!-- Current-file bar (visible after loading) -->
+      <div class="reset-zone" id="resetZone">
+        <div class="current-file">
+          <div class="current-file-info">
+            <div>
+              <div class="current-file-name" id="currentFileName">&mdash;</div>
+              <div class="current-file-size" id="currentFileSize">&mdash;</div>
+            </div>
+          </div>
+          <div class="current-file-actions">
+            <button class="btn-add-more hidden" id="addMoreBtn">Add More Files</button>
+            <button class="btn-reset" id="resetBtn">Clear &amp; Start Over</button>
+          </div>
+        </div>
+      </div>
+      <!-- Hidden file input for adding more files -->
+      <input type="file" id="addMoreInput" multiple aria-hidden="true" class="hidden" style="display:none">
+
+      <!-- Loading spinner -->
+      <div class="loading" id="loading" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <div class="loading-text" id="loadingText">Extracting files...</div>
+      </div>
+
+      <!-- Results -->
+      <div class="results" id="results">
+
+        <!-- Page: Overview -->
+        <div class="page active" id="pageOverview">
+          <h2 class="page-title">Overview</h2>
+
+          <!-- Stealer fingerprint (hidden until identified) -->
+          <div class="dash-section dash-fingerprint hidden" id="dashFingerprint">
+            <div class="dash-section-title">Stealer Identification</div>
+            <div class="dash-fingerprint-body" id="dashFingerprintBody"></div>
+          </div>
+
+          <!-- Screenshot (hidden until found) -->
+          <div class="dash-section hidden" id="dashScreenshot">
+            <div class="dash-section-title">Screenshot</div>
+            <div class="dash-screenshot-body" id="dashScreenshotBody"></div>
+          </div>
+
+          <!-- IOCs (hidden until sysinfo parsed) -->
+          <div class="dash-section hidden" id="dashIOCs">
+            <div class="dash-section-title">Identifiers</div>
+            <div class="dash-ioc-grid" id="dashIOCBody"></div>
+          </div>
+
+          <!-- Credential intelligence (hidden until data arrives) -->
+          <div class="dash-section hidden" id="dashCredIntel">
+            <div class="dash-section-title">Credential Intelligence</div>
+            <div class="dash-section-subtitle dash-loading" id="dashCredSummary">Analyzing credential files...</div>
+            <div class="dash-intel-grid">
+              <div class="dash-intel-col">
+                <div class="dash-intel-heading">Top Domains</div>
+                <div class="dash-bar-list" id="dashTopDomains"></div>
+              </div>
+              <div class="dash-intel-col">
+                <div class="dash-intel-heading">Top Usernames</div>
+                <div class="dash-bar-list" id="dashTopUsernames"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cookie intelligence (hidden until data arrives) -->
+          <div class="dash-section hidden" id="dashCookieIntel">
+            <div class="dash-section-title">Cookie Intelligence</div>
+            <div class="dash-section-subtitle dash-loading" id="dashCookieSummary">Analyzing cookie files...</div>
+            <div class="dash-intel-grid">
+              <div class="dash-intel-col">
+                <div class="dash-intel-heading">Top Domains</div>
+                <div class="dash-bar-list" id="dashTopCookieDomains"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Autofill intelligence (hidden until data arrives) -->
+          <div class="dash-section hidden" id="dashAutofillIntel">
+            <div class="dash-section-title">Autofill Data</div>
+            <div class="dash-section-subtitle dash-loading" id="dashAutofillSummary">Analyzing autofill files...</div>
+            <div id="dashAutofillBody"></div>
+          </div>
+
+          <!-- Additional data type indicators -->
+          <div class="dash-section hidden" id="dashExtraIntel">
+            <div class="dash-section-title">Additional Data Detected</div>
+            <div class="dash-extra-body" id="dashExtraBody"></div>
+          </div>
+
+          <!-- No data message (shown when nothing detected) -->
+          <div class="no-data hidden" id="overviewNoData">
+            No credential or cookie data detected in this archive.
+          </div>
+
+          <!-- Error list -->
+          <div class="error-list" id="errorList" aria-live="polite">
+            <h4>Extraction Errors</h4>
+            <ul id="errorListItems"></ul>
+          </div>
+        </div>
+
+        <!-- Page: System Info -->
+        <div class="page" id="pageSysInfo">
+          <h2 class="page-title">System Information</h2>
+          <div class="dash-section" id="dashSysInfo">
+            <div class="dash-section-header sysinfo-toolbar">
+              <button class="sysinfo-open-btn hidden" id="sysInfoOpenBtn">View Source File</button>
+              <div class="sysinfo-actions hidden" id="sysInfoActions">
+                <button class="export-btn" id="sysInfoCopyAll" title="Copy all key-value pairs to clipboard">Copy All</button>
+                <button class="export-btn" id="sysInfoExportCsv" title="Download as CSV">Export CSV</button>
+              </div>
+            </div>
+            <div class="dash-kv" id="dashSysInfoBody">
+              <div class="no-data" id="sysInfoNoData">No system information files detected.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: Search -->
+        <div class="page" id="pageSearch">
+          <h2 class="page-title">Search</h2>
+          <div class="search-page-bar">
+            <input type="text" id="globalSearchInput" class="search-page-input" placeholder="Search file names and contents..." autocomplete="off" aria-label="Search all files">
+            <button class="search-page-btn" id="globalSearchBtn">Search</button>
+          </div>
+          <div class="search-page-status" id="searchStatus"></div>
+          <div class="search-page-results" id="searchResults"></div>
+        </div>
+
+        <!-- Page: File Browser -->
+        <div class="page" id="pageBrowser">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Files</span>
+              <div class="panel-actions">
+                <div class="search-bar">
+                  <input type="text" id="searchInput" class="search-input" placeholder="Filter files..." autocomplete="off" aria-label="Search files">
+                </div>
+                <div class="view-toggle" role="group" aria-label="View mode">
+                  <button class="view-toggle-btn" id="gridViewBtn" title="Grid view" aria-pressed="false">Grid</button>
+                  <button class="view-toggle-btn active" id="listViewBtn" title="List view" aria-pressed="true">List</button>
+                </div>
+              </div>
+            </div>
+            <div class="file-browser" id="fileBrowser">
+              <nav class="breadcrumb" id="breadcrumb" role="navigation" aria-label="File path"></nav>
+              <div class="file-grid" id="fileGrid" role="list"></div>
+              <div class="file-list active" id="fileList" role="list"></div>
+            </div>
+          </div>
+
+          <!-- Selection toolbar (hidden until files selected) -->
+          <div class="selection-toolbar" id="selectionToolbar">
+            <span class="selection-count" id="selectionCount">0 selected</span>
+            <button class="selection-btn" id="selectionSelectAll">Select All</button>
+            <button class="selection-btn" id="selectionSetType">Set Type</button>
+            <button class="selection-btn" id="selectionExportZip">Export ZIP</button>
+            <button class="selection-btn selection-btn-clear" id="selectionClear">Clear</button>
+          </div>
+
+          <div class="export-actions">
+            <button class="export-btn export-btn-primary" id="exportCredentials">Export All Credentials</button>
+            <button class="export-btn" id="exportCsv">Export File List (CSV)</button>
+            <button class="export-btn" id="exportJson">Export File List (JSON)</button>
+          </div>
+        </div>
+
+        <!-- Page: Passwords -->
+        <div class="page" id="pagePasswords">
+          <h2 class="page-title">Passwords</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="passwordsSummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="passwordsSearch" placeholder="Search passwords..." autocomplete="off" aria-label="Search passwords">
+              <label class="data-page-filter">
+                <input type="checkbox" id="passwordsHidePasswords"> Hide passwords
+              </label>
+              <button class="export-btn export-btn-primary" id="exportPasswordsCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-content" id="passwordsContent">
+            <div class="no-data">No password data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Cookies -->
+        <div class="page" id="pageCookies">
+          <h2 class="page-title">Cookies</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="cookiesSummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="cookiesSearch" placeholder="Search cookies..." autocomplete="off" aria-label="Search cookies">
+              <label class="data-page-filter">
+                <input type="checkbox" id="cookiesValidOnly"> Valid only
+              </label>
+              <label class="data-page-filter">
+                <input type="checkbox" id="cookiesSessionOnly"> Session tokens
+              </label>
+              <button class="export-btn export-btn-primary" id="exportCookiesCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-stats" id="cookiesStats"></div>
+          <div class="data-page-content" id="cookiesContent">
+            <div class="no-data">No cookie data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Autofills -->
+        <div class="page" id="pageAutofills">
+          <h2 class="page-title">Autofills</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="autofillsSummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="autofillsSearch" placeholder="Search autofills..." autocomplete="off" aria-label="Search autofills">
+              <button class="export-btn export-btn-primary" id="exportAutofillsCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-content" id="autofillsContent">
+            <div class="no-data">No autofill data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: History -->
+        <div class="page" id="pageHistory">
+          <h2 class="page-title">History</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="historySummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="historySearch" placeholder="Search history..." autocomplete="off" aria-label="Search history">
+              <button class="export-btn export-btn-primary" id="exportHistoryCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-stats" id="historyStats"></div>
+          <div class="data-page-content" id="historyContent">
+            <div class="no-data">No history data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Timeline -->
+        <div class="page" id="pageTimeline">
+          <h2 class="page-title">Timeline</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="timelineSummary">No timeline data.</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="timelineSearch" placeholder="Search timeline..." autocomplete="off" aria-label="Search timeline">
+              <button class="export-btn export-btn-primary" id="exportTimelineCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-stats" id="timelineStats"></div>
+          <div id="timelineFilters"></div>
+          <div id="timelineVisual"></div>
+          <div class="data-page-content" id="timelineContent">
+            <div class="no-data">No timeline data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Identity Profile -->
+        <div class="page" id="pageIdentity">
+          <h2 class="page-title">Identity Profile</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="identitySummary">No identity data.</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="identitySearch" placeholder="Search accounts..." autocomplete="off" aria-label="Search accounts">
+              <button class="export-btn export-btn-primary" id="exportIdentityCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-stats" id="identityStats"></div>
+          <div id="identityPrimary"></div>
+          <div class="data-page-content" id="identityContent">
+            <div class="no-data">No identity data available.</div>
+          </div>
+          <div id="identityEmailMap"></div>
+        </div>
+
+        <!-- Page: Exports -->
+        <div class="page" id="pageExports">
+          <h2 class="page-title">Exports</h2>
+          <div class="export-cards">
+            <div class="export-card">
+              <div class="export-card-body">
+                <div class="export-card-title">Log Summary</div>
+                <div class="export-card-desc">HTML report with victim profile, credential stats, and cookie analysis. Opens in a new tab for printing.</div>
+                <div class="export-card-counts" id="exportSummaryCounts"></div>
+              </div>
+              <div class="export-card-actions">
+                <button class="export-btn export-btn-primary" id="exportIncidentSummary">Generate Report</button>
+              </div>
+            </div>
+            <div class="export-card">
+              <div class="export-card-body">
+                <div class="export-card-title">Obfuscated Credentials</div>
+                <div class="export-card-desc">CSV export with passwords partially masked. Safe for sharing in reports without exposing raw credentials.</div>
+                <div class="export-card-counts" id="exportCredsCounts"></div>
+              </div>
+              <div class="export-card-actions">
+                <button class="export-btn export-btn-primary" id="exportObfuscatedCreds">Download CSV</button>
+              </div>
+            </div>
+            <div class="export-card">
+              <div class="export-card-body">
+                <div class="export-card-title">Parsed Data</div>
+                <div class="export-card-desc">Password-protected ZIP containing parsed credentials, cookies, autofills, history, and screenshots as CSV files.</div>
+                <div class="export-card-counts" id="exportZipCounts"></div>
+              </div>
+              <div class="export-card-actions">
+                <button class="export-btn export-btn-primary" id="exportEvidenceZip">Generate ZIP</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- File preview overlay -->
+      <div class="preview-overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-label="File preview">
+        <div class="preview-container">
+          <div class="preview-header">
+            <div class="preview-title">
+              <span class="preview-title-icon" id="previewIcon"></span>
+              <span class="preview-title-name" id="previewName">filename.txt</span>
+              <span class="preview-title-size" id="previewSize">0 KB</span>
+            </div>
+            <div class="preview-search hidden" id="previewSearch">
+              <input type="text" id="previewSearchInput" class="preview-search-input" placeholder="Search..." autocomplete="off">
+              <span class="preview-search-count" id="previewSearchCount"></span>
+              <button class="preview-search-nav" id="previewSearchPrev" title="Previous (Shift+Enter)">Prev</button>
+              <button class="preview-search-nav" id="previewSearchNext" title="Next (Enter)">Next</button>
+            </div>
+            <div class="preview-actions">
+              <button class="preview-btn preview-type-btn" id="previewSetType">Set Type</button>
+              <button class="preview-btn hidden" id="previewCopy">Copy</button>
+              <button class="preview-btn" id="previewDownload">Download</button>
+              <button class="preview-btn preview-btn-close" id="previewClose">Close</button>
+            </div>
+          </div>
+          <div class="preview-body" id="previewBody"></div>
+        </div>
+      </div>
+
+      <!-- Password modal -->
+      <div class="modal-overlay" id="passwordModal" role="dialog" aria-modal="true" aria-label="Password required">
+        <div class="modal">
+          <h3>Password Required</h3>
+          <p>This archive is encrypted:<br><span class="modal-file" id="encryptedFileName">&mdash;</span></p>
+          <div class="password-input-group">
+            <input type="password" class="password-input" id="passwordInput" placeholder="Enter password..." autocomplete="off" aria-label="Archive password">
+            <button class="toggle-password" id="togglePassword" type="button" aria-label="Toggle password visibility">Aa</button>
+          </div>
+          <div class="password-error" id="passwordError" role="alert">Incorrect password. Please try again.</div>
+          <label class="remember-password">
+            <input type="checkbox" id="rememberPassword" checked>
+            Use this password for other encrypted files in this archive
+          </label>
+          <div class="modal-actions">
+            <button class="modal-btn modal-btn-cancel" id="skipPassword">Skip File</button>
+            <button class="modal-btn modal-btn-submit" id="submitPassword">Unlock</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- File type selection modal -->
+      <div class="modal-overlay" id="fileTypeModal" role="dialog" aria-modal="true" aria-label="Select file type">
+        <div class="modal modal-filetype">
+          <h3>Select File Type</h3>
+          <p>Unable to auto-detect file type for:<br>
+            <span class="modal-file" id="fileTypeFileName">&mdash;</span>
+          </p>
+          <div class="filetype-options" id="fileTypeOptions">
+            <button class="filetype-option" data-type="credentials" data-key="1">
+              <span class="filetype-icon">Credentials</span>
+            </button>
+            <button class="filetype-option" data-type="cookies" data-key="2">
+              <span class="filetype-icon">Cookies</span>
+            </button>
+            <button class="filetype-option" data-type="autofill" data-key="3">
+              <span class="filetype-icon">Autofill</span>
+            </button>
+            <button class="filetype-option" data-type="history" data-key="4">
+              <span class="filetype-icon">History</span>
+            </button>
+            <button class="filetype-option" data-type="other" data-key="5">
+              <span class="filetype-icon">Other</span>
+              <span class="filetype-desc">View file content only</span>
+            </button>
+          </div>
+          <div class="filetype-pending hidden" id="fileTypePending">
+            <span id="fileTypePendingCount">0</span> more file(s) pending
+          </div>
+        </div>
+      </div>
+
+      <!-- Keyboard shortcuts help overlay -->
+      <div class="modal-overlay" id="shortcutsModal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <div class="modal modal-shortcuts">
+          <h3>Keyboard Shortcuts</h3>
+          <div class="shortcuts-list">
+            <div class="shortcut-row"><kbd>?</kbd><span>Show this help</span></div>
+            <div class="shortcut-row"><kbd>Esc</kbd><span>Close preview / modal</span></div>
+            <div class="shortcut-row"><kbd>Backspace</kbd><span>Navigate up in file browser</span></div>
+            <div class="shortcut-row"><kbd>Enter</kbd><span>Execute search / next match</span></div>
+            <div class="shortcut-row"><kbd>Shift+Enter</kbd><span>Previous search match</span></div>
+            <div class="shortcut-row"><kbd>1-5</kbd><span>Select file type (in type modal)</span></div>
+          </div>
+          <div class="modal-actions">
+            <button class="modal-btn modal-btn-submit" id="shortcutsClose">Close</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

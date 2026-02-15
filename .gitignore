@@ -1,0 +1,17 @@
+.DS_Store
+Thumbs.db
+*.log
+
+# IDE / editor
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+
+# Test data
+Example Logs/
+*.test.zip
+test_*.zip
+example_*.zip
