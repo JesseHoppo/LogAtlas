@@ -44,6 +44,7 @@ function extractDomain(url) {
 
 function extractBaseDomain(domain) {
   if (!domain) return domain;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return domain;
   const parts = domain.split('.');
   if (parts.length <= 2) return domain;
   const commonSLDs = ['co', 'com', 'net', 'org', 'gov', 'edu', 'ac'];
