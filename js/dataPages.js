@@ -258,7 +258,7 @@ async function loadHistoryData(fileTree, rootName) {
 
 // Password visibility
 
-let hidePasswords = false;
+let hidePasswords = true;
 let passwordColumnIdx = -1;
 
 function maskValue(val) {
@@ -789,8 +789,8 @@ function initDataPages() {
     if (historySearch) historySearch.value = '';
     if (cookiesValidOnly) cookiesValidOnly.checked = false;
     if (cookiesSessionOnly) cookiesSessionOnly.checked = false;
-    if (passwordsHideCb) passwordsHideCb.checked = false;
-    hidePasswords = false;
+    if (passwordsHideCb) passwordsHideCb.checked = true;
+    hidePasswords = true;
     passwordColumnIdx = -1;
   });
 }
