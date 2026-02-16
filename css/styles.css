@@ -248,6 +248,24 @@ body {
   margin: 0.5rem 1rem;
 }
 
+.sidebar-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 0.75rem;
+}
+
+.sidebar-footer-btn {
+  color: var(--text-muted);
+  text-decoration: none;
+  line-height: 1;
+  transition: color 0.1s ease;
+}
+
+.sidebar-footer-btn:hover {
+  color: var(--text-secondary);
+}
+
 .beta-footer {
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--border);
