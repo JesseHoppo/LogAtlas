@@ -437,6 +437,7 @@ function applyManualType(node, fileType) {
   delete node._cookieFileHint;
   delete node._autofillHint;
   delete node._historyHint;
+  delete node._sysInfoHint;
 
   switch (fileType) {
     case 'credentials':
@@ -450,6 +451,9 @@ function applyManualType(node, fileType) {
       break;
     case 'history':
       node._historyHint = true;
+      break;
+    case 'sysinfo':
+      node._sysInfoHint = true;
       break;
   }
 }

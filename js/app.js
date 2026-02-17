@@ -615,6 +615,7 @@ async function handleAddMoreFiles(files) {
 
     loading.classList.remove('visible');
     runAnalysis(state.fileTree, state.rootZipName);
+    emit('reanalyze');
     showNotification(`Added ${fileArray.length} file(s). Analysis updated.`, 'info');
   } catch (err) {
     loading.classList.remove('visible');

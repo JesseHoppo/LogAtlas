@@ -298,7 +298,10 @@ function showTypeMenu() {
         <button class="filetype-option" data-type="history" data-key="4">
           <span class="filetype-icon">History</span>
         </button>
-        <button class="filetype-option filetype-option-remove" data-type="none" data-key="5">
+        <button class="filetype-option" data-type="sysinfo" data-key="5">
+          <span class="filetype-icon">System Info</span>
+        </button>
+        <button class="filetype-option filetype-option-remove" data-type="none" data-key="6">
           <span class="filetype-icon">Remove Label</span>
         </button>
       </div>

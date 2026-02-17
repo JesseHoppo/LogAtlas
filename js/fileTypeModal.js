@@ -61,11 +61,11 @@ function initFileTypeModal() {
       return;
     }
 
-    // Number shortcuts 1-5
+    // Number shortcuts 1-6
     const num = parseInt(e.key);
-    if (num >= 1 && num <= 5) {
+    if (num >= 1 && num <= 6) {
       e.preventDefault();
-      const types = ['credentials', 'cookies', 'autofill', 'history', 'other'];
+      const types = ['credentials', 'cookies', 'autofill', 'history', 'sysinfo', 'other'];
       closeFileTypeModal(types[num - 1]);
     }
   });
