@@ -278,7 +278,6 @@ body {
   flex: 1;
   margin-left: var(--sidebar-width);
   padding: 2rem 2.5rem;
-  max-width: 1100px;
 }
 
 /* ------------------------------------------------------------------ */
@@ -2448,7 +2447,7 @@ body {
 /* Data table styles */
 .data-table-container {
   overflow-x: auto;
-  max-height: 600px;
+  max-height: 70vh;
   overflow-y: auto;
 }
 
@@ -2826,6 +2825,13 @@ body {
   color: var(--text-primary);
   cursor: pointer;
   line-height: 1;
+}
+
+@media (min-width: 1200px) {
+  .dash-ioc-grid,
+  .dash-autofill-categories {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 @media (max-width: 800px) {
