@@ -111,7 +111,7 @@ function getFileIcon(name, isDirectory, isArchive) {
     xls: 'XLS', xlsx: 'XLS',
     ini: 'CFG', cfg: 'CFG', conf: 'CFG',
   };
-  return icons[ext] || ext.toUpperCase() || 'FILE';
+  return icons[ext] || ext.toUpperCase() || '\u2014';
 }
 
 function getMimeType(name) {

@@ -423,7 +423,8 @@ async function runGlobalSearch(query) {
     const batchPromises = batch.map(async ({ node, path }) => {
       const nameMatch = node.name.toLowerCase().includes(lowerQuery);
       let contentMatches = [];
-      if (node.previewable) {
+      const hasHint = node._passwordFileHint || node._cookieFileHint || node._autofillHint || node._historyHint || node._sysInfoHint;
+      if (node.previewable || hasHint) {
         try {
           const content = await loadFileContent(node);
           if (content) {

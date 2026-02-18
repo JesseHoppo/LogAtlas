@@ -384,6 +384,7 @@ function addCSVViewButtons() {
 
 function showCSVView(showAll) {
   if (!currentParsedData) return;
+  showSearchBar(false);
   elBody.innerHTML = renderCSVTable(currentParsedData, showAll);
   addCSVViewButtons();
 
@@ -417,6 +418,7 @@ function showCSVView(showAll) {
 
 function showTextView() {
   if (!currentDecodedText || !currentFile) return;
+  showSearchBar(true);
   elBody.innerHTML = renderTextPreview(currentDecodedText, currentFile.name);
   attachShowAllLinesHandler();
 

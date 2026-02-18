@@ -78,13 +78,13 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
   return identity;
 }
 
-function buildAccountList(credentialDomains, cookieLookup, emailMap) {
+function buildAccountList(domainUsernames, cookieLookup, emailMap) {
   const accounts = new Map();
 
-  for (const domain of credentialDomains) {
+  for (const [domain, usernames] of domainUsernames) {
     if (!accounts.has(domain)) {
       accounts.set(domain, {
-        domain, hasCredentials: true,
+        domain, usernames: [...usernames],
         hasValidSession: false, emails: [],
       });
     }
@@ -123,19 +123,23 @@ function buildIdentityProfile(passwordsData, cookiesData, sysinfoData, autofillD
   const emailMap = extractEmails(passwordsData, autofillData ? autofillData.emails : null);
   const cookieLookup = buildCookieLookup(cookiesData);
 
-  // Unique credential domains (skip empty rows)
+  // Credential domains with usernames (skip empty rows)
   const urlIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
   const userIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
   const passIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
-  const allCredDomains = new Set();
+  const domainUsernames = new Map(); // domain -> Set<username>
   for (const { row } of passwordsData.rows) {
     const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
     const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
     if (!user && !pass) continue;
     const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
     const domain = extractBaseDomain(extractDomain(url));
-    if (domain) allCredDomains.add(domain);
+    if (domain) {
+      if (!domainUsernames.has(domain)) domainUsernames.set(domain, new Set());
+      if (user) domainUsernames.get(domain).add(user);
+    }
   }
+  const allCredDomains = new Set(domainUsernames.keys());
 
   const emailAccountMap = [];
   for (const [email, domains] of emailMap) {
@@ -153,7 +157,7 @@ function buildIdentityProfile(passwordsData, cookiesData, sysinfoData, autofillD
   }
   emailAccountMap.sort((a, b) => b.services.length - a.services.length);
 
-  const accounts = buildAccountList(allCredDomains, cookieLookup, emailMap);
+  const accounts = buildAccountList(domainUsernames, cookieLookup, emailMap);
 
   const servicesWithValidSessions = new Set();
   const servicesWithBoth = new Set();
@@ -266,26 +270,27 @@ function renderIdentityPage(searchQuery = '') {
     const q = searchQuery.toLowerCase();
     accounts = accounts.filter(a =>
       a.domain.toLowerCase().includes(q) ||
-      a.emails.some(e => e.toLowerCase().includes(q))
+      a.emails.some(e => e.toLowerCase().includes(q)) ||
+      (a.usernames && a.usernames.some(u => u.toLowerCase().includes(q)))
     );
   }
 
   if (accounts.length > 0) {
     let tableHtml = '<div class="data-table-container"><table class="data-table">';
-    tableHtml += '<thead><tr><th>Domain</th><th>Credentials</th><th>Session</th><th>Emails</th></tr></thead><tbody>';
+    tableHtml += '<thead><tr><th>Domain</th><th>Usernames</th><th>Session</th><th>Emails</th></tr></thead><tbody>';
     for (const acct of accounts) {
       const sessionHtml = acct.hasValidSession
         ? '<span class="identity-session-badge">Active</span>'
         : '<span style="color:var(--text-muted)">\u2014</span>';
-      const credHtml = acct.hasCredentials
-        ? '<span style="color:var(--success)">Yes</span>'
+      const usernamesHtml = acct.usernames && acct.usernames.length > 0
+        ? acct.usernames.map(u => escapeHtml(u)).join(', ')
         : '<span style="color:var(--text-muted)">\u2014</span>';
       const emailsHtml = acct.emails.length > 0
         ? acct.emails.map(e => escapeHtml(e)).join(', ')
         : '<span style="color:var(--text-muted)">\u2014</span>';
       tableHtml += `<tr>
         <td><span class="identity-account-domain">${escapeHtml(acct.domain)}</span></td>
-        <td>${credHtml}</td>
+        <td style="font-size:0.75rem">${usernamesHtml}</td>
         <td>${sessionHtml}</td>
         <td style="font-size:0.75rem">${emailsHtml}</td>
       </tr>`;
