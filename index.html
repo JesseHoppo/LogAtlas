@@ -453,6 +453,40 @@
         </div>
       </div>
 
+      <!-- Column mapper modal -->
+      <div class="modal-overlay" id="columnMapperModal" role="dialog" aria-modal="true" aria-label="Column mapper">
+        <div class="modal modal-column-mapper">
+          <h3>Map Columns</h3>
+          <p class="mapper-subtitle">Configure how this file should be parsed</p>
+          <div class="mapper-file-label" id="mapperFileName"></div>
+
+          <div class="mapper-raw-preview" id="mapperRawPreview"></div>
+
+          <div class="mapper-controls">
+            <div class="mapper-delimiter-group">
+              <span>Delimiter:</span>
+              <label><input type="radio" name="mapperDelimiter" value="&#9;" checked> Tab</label>
+              <label><input type="radio" name="mapperDelimiter" value=","> Comma</label>
+              <label><input type="radio" name="mapperDelimiter" value="|"> Pipe</label>
+              <label><input type="radio" name="mapperDelimiter" value=";"> Semicolon</label>
+              <label><input type="radio" name="mapperDelimiter" value=" "> Space</label>
+              <label><input type="radio" name="mapperDelimiter" value="custom"> Custom:</label>
+              <input type="text" id="mapperCustomDelimiter" class="mapper-custom-input" maxlength="3" size="3">
+            </div>
+            <label class="mapper-header-toggle">
+              <input type="checkbox" id="mapperHasHeader"> First row is header
+            </label>
+          </div>
+
+          <div class="mapper-table-container" id="mapperTableContainer"></div>
+
+          <div class="mapper-actions">
+            <button class="mapper-btn" id="mapperCancel">Cancel</button>
+            <button class="mapper-btn mapper-btn-apply" id="mapperApply">Apply</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Keyboard shortcuts help overlay -->
       <div class="modal-overlay" id="shortcutsModal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
         <div class="modal modal-shortcuts">

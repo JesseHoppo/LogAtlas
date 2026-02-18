@@ -31,7 +31,7 @@ async function analyzeCredentials(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const parsed = parsePasswordFile(text);
+      const parsed = parsePasswordFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       parsedCount++;

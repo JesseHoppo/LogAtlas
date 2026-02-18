@@ -444,7 +444,7 @@ async function exportSelectedZip() {
           if (node._cookieFileHint) {
             parsed = parseCookieFile(text);
           } else {
-            parsed = parsePasswordFile(text);
+            parsed = parsePasswordFile(text, node._parseConfig || null);
           }
           if (parsed && parsed.rows.length > 0) {
             const csv = toCSV(parsed);

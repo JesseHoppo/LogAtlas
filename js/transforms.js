@@ -1,4 +1,6 @@
-// Parsing for password/cookie files (block key:value, TSV, Netscape, JSON) and CSV output.
+// Parsing for password/cookie files (block key:value, delimited, Netscape, JSON) and CSV output.
+
+import { FIELD_PATTERNS } from './definitions.js';
 
 const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]*?)\s*:\s+(.*)/;
 
@@ -23,7 +25,148 @@ function mostCommon(arr) {
   return maxVal;
 }
 
-// Returns { type: 'block', headers } | { type: 'tsv', columns } | null
+// RFC 4180-aware CSV line splitter. Handles quoted fields with embedded commas/quotes.
+function splitCSVLine(line) {
+  const fields = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { current += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ',') { fields.push(current); current = ''; }
+      else { current += ch; }
+    }
+  }
+  fields.push(current);
+  return fields;
+}
+
+// Build a split function for a given delimiter
+function makeSplitFn(delimiter) {
+  if (delimiter === ',') return splitCSVLine;
+  return (line) => line.split(delimiter);
+}
+
+// Detect if >80% of non-blank sample lines contain a delimiter, and compute column count
+function testDelimiter(nonBlankLines, delimiter) {
+  const splitFn = makeSplitFn(delimiter);
+  const matching = nonBlankLines.filter(l => {
+    if (delimiter === ',') return l.includes(',');
+    return l.includes(delimiter);
+  });
+  if (nonBlankLines.length === 0 || matching.length === 0) return null;
+  if (matching.length / nonBlankLines.length < 0.8) return null;
+
+  const colCounts = matching.map(l => splitFn(l).length);
+  const columns = mostCommon(colCounts);
+  if (columns < 2) return null;
+  return columns;
+}
+
+// Detect columns that are empty in >90% of rows and should be dropped
+function findEmptyColumns(nonBlankLines, delimiter, columns) {
+  const splitFn = makeSplitFn(delimiter);
+  const emptyCounts = Array.from({ length: columns }, () => 0);
+  let total = 0;
+
+  for (const line of nonBlankLines) {
+    const fields = splitFn(line);
+    total++;
+    for (let i = 0; i < columns; i++) {
+      if (!(fields[i] ?? '').trim()) emptyCounts[i]++;
+    }
+  }
+
+  if (total === 0) return [];
+  const drop = [];
+  for (let i = 0; i < columns; i++) {
+    if (emptyCounts[i] / total > 0.9) drop.push(i);
+  }
+  return drop;
+}
+
+// Check if the first row looks like a header (cells match FIELD_PATTERNS)
+function detectHeaderRow(firstLine, delimiter) {
+  const splitFn = makeSplitFn(delimiter);
+  const cells = splitFn(firstLine).map(c => c.trim());
+  let matches = 0;
+  const allPatterns = [FIELD_PATTERNS.url, FIELD_PATTERNS.username, FIELD_PATTERNS.password];
+  for (const cell of cells) {
+    if (allPatterns.some(p => p.test(cell))) matches++;
+  }
+  return matches >= 2;
+}
+
+// Content-based column role inference: scans sample data to guess URL/Username/Password columns
+function inferColumnRoles(lines, delimiter, hasHeaderRow) {
+  const splitFn = makeSplitFn(delimiter);
+  const dataLines = hasHeaderRow ? lines.slice(1) : lines;
+  const sample = dataLines.filter(l => l.trim()).slice(0, 50);
+  if (sample.length === 0) return { columnMap: {}, confidence: 'low' };
+
+  const colCount = splitFn(sample[0]).length;
+  const stats = Array.from({ length: colCount }, () => ({ urlLike: 0, emailLike: 0, total: 0 }));
+
+  for (const line of sample) {
+    const cells = splitFn(line);
+    for (let i = 0; i < Math.min(cells.length, colCount); i++) {
+      const val = cells[i].trim();
+      if (!val) continue;
+      stats[i].total++;
+      if (/^https?:\/\//.test(val) || (val.includes('/') && val.includes('.') && !val.includes('@'))) stats[i].urlLike++;
+      if (val.includes('@') && val.includes('.')) stats[i].emailLike++;
+    }
+  }
+
+  const columnMap = {};
+  let urlCol = -1, userCol = -1;
+
+  // URL: column with >60% URL-like values
+  for (let i = 0; i < stats.length; i++) {
+    if (stats[i].total > 0 && stats[i].urlLike / stats[i].total > 0.6) {
+      columnMap[i] = 'url'; urlCol = i; break;
+    }
+  }
+
+  // Username: column with >40% email-like values (lower threshold — many usernames aren't emails)
+  for (let i = 0; i < stats.length; i++) {
+    if (i === urlCol) continue;
+    if (stats[i].total > 0 && stats[i].emailLike / stats[i].total > 0.4) {
+      columnMap[i] = 'username'; userCol = i; break;
+    }
+  }
+
+  // If we found URL but not username via email heuristic, pick the first non-empty, non-URL column
+  if (urlCol >= 0 && userCol < 0) {
+    for (let i = 0; i < stats.length; i++) {
+      if (i === urlCol) continue;
+      if (stats[i].total > 0) { columnMap[i] = 'username'; userCol = i; break; }
+    }
+  }
+
+  // Password: if exactly one remaining non-empty column, assign it
+  const assigned = new Set(Object.keys(columnMap).map(Number));
+  const unassigned = [];
+  for (let i = 0; i < colCount; i++) {
+    if (!assigned.has(i) && stats[i].total > 0) unassigned.push(i);
+  }
+  if (unassigned.length === 1 && urlCol >= 0 && userCol >= 0) {
+    columnMap[unassigned[0]] = 'password';
+  }
+
+  const rolesFound = Object.keys(columnMap).length;
+  const confidence = rolesFound >= 3 ? 'high' : rolesFound >= 2 ? 'medium' : 'low';
+  return { columnMap, confidence };
+}
+
+const ROLE_TO_HEADER = { url: 'URL', username: 'Username', password: 'Password', email: 'Email', notes: 'Notes' };
+
+// Returns { type: 'block', headers } | { type: 'delimited', delimiter, columns, hasHeaderRow, dropColumns, confidence } | null
 function detectFormat(text) {
   const lines = text.split('\n');
   const sample = lines.slice(0, 100);
@@ -53,13 +196,33 @@ function detectFormat(text) {
     return { type: 'block', headers: [...headersSeen] };
   }
 
-  // TSV detection
+  // Delimited detection — try each delimiter in priority order
   const nonBlankLines = sample.filter(l => l.trim() !== '');
-  const tabLines = nonBlankLines.filter(l => l.includes('\t'));
-  if (nonBlankLines.length > 0 && tabLines.length > 0 && tabLines.length / nonBlankLines.length > 0.8) {
-    const tabCounts = tabLines.map(l => l.split('\t').length);
-    const mode = mostCommon(tabCounts);
-    return { type: 'tsv', columns: mode };
+  const delimiters = ['\t', ',', '|', ';'];
+
+  for (const delim of delimiters) {
+    const columns = testDelimiter(nonBlankLines, delim);
+    if (columns === null) continue;
+
+    const dropColumns = findEmptyColumns(nonBlankLines, delim, columns);
+    const effectiveCols = columns - dropColumns.length;
+    if (effectiveCols < 2) continue;
+
+    const firstNonBlank = nonBlankLines[0] || '';
+    const hasHeaderRow = detectHeaderRow(firstNonBlank, delim);
+
+    // Infer column roles for confidence scoring
+    const inference = inferColumnRoles(nonBlankLines, delim, hasHeaderRow);
+
+    // Confidence: high if header row detected or 3 roles inferred, medium if 2 roles, low otherwise
+    let confidence;
+    if (hasHeaderRow) confidence = 'high';
+    else if (inference.confidence === 'high') confidence = 'high';
+    else if (inference.confidence === 'medium') confidence = 'medium';
+    else if (effectiveCols === 3) confidence = 'medium'; // 3-col default heuristic
+    else confidence = 'low';
+
+    return { type: 'delimited', delimiter: delim, columns, hasHeaderRow, dropColumns, confidence };
   }
 
   return null;
@@ -87,34 +250,98 @@ function parseBlocks(text, headers) {
   return { headers, rows };
 }
 
-// TSV parser
+// Unified delimited parser (replaces old parseTSV)
 
-function parseTSV(text, columnCount) {
-  const defaultHeaders = columnCount === 3
-    ? ['URL', 'Username', 'Password']
-    : Array.from({ length: columnCount }, (_, i) => `Column ${i + 1}`);
+function parseDelimited(text, format) {
+  const { delimiter, columns, hasHeaderRow, dropColumns } = format;
+  const splitFn = makeSplitFn(delimiter);
+  const allLines = text.split('\n').map(l => l.trim()).filter(l => l);
+  if (allLines.length === 0) return null;
 
-  const rows = text.split('\n')
-    .map(line => line.trim())
-    .filter(line => line !== '')
-    .map(line => {
-      const fields = line.split('\t');
-      return defaultHeaders.map((_, i) => fields[i] ?? '');
-    });
+  // Determine which columns to keep
+  const drop = new Set(dropColumns || []);
+  const keepIndices = [];
+  for (let i = 0; i < columns; i++) {
+    if (!drop.has(i)) keepIndices.push(i);
+  }
+  const effectiveCols = keepIndices.length;
 
-  return { headers: defaultHeaders, rows };
+  // Determine headers
+  let headers;
+  let startIdx = 0;
+
+  if (hasHeaderRow) {
+    const headerCells = splitFn(allLines[0]);
+    headers = keepIndices.map(i => (headerCells[i] ?? '').trim() || `Column ${i + 1}`);
+    startIdx = 1;
+  } else {
+    // Try content-based inference
+    const inference = inferColumnRoles(allLines, delimiter, false);
+    if (inference.confidence !== 'low') {
+      // Map inferred roles to keep-indices
+      headers = keepIndices.map((origIdx, _) => {
+        const role = inference.columnMap[origIdx];
+        return role ? (ROLE_TO_HEADER[role] || `Column ${origIdx + 1}`) : `Column ${origIdx + 1}`;
+      });
+    } else if (effectiveCols === 3) {
+      headers = ['URL', 'Username', 'Password'];
+    } else {
+      headers = keepIndices.map((_, i) => `Column ${i + 1}`);
+    }
+  }
+
+  const rows = [];
+  for (let i = startIdx; i < allLines.length; i++) {
+    const fields = splitFn(allLines[i]);
+    rows.push(keepIndices.map(idx => (fields[idx] ?? '').trim()));
+  }
+
+  return { headers, rows };
 }
 
-function parsePasswordFile(text) {
+// Parse with explicit user-supplied config (from column mapper)
+function parseWithConfig(text, config) {
+  const { delimiter, hasHeaderRow, columnMap } = config;
+  const splitFn = makeSplitFn(delimiter);
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  if (lines.length === 0) return null;
+
+  const sampleCols = splitFn(lines[0]).length;
+  const startIdx = hasHeaderRow ? 1 : 0;
+
+  // Build headers and determine which columns to keep (skip = excluded)
+  const keepIndices = [];
+  const headers = [];
+  for (let i = 0; i < sampleCols; i++) {
+    const role = columnMap[i] || columnMap[String(i)];
+    if (role === 'skip') continue;
+    keepIndices.push(i);
+    headers.push(role ? (ROLE_TO_HEADER[role] || `Column ${i + 1}`) : `Column ${i + 1}`);
+  }
+
+  const rows = [];
+  for (let i = startIdx; i < lines.length; i++) {
+    const cells = splitFn(lines[i]);
+    rows.push(keepIndices.map(idx => (cells[idx] ?? '').trim()));
+  }
+
+  return { headers, rows };
+}
+
+function parsePasswordFile(text, config) {
   const clean = normalizeSeparators(text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+
+  // If explicit config from column mapper, use it directly
+  if (config) return parseWithConfig(clean, config);
+
   const format = detectFormat(clean);
   if (!format) return null;
 
   if (format.type === 'block') {
     return parseBlocks(clean, format.headers);
   }
-  if (format.type === 'tsv') {
-    return parseTSV(clean, format.columns);
+  if (format.type === 'delimited') {
+    return parseDelimited(clean, format);
   }
   return null;
 }
@@ -251,6 +478,10 @@ function toCSV(parsed) {
 export {
   detectFormat,
   parsePasswordFile,
+  parseWithConfig,
   parseCookieFile,
   toCSV,
+  splitCSVLine,
+  inferColumnRoles,
+  makeSplitFn,
 };

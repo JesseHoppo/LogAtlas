@@ -13,6 +13,7 @@ import { initDataPages } from './dataPages.js';
 import { initExports } from './exports.js';
 import { initTimeline } from './timeline.js';
 import { initIdentityGraph, initIdentityPage } from './identityGraph.js';
+import { initColumnMapper } from './columnMapper.js';
 import { collectFileNodes, collectHintedNodes, downloadBlob, copyToClipboard, showNotification, MAX_SEARCH_MATCHES_PER_FILE, SEARCH_BATCH_SIZE } from './shared.js';
 
 // DOM refs
@@ -744,7 +745,7 @@ async function exportCredentials() {
       if (!content) continue;
       const decoder = new TextDecoder('utf-8');
       const text = decoder.decode(content);
-      const parsed = parsePasswordFile(text);
+      const parsed = parsePasswordFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         parsedFiles.push({ path, parsed });
       }
@@ -926,6 +927,7 @@ document.addEventListener('keydown', (e) => {
 
 try { initPasswordModal(); } catch (e) { console.error('initPasswordModal failed:', e); }
 try { initFileTypeModal(); } catch (e) { console.error('initFileTypeModal failed:', e); }
+try { initColumnMapper(); } catch (e) { console.error('initColumnMapper failed:', e); }
 try { initBrowser(); } catch (e) { console.error('initBrowser failed:', e); }
 try { initPreview(); } catch (e) { console.error('initPreview failed:', e); }
 try { initDataPages(); } catch (e) { console.error('initDataPages failed:', e); }

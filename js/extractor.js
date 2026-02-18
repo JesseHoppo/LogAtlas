@@ -438,6 +438,7 @@ function applyManualType(node, fileType) {
   delete node._autofillHint;
   delete node._historyHint;
   delete node._sysInfoHint;
+  delete node._parseConfig;
 
   switch (fileType) {
     case 'credentials':

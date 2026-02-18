@@ -7,6 +7,7 @@ import { parsePasswordFile, parseCookieFile } from './transforms.js';
 import { collectHintedNodes, checkCookieValidity, extractDomain, extractBaseDomain, formatRelativeTime, downloadBlob } from './shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { FIELD_PATTERNS } from './definitions.js';
+import { openColumnMapper } from './columnMapper.js';
 
 // Per-type data stores
 
@@ -67,7 +68,7 @@ async function loadPasswordsData(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const parsed = parsePasswordFile(text);
+      const parsed = parsePasswordFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         fileCount++;
         if (parsed.headers.length > headers.length) {
@@ -283,6 +284,28 @@ function passwordRowBuilder({ row }) {
   return html;
 }
 
+async function openMapperForCredentials() {
+  const nodes = [];
+  collectHintedNodes(state.fileTree, '_passwordFileHint', state.rootZipName, nodes);
+  if (nodes.length === 0) return;
+
+  const firstNode = nodes[0].node;
+  const content = await loadFileContent(firstNode);
+  if (!content) return;
+  const text = new TextDecoder('utf-8').decode(content);
+  const fileName = nodes[0].path || firstNode.name || 'Unknown file';
+
+  const config = await openColumnMapper(text, fileName);
+  if (!config) return;
+
+  // Apply config to all password file nodes
+  for (const { node } of nodes) {
+    node._parseConfig = config;
+  }
+
+  emit('reanalyze');
+}
+
 function renderPasswordsPage(searchQuery = '') {
   const summary = document.getElementById('passwordsSummary');
   const content = document.getElementById('passwordsContent');
@@ -309,6 +332,16 @@ function renderPasswordsPage(searchQuery = '') {
   summary.textContent = showing !== total
     ? `Showing ${showing.toLocaleString()} of ${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`
     : `${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`;
+
+  // Add "Adjust columns" button in the actions area (only once)
+  const actionsArea = summary.parentNode.querySelector('.data-page-actions');
+  if (actionsArea && !actionsArea.querySelector('.mapper-adjust-btn')) {
+    const adjustBtn = document.createElement('button');
+    adjustBtn.className = 'mapper-adjust-btn';
+    adjustBtn.textContent = 'Adjust columns\u2026';
+    adjustBtn.addEventListener('click', openMapperForCredentials);
+    actionsArea.insertBefore(adjustBtn, actionsArea.firstChild);
+  }
 
   // Detect password column index for masking
   passwordColumnIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.password.test(h));

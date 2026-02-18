@@ -16,6 +16,7 @@ import {
 } from './utils.js';
 import { parsePasswordFile, parseCookieFile, toCSV } from './transforms.js';
 import { downloadBlob, copyToClipboard, showNotification } from './shared.js';
+import { openColumnMapper } from './columnMapper.js';
 
 let elOverlay;
 let elBody;
@@ -309,8 +310,14 @@ function renderCSVTable(parsed, showAll) {
 
   let html = '<div class="preview-csv-wrapper">';
   html += '<div class="preview-csv-stats">';
-  html += `${totalRows} records / ${parsed.headers.length} columns`;
+  html += `<span>${totalRows} records / ${parsed.headers.length} columns`;
   if (capped) html += ` / showing first ${ROW_CAP}`;
+  html += '</span>';
+  html += '<span class="preview-csv-controls">';
+  html += '<button class="mapper-adjust-btn" id="csvAdjustColumns">Adjust columns\u2026</button>';
+  html += '<button class="mapper-adjust-btn" id="csvBackToText">Back to Text</button>';
+  html += '<button class="mapper-adjust-btn" id="csvDownloadCsv">Download CSV</button>';
+  html += '</span>';
   html += '</div>';
   html += '<div class="preview-csv-table-container">';
   html += '<table class="preview-csv-table">';
@@ -354,7 +361,7 @@ function addTransformButton(prominent) {
       if (currentNode && currentNode._cookieFileHint) {
         parsed = parseCookieFile(currentDecodedText);
       }
-      if (!parsed) parsed = parsePasswordFile(currentDecodedText);
+      if (!parsed) parsed = parsePasswordFile(currentDecodedText, (currentNode && currentNode._parseConfig) || null);
       if (!parsed) parsed = parseCookieFile(currentDecodedText);
       if (parsed && parsed.rows.length > 0) {
         currentParsedData = parsed;
@@ -370,21 +377,7 @@ function addTransformButton(prominent) {
 
 function addCSVViewButtons() {
   clearTransformButtons();
-
-  const backBtn = document.createElement('button');
-  backBtn.className = 'preview-btn preview-btn-back-text';
-  backBtn.textContent = 'Back to Text';
-  backBtn.addEventListener('click', () => showTextView());
-
-  const dlBtn = document.createElement('button');
-  dlBtn.className = 'preview-btn preview-btn-download-csv preview-btn-transform';
-  dlBtn.textContent = 'Download CSV';
-  dlBtn.addEventListener('click', downloadCurrentCSV);
-
   document.getElementById('previewDownload').textContent = 'Download TXT';
-
-  elActions.insertBefore(dlBtn, elActions.firstChild);
-  elActions.insertBefore(backBtn, elActions.firstChild);
 }
 
 // View switching
@@ -397,6 +390,28 @@ function showCSVView(showAll) {
   const showAllBtn = document.getElementById('csvShowAll');
   if (showAllBtn) {
     showAllBtn.addEventListener('click', () => showCSVView(true));
+  }
+
+  const backBtn = document.getElementById('csvBackToText');
+  if (backBtn) backBtn.addEventListener('click', () => showTextView());
+
+  const dlBtn = document.getElementById('csvDownloadCsv');
+  if (dlBtn) dlBtn.addEventListener('click', downloadCurrentCSV);
+
+  const adjustBtn = document.getElementById('csvAdjustColumns');
+  if (adjustBtn && currentNode && currentDecodedText) {
+    adjustBtn.addEventListener('click', async () => {
+      const fileName = currentFile ? currentFile.name : 'Unknown file';
+      const config = await openColumnMapper(currentDecodedText, fileName);
+      if (!config) return;
+      if (currentNode) currentNode._parseConfig = config;
+      const parsed = parsePasswordFile(currentDecodedText, config);
+      if (parsed && parsed.rows.length > 0) {
+        currentParsedData = parsed;
+        showCSVView(false);
+      }
+      emit('reanalyze');
+    });
   }
 }
 
@@ -490,7 +505,7 @@ async function showPreview(name, size, pathSegments) {
       copyBtn.classList.remove('hidden');
 
       if (node._passwordFileHint) {
-        const parsed = parsePasswordFile(text);
+        const parsed = parsePasswordFile(text, node._parseConfig || null);
         if (parsed && parsed.rows.length > 0) {
           currentParsedData = parsed;
           addTransformButton(true);
