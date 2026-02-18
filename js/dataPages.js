@@ -3,7 +3,7 @@
 import { state, on, emit } from './state.js';
 import { loadFileContent } from './extractor.js';
 import { escapeHtml } from './utils.js';
-import { parsePasswordFile, parseCookieFile } from './transforms.js';
+import { parsePasswordFile, parseCookieFile, parseHistoryFile } from './transforms.js';
 import { collectHintedNodes, checkCookieValidity, extractDomain, extractBaseDomain, formatRelativeTime, downloadBlob } from './shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { FIELD_PATTERNS } from './definitions.js';
@@ -103,7 +103,7 @@ async function loadCookiesData(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const parsed = parseCookieFile(text);
+      const parsed = parseCookieFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         fileCount++;
         const expiresIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
@@ -144,7 +144,7 @@ async function loadAutofillsData(fileTree, rootName) {
       const text = new TextDecoder('utf-8').decode(content);
       let parsedSome = false;
 
-      const parsed = parsePasswordFile(text);
+      const parsed = parsePasswordFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         const nameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formField.test(h));
         const valIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formValue.test(h));
@@ -203,52 +203,27 @@ async function loadHistoryData(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const lines = text.split('\n').filter(l => l.trim());
-      let parsedSome = false;
+      const parsed = parseHistoryFile(text, node._parseConfig || null);
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
+      if (parsed && parsed.rows.length > 0) {
+        fileCount++;
+        const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+        const titleIdx = parsed.headers.findIndex(h => /^(title|page.?title)$/i.test(h));
+        const visitsIdx = parsed.headers.findIndex(h => /^(visit.?count|visits?|count)$/i.test(h));
+        const lastIdx = parsed.headers.findIndex(h => /^(last.?visit|date|time|timestamp)$/i.test(h));
 
-        // TSV format
-        if (trimmed.includes('\t')) {
-          const parts = trimmed.split('\t');
-          if (parts.length >= 1 && parts[0].match(/^https?:\/\//i)) {
-            entries.push({
-              url: parts[0], title: parts[1] || '',
-              visitCount: parseInt(parts[2], 10) || 1,
-              lastVisit: parts[3] || '', source: path
-            });
-            parsedSome = true;
-            continue;
-          }
-        }
-
-        // Pipe-separated
-        if (trimmed.includes('|')) {
-          const parts = trimmed.split('|').map(p => p.trim());
-          if (parts.length >= 1 && parts[0].match(/^https?:\/\//i)) {
-            entries.push({
-              url: parts[0], title: parts[1] || '',
-              visitCount: parseInt(parts[2], 10) || 1,
-              lastVisit: parts[3] || '', source: path
-            });
-            parsedSome = true;
-            continue;
-          }
-        }
-
-        // Plain URL
-        if (trimmed.match(/^https?:\/\//i)) {
+        for (const row of parsed.rows) {
+          const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
+          if (!url) continue;
           entries.push({
-            url: trimmed, title: '', visitCount: 1,
-            lastVisit: '', source: path
+            url,
+            title: titleIdx >= 0 ? (row[titleIdx] || '').trim() : '',
+            visitCount: visitsIdx >= 0 ? (parseInt(row[visitsIdx], 10) || 1) : 1,
+            lastVisit: lastIdx >= 0 ? (row[lastIdx] || '').trim() : '',
+            source: path
           });
-          parsedSome = true;
         }
       }
-
-      if (parsedSome) fileCount++;
     } catch {
       // skip
     }
@@ -284,9 +259,10 @@ function passwordRowBuilder({ row }) {
   return html;
 }
 
-async function openMapperForCredentials() {
+// Generic column mapper opener for any file type
+async function openMapperForHint(hintKey, fileType) {
   const nodes = [];
-  collectHintedNodes(state.fileTree, '_passwordFileHint', state.rootZipName, nodes);
+  collectHintedNodes(state.fileTree, hintKey, state.rootZipName, nodes);
   if (nodes.length === 0) return;
 
   const firstNode = nodes[0].node;
@@ -295,15 +271,25 @@ async function openMapperForCredentials() {
   const text = new TextDecoder('utf-8').decode(content);
   const fileName = nodes[0].path || firstNode.name || 'Unknown file';
 
-  const config = await openColumnMapper(text, fileName);
+  const config = await openColumnMapper(text, fileName, fileType);
   if (!config) return;
 
-  // Apply config to all password file nodes
   for (const { node } of nodes) {
     node._parseConfig = config;
   }
 
   emit('reanalyze');
+}
+
+function addAdjustColumnsBtn(summaryEl, hintKey, fileType) {
+  const actionsArea = summaryEl.parentNode.querySelector('.data-page-actions');
+  if (actionsArea && !actionsArea.querySelector('.mapper-adjust-btn')) {
+    const adjustBtn = document.createElement('button');
+    adjustBtn.className = 'mapper-adjust-btn';
+    adjustBtn.textContent = 'Adjust columns\u2026';
+    adjustBtn.addEventListener('click', () => openMapperForHint(hintKey, fileType));
+    actionsArea.insertBefore(adjustBtn, actionsArea.firstChild);
+  }
 }
 
 function renderPasswordsPage(searchQuery = '') {
@@ -333,15 +319,7 @@ function renderPasswordsPage(searchQuery = '') {
     ? `Showing ${showing.toLocaleString()} of ${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`
     : `${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`;
 
-  // Add "Adjust columns" button in the actions area (only once)
-  const actionsArea = summary.parentNode.querySelector('.data-page-actions');
-  if (actionsArea && !actionsArea.querySelector('.mapper-adjust-btn')) {
-    const adjustBtn = document.createElement('button');
-    adjustBtn.className = 'mapper-adjust-btn';
-    adjustBtn.textContent = 'Adjust columns\u2026';
-    adjustBtn.addEventListener('click', openMapperForCredentials);
-    actionsArea.insertBefore(adjustBtn, actionsArea.firstChild);
-  }
+  addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
 
   // Detect password column index for masking
   passwordColumnIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
@@ -416,6 +394,8 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
     ? `Showing ${filtered.length.toLocaleString()} of ${totalCookies.toLocaleString()} cookies from ${cookiesData.fileCount} file(s)`
     : `${totalCookies.toLocaleString()} cookies from ${cookiesData.fileCount} file(s)`;
 
+  addAdjustColumnsBtn(summary, '_cookieFileHint', 'cookies');
+
   stats.innerHTML = `
     <div class="data-page-stat">
       <div class="data-page-stat-value cookie-valid">${validCount.toLocaleString()}</div>
@@ -484,6 +464,8 @@ function renderAutofillsPage(searchQuery = '') {
     ? `Showing ${filtered.length.toLocaleString()} of ${total.toLocaleString()} entries from ${autofillsData.fileCount} file(s)`
     : `${total.toLocaleString()} entries from ${autofillsData.fileCount} file(s)`;
 
+  addAdjustColumnsBtn(summary, '_autofillHint', 'autofill');
+
   let html = '<div class="data-table-container"><table class="data-table">';
   html += '<thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>';
   html += buildRowsHtml(autofillRowBuilder, autofillsFiltered, 0, autofillsShown);
@@ -540,6 +522,8 @@ function renderHistoryPage(searchQuery = '') {
   const uniqueDomains = Object.keys(domainCounts).length;
 
   summary.textContent = `${historyData.entries.length.toLocaleString()} entries from ${historyData.fileCount} file(s)`;
+
+  addAdjustColumnsBtn(summary, '_historyHint', 'history');
 
   stats.innerHTML = `
     <div class="data-page-stat">

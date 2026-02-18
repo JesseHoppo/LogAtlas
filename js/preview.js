@@ -358,10 +358,11 @@ function addTransformButton(prominent) {
   btn.addEventListener('click', () => {
     if (!currentParsedData && currentDecodedText) {
       let parsed = null;
+      const config = (currentNode && currentNode._parseConfig) || null;
       if (currentNode && currentNode._cookieFileHint) {
-        parsed = parseCookieFile(currentDecodedText);
+        parsed = parseCookieFile(currentDecodedText, config);
       }
-      if (!parsed) parsed = parsePasswordFile(currentDecodedText, (currentNode && currentNode._parseConfig) || null);
+      if (!parsed) parsed = parsePasswordFile(currentDecodedText, config);
       if (!parsed) parsed = parseCookieFile(currentDecodedText);
       if (parsed && parsed.rows.length > 0) {
         currentParsedData = parsed;
@@ -403,10 +404,15 @@ function showCSVView(showAll) {
   if (adjustBtn && currentNode && currentDecodedText) {
     adjustBtn.addEventListener('click', async () => {
       const fileName = currentFile ? currentFile.name : 'Unknown file';
-      const config = await openColumnMapper(currentDecodedText, fileName);
+      const fileType = currentNode._cookieFileHint ? 'cookies'
+        : currentNode._autofillHint ? 'autofill'
+        : currentNode._historyHint ? 'history'
+        : 'credentials';
+      const config = await openColumnMapper(currentDecodedText, fileName, fileType);
       if (!config) return;
       if (currentNode) currentNode._parseConfig = config;
-      const parsed = parsePasswordFile(currentDecodedText, config);
+      const parseFn = fileType === 'cookies' ? parseCookieFile : parsePasswordFile;
+      const parsed = parseFn(currentDecodedText, config);
       if (parsed && parsed.rows.length > 0) {
         currentParsedData = parsed;
         showCSVView(false);
@@ -424,7 +430,7 @@ function showTextView() {
 
   document.getElementById('previewDownload').textContent = 'Download';
 
-  if (currentParsedData || (currentNode && (currentNode._passwordFileHint || currentNode._cookieFileHint))) {
+  if (currentParsedData || (currentNode && (currentNode._passwordFileHint || currentNode._cookieFileHint || currentNode._autofillHint || currentNode._historyHint))) {
     addTransformButton(true);
   } else if (getFileExtension(currentFile.name) === 'txt' || getFileExtension(currentFile.name) === 'tsv') {
     addTransformButton(false);

@@ -90,17 +90,18 @@ async function analyzeCookies(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const parsed = parseCookieFile(text);
+      const parsed = parseCookieFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       parsedCount++;
       totalCookies += parsed.rows.length;
 
+      const domainIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
       const expiresIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
       const nameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
 
       for (const row of parsed.rows) {
-        const domain = (row[0] || '').replace(/^\./, '').toLowerCase();
+        const domain = (domainIdx >= 0 ? (row[domainIdx] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase();
         if (!domain) continue;
 
         if (!domainStats[domain]) {
@@ -277,7 +278,7 @@ async function analyzeAutofills(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const parsed = parsePasswordFile(text);
+      const parsed = parsePasswordFile(text, node._parseConfig || null);
 
       // Try Name/Value block format first
       if (parsed && parsed.rows.length > 0) {

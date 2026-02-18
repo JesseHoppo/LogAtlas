@@ -717,6 +717,7 @@ export const FIELD_PATTERNS = {
   username:   /^(user(?:name)?|login|email|account)$/i,
   password:   /^(pass(?:word)?|pwd)$/i,
   expires:    /^(expires?|expir)/i,
+  cookieDomain: /^(domain|host)$/i,
   cookieName: /^name$/i,
   email:      /email|e-mail/i,
   phone:      /phone|mobile|landline|tel/i,

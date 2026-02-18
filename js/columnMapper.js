@@ -1,10 +1,40 @@
-// Interactive column mapper modal for credential files with non-standard formats.
+// Interactive column mapper modal for files with non-standard formats.
+// Roles are configurable per file type (credentials, cookies, history, autofill).
 
 import { escapeHtml } from './utils.js';
 import { detectFormat, splitCSVLine, inferColumnRoles, makeSplitFn } from './transforms.js';
 
+const ROLE_SETS = {
+  credentials: [
+    { value: 'url', label: 'URL' },
+    { value: 'username', label: 'Username' },
+    { value: 'password', label: 'Password' },
+    { value: 'email', label: 'Email' },
+    { value: 'notes', label: 'Notes' },
+  ],
+  cookies: [
+    { value: 'domain', label: 'Domain' },
+    { value: 'name', label: 'Name' },
+    { value: 'value', label: 'Value' },
+    { value: 'path', label: 'Path' },
+    { value: 'secure', label: 'Secure' },
+    { value: 'expiration', label: 'Expiration' },
+  ],
+  history: [
+    { value: 'url', label: 'URL' },
+    { value: 'title', label: 'Title' },
+    { value: 'visitCount', label: 'Visits' },
+    { value: 'lastVisit', label: 'Last Visit' },
+  ],
+  autofill: [
+    { value: 'field', label: 'Field Name' },
+    { value: 'value', label: 'Value' },
+  ],
+};
+
 let mapperResolver = null;
 let currentText = '';
+let currentRoles = ROLE_SETS.credentials;
 
 let elModal, elRawPreview, elTableContainer, elHasHeader, elCustomInput, elFileName;
 
@@ -22,7 +52,6 @@ function setDelimiterRadio(delimiter) {
     if (r.value === delimiter) { r.checked = true; matched = true; break; }
   }
   if (!matched) {
-    // Set custom
     const customRadio = elModal.querySelector('input[name="mapperDelimiter"][value="custom"]');
     if (customRadio) {
       customRadio.checked = true;
@@ -46,22 +75,24 @@ function renderPreviewTable() {
   const allRows = previewLines.map(l => splitFn(l));
   const colCount = Math.max(...allRows.map(r => r.length));
 
-  // Infer roles for dropdown defaults
+  // Infer roles for dropdown defaults (credential-style inference)
   const inference = inferColumnRoles(lines, delimiter, hasHeader);
 
   let html = '<table class="data-table mapper-preview-table"><thead><tr>';
 
   for (let i = 0; i < colCount; i++) {
     const inferred = inference.columnMap[i] || '';
-    const isSkip = !inferred;
-    html += `<th><select class="mapper-role-select" data-col="${i}">
-      <option value="url"${inferred === 'url' ? ' selected' : ''}>URL</option>
-      <option value="username"${inferred === 'username' ? ' selected' : ''}>Username</option>
-      <option value="password"${inferred === 'password' ? ' selected' : ''}>Password</option>
-      <option value="email"${inferred === 'email' ? ' selected' : ''}>Email</option>
-      <option value="notes"${inferred === 'notes' ? ' selected' : ''}>Notes</option>
-      <option value="skip"${isSkip ? ' selected' : ''}>(Skip)</option>
-    </select></th>`;
+    // Check if inferred role exists in current role set
+    const inferredValid = currentRoles.some(r => r.value === inferred);
+    const isSkip = !inferred || !inferredValid;
+
+    html += '<th><select class="mapper-role-select" data-col="' + i + '">';
+    for (const role of currentRoles) {
+      const sel = (inferredValid && inferred === role.value) ? ' selected' : '';
+      html += `<option value="${role.value}"${sel}>${escapeHtml(role.label)}</option>`;
+    }
+    html += `<option value="skip"${isSkip ? ' selected' : ''}>(Skip)</option>`;
+    html += '</select></th>';
   }
   html += '</tr>';
 
@@ -112,19 +143,18 @@ function closeMapper(result) {
   currentText = '';
 }
 
-function openColumnMapper(text, fileName) {
+// fileType: 'credentials' | 'cookies' | 'history' | 'autofill'
+function openColumnMapper(text, fileName, fileType) {
   return new Promise((resolve) => {
     mapperResolver = resolve;
     currentText = text;
+    currentRoles = ROLE_SETS[fileType] || ROLE_SETS.credentials;
 
-    // Show filename
     if (elFileName) elFileName.textContent = fileName || 'Unknown file';
 
-    // Show raw preview
     const rawLines = text.split('\n').slice(0, 10);
     elRawPreview.textContent = rawLines.join('\n');
 
-    // Auto-detect initial delimiter
     const format = detectFormat(text);
     if (format && format.type === 'delimited') {
       setDelimiterRadio(format.delimiter);
@@ -149,7 +179,6 @@ function initColumnMapper() {
   elCustomInput = document.getElementById('mapperCustomDelimiter');
   elFileName = document.getElementById('mapperFileName');
 
-  // Delimiter radio changes
   elModal.querySelectorAll('input[name="mapperDelimiter"]').forEach(radio => {
     radio.addEventListener('change', renderPreviewTable);
   });
@@ -159,19 +188,15 @@ function initColumnMapper() {
     renderPreviewTable();
   });
 
-  // Header checkbox
   elHasHeader.addEventListener('change', renderPreviewTable);
 
-  // Apply / Cancel
   document.getElementById('mapperApply').addEventListener('click', handleApply);
   document.getElementById('mapperCancel').addEventListener('click', () => closeMapper(null));
 
-  // Backdrop click
   elModal.addEventListener('click', (e) => {
     if (e.target === elModal) closeMapper(null);
   });
 
-  // Escape key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && elModal.classList.contains('visible')) {
       e.preventDefault();
@@ -180,4 +205,4 @@ function initColumnMapper() {
   });
 }
 
-export { openColumnMapper, initColumnMapper };
+export { openColumnMapper, initColumnMapper, ROLE_SETS };

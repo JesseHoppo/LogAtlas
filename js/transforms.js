@@ -164,7 +164,12 @@ function inferColumnRoles(lines, delimiter, hasHeaderRow) {
   return { columnMap, confidence };
 }
 
-const ROLE_TO_HEADER = { url: 'URL', username: 'Username', password: 'Password', email: 'Email', notes: 'Notes' };
+const ROLE_TO_HEADER = {
+  url: 'URL', username: 'Username', password: 'Password', email: 'Email', notes: 'Notes',
+  domain: 'Domain', name: 'Name', value: 'Value', path: 'Path', secure: 'Secure', expiration: 'Expiration',
+  title: 'Title', visitCount: 'Visits', lastVisit: 'Last Visit',
+  field: 'Field', // autofill field name
+};
 
 // Returns { type: 'block', headers } | { type: 'delimited', delimiter, columns, hasHeaderRow, dropColumns, confidence } | null
 function detectFormat(text) {
@@ -346,6 +351,35 @@ function parsePasswordFile(text, config) {
   return null;
 }
 
+// History parser
+
+function parseHistoryFile(text, config) {
+  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // If explicit config from column mapper, use it directly
+  if (config) return parseWithConfig(clean, config);
+
+  // Try structured delimited detection first
+  const format = detectFormat(clean);
+  if (format && format.type === 'delimited') {
+    return parseDelimited(clean, format);
+  }
+
+  // Fallback: line-by-line URL extraction
+  const lines = clean.split('\n').map(l => l.trim()).filter(l => l);
+  const rows = [];
+  for (const line of lines) {
+    if (/^https?:\/\//i.test(line)) {
+      rows.push([line, '', '1', '']);
+    }
+  }
+  if (rows.length > 0) {
+    return { headers: ['URL', 'Title', 'Visits', 'Last Visit'], rows };
+  }
+
+  return null;
+}
+
 // Cookie timestamp conversion
 
 // Chrome stores timestamps as microseconds since 1601-01-01 (Windows epoch).
@@ -421,8 +455,11 @@ function parseJSONCookies(text) {
   }
 }
 
-function parseCookieFile(text) {
-  const clean = text.replace(/^\uFEFF/, '');
+function parseCookieFile(text, config) {
+  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // If explicit config from column mapper, use it directly
+  if (config) return parseWithConfig(clean, config);
 
   // Try JSON format first
   const trimmed = clean.trim();
@@ -431,39 +468,46 @@ function parseCookieFile(text) {
     if (jsonResult) return jsonResult;
   }
 
-  const lines = clean.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(l => l !== '');
+  const lines = clean.split('\n').map(l => l.trim()).filter(l => l !== '');
   if (lines.length === 0) return null;
 
   // Check for Netscape cookie format (7 tab-separated fields)
   const sample = lines.slice(0, 20);
   if (sample.length === 0) return null;
   const sevenColLines = sample.filter(l => l.split('\t').length === 7);
-  if (sevenColLines.length / sample.length < 0.7) return null;
+  if (sevenColLines.length / sample.length >= 0.7) {
+    const rows = [];
+    for (const line of lines) {
+      const fields = line.split('\t');
+      if (fields.length < 7) continue;
 
-  const rows = [];
-  for (const line of lines) {
-    const fields = line.split('\t');
-    if (fields.length < 7) continue;
+      const domain = fields[0];
+      const subDomain = fields[1];
+      const path = fields[2];
+      const secure = fields[3];
+      const expiration = convertCookieTimestamp(fields[4]);
+      const name = fields[5];
 
-    const domain = fields[0];
-    const subDomain = fields[1];
-    const path = fields[2];
-    const secure = fields[3];
-    const expiration = convertCookieTimestamp(fields[4]);
-    const name = fields[5];
+      let value = fields[6];
+      try {
+        value = decodeURIComponent(value);
+      } catch (_) {
+        // keep raw value
+      }
 
-    let value = fields[6];
-    try {
-      value = decodeURIComponent(value);
-    } catch (_) {
-      // keep raw value
+      rows.push([domain, subDomain, path, secure, expiration, name, value]);
     }
 
-    rows.push([domain, subDomain, path, secure, expiration, name, value]);
+    if (rows.length > 0) return { headers: COOKIE_HEADERS, rows };
   }
 
-  if (rows.length === 0) return null;
-  return { headers: COOKIE_HEADERS, rows };
+  // Fallback: try generic delimited detection (CSV, pipe, etc.)
+  const format = detectFormat(clean);
+  if (format && format.type === 'delimited') {
+    return parseDelimited(clean, format);
+  }
+
+  return null;
 }
 
 // CSV generation (RFC 4180)
@@ -480,6 +524,7 @@ export {
   parsePasswordFile,
   parseWithConfig,
   parseCookieFile,
+  parseHistoryFile,
   toCSV,
   splitCSVLine,
   inferColumnRoles,
