@@ -7,9 +7,8 @@ import { initPreview, closePreview } from './preview.js';
 import { initPasswordModal, closePasswordModal } from './password.js';
 import { initFileTypeModal, promptForFileType } from './fileTypeModal.js';
 import { formatBytes, escapeHtml, escapeAttr, isArchiveFile } from './utils.js';
-import { parsePasswordFile } from './transforms.js';
 import { runAnalysis, extractIOCs } from './analysis.js';
-import { initDataPages } from './dataPages.js';
+import { initDataPages, getPasswordsData, escapeCSV } from './dataPages.js';
 import { initExports } from './exports.js';
 import { initTimeline } from './timeline.js';
 import { initIdentityGraph, initIdentityPage } from './identityGraph.js';
@@ -724,61 +723,21 @@ function exportJSON() {
   downloadBlob(JSON.stringify(data, null, 2), 'file-list.json', 'application/json');
 }
 
-async function exportCredentials() {
-  if (!state.fileTree) return;
-
-  let headerSet = null;
-
-  const credentialNodes = [];
-  collectHintedNodes(state.fileTree, '_passwordFileHint', state.rootZipName, credentialNodes);
-
-  if (credentialNodes.length === 0) {
-    showNotification('No credential files found in this archive.', 'info');
+function exportCredentials() {
+  const data = getPasswordsData();
+  if (!data || data.rows.length === 0) {
+    showNotification('No credential data available to export.', 'error');
     return;
   }
 
-  showNotification(`Exporting credentials from ${credentialNodes.length} file(s)...`, 'info');
-
-  const parsedFiles = [];
-  for (const { node, path } of credentialNodes) {
-    try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const decoder = new TextDecoder('utf-8');
-      const text = decoder.decode(content);
-      const parsed = parsePasswordFile(text, node._parseConfig || null);
-      if (parsed && parsed.rows.length > 0) {
-        parsedFiles.push({ path, parsed });
-      }
-    } catch {
-      // skip files that fail
-    }
+  const headers = ['Source File', ...data.headers];
+  let csv = headers.map(escapeCSV).join(',') + '\n';
+  for (const { row, source } of data.rows) {
+    csv += [source, ...row].map(escapeCSV).join(',') + '\n';
   }
 
-  if (parsedFiles.length === 0) {
-    showNotification('No structured credential data could be parsed.', 'error');
-    return;
-  }
-
-  let csvText = '';
-  for (const { path, parsed } of parsedFiles) {
-    const headers = ['Source File', ...parsed.headers];
-    const escape = (cell) => `"${String(cell).replace(/"/g, '""')}"`;
-    if (csvText === '') {
-      csvText = headers.map(escape).join(',') + '\n';
-      headerSet = parsed.headers.join(',');
-    } else if (parsed.headers.join(',') !== headerSet) {
-      csvText += '\n' + headers.map(escape).join(',') + '\n';
-      headerSet = parsed.headers.join(',');
-    }
-    for (const row of parsed.rows) {
-      csvText += [path, ...row].map(escape).join(',') + '\n';
-    }
-  }
-
-  const totalRows = parsedFiles.reduce((sum, f) => sum + f.parsed.rows.length, 0);
-  downloadBlob(csvText, 'all_credentials.csv', 'text/csv');
-  showNotification(`Exported ${totalRows} credentials from ${parsedFiles.length} file(s).`, 'info');
+  downloadBlob(csv, 'all_credentials.csv', 'text/csv');
+  showNotification(`Exported ${data.rows.length} credentials from ${data.fileCount} file(s).`, 'info');
 }
 
 // Drag & drop / file input

@@ -59,8 +59,10 @@ async function loadPasswordsData(fileTree, rootName) {
     return;
   }
 
-  const allRows = [];
-  let headers = ['URL', 'Username', 'Password'];
+  // Pass 1: parse all files and build column mappings
+  const canonicalHeaders = ['URL', 'Username', 'Password'];
+  const extraHeaders = [];
+  const parsedFiles = [];
   let fileCount = 0;
 
   for (const { node, path } of nodes) {
@@ -69,20 +71,47 @@ async function loadPasswordsData(fileTree, rootName) {
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
       const parsed = parsePasswordFile(text, node._parseConfig || null);
-      if (parsed && parsed.rows.length > 0) {
-        fileCount++;
-        if (parsed.headers.length > headers.length) {
-          headers = parsed.headers;
-        }
-        for (const row of parsed.rows) {
-          allRows.push({ row, source: path });
-        }
+      if (!parsed || parsed.rows.length === 0) continue;
+      fileCount++;
+
+      const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+      const userIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
+      const passIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+
+      const colMap = new Map();
+      if (urlIdx >= 0)  colMap.set(urlIdx, 0);
+      if (userIdx >= 0) colMap.set(userIdx, 1);
+      if (passIdx >= 0) colMap.set(passIdx, 2);
+
+      for (let i = 0; i < parsed.headers.length; i++) {
+        if (colMap.has(i)) continue;
+        const hdr = parsed.headers[i];
+        if (/^Column \d+$/.test(hdr)) continue;
+        let extraIdx = extraHeaders.indexOf(hdr);
+        if (extraIdx < 0) { extraIdx = extraHeaders.length; extraHeaders.push(hdr); }
+        colMap.set(i, canonicalHeaders.length + extraIdx);
       }
+
+      parsedFiles.push({ path, parsed, colMap });
     } catch {
       // skip
     }
   }
 
+  // Pass 2: build unified rows with final column count
+  const totalCols = canonicalHeaders.length + extraHeaders.length;
+  const allRows = [];
+  for (const { path, parsed, colMap } of parsedFiles) {
+    for (const row of parsed.rows) {
+      const unified = new Array(totalCols).fill('');
+      for (const [src, dest] of colMap) {
+        unified[dest] = row[src] || '';
+      }
+      allRows.push({ row: unified, source: path });
+    }
+  }
+
+  const headers = [...canonicalHeaders, ...extraHeaders];
   passwordsData = { rows: allRows, headers, fileCount };
 }
 
