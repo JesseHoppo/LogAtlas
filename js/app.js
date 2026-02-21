@@ -75,33 +75,30 @@ on('loading', () => {
 
 // After extraction
 
-on('extracted', () => {
-  const files = state.flatFiles.filter(f => f.type === 'file');
+function updateDashboardVisibility() {
   const credFiles = state.flatFiles.filter(f => f._passwordFileHint);
   const cookieFiles = state.flatFiles.filter(f => f._cookieFileHint);
   const autofillFiles = state.flatFiles.filter(f => f._autofillHint);
 
-  if (credFiles.length > 0) {
-    document.getElementById('dashCredIntel').classList.remove('hidden');
-  }
-  if (cookieFiles.length > 0) {
-    document.getElementById('dashCookieIntel').classList.remove('hidden');
-  }
-  if (autofillFiles.length > 0) {
-    document.getElementById('dashAutofillIntel').classList.remove('hidden');
-  }
-  if (credFiles.length === 0 && cookieFiles.length === 0) {
-    document.getElementById('overviewNoData').classList.remove('hidden');
-  }
+  const dashCred = document.getElementById('dashCredIntel');
+  const dashCookie = document.getElementById('dashCookieIntel');
+  const dashAutofill = document.getElementById('dashAutofillIntel');
+  const noData = document.getElementById('overviewNoData');
+
+  dashCred.classList.toggle('hidden', credFiles.length === 0);
+  dashCookie.classList.toggle('hidden', cookieFiles.length === 0);
+  dashAutofill.classList.toggle('hidden', autofillFiles.length === 0);
+  noData.classList.toggle('hidden', credFiles.length > 0 || cookieFiles.length > 0);
 
   // Show extra data type indicators
   const creditCardFiles = state.flatFiles.filter(f => f._creditCardHint);
   const cryptoWalletFiles = state.flatFiles.filter(f => f._cryptoWalletHint);
   const messengerFiles = state.flatFiles.filter(f => f._messengerHint);
 
+  const extraEl = document.getElementById('dashExtraIntel');
+  const extraBody = document.getElementById('dashExtraBody');
+
   if (creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0) {
-    const extraEl = document.getElementById('dashExtraIntel');
-    const extraBody = document.getElementById('dashExtraBody');
     extraEl.classList.remove('hidden');
 
     let html = '<div class="dash-extra-items">';
@@ -116,7 +113,13 @@ on('extracted', () => {
     }
     html += '</div>';
     extraBody.innerHTML = html;
+  } else {
+    extraEl.classList.add('hidden');
   }
+}
+
+on('extracted', () => {
+  updateDashboardVisibility();
 
   document.getElementById('navSearch').disabled = false;
   document.getElementById('navBrowser').disabled = false;
@@ -140,6 +143,7 @@ on('extracted', () => {
 
 on('reanalyze', () => {
   if (state.fileTree) {
+    updateDashboardVisibility();
     runAnalysis(state.fileTree, state.rootZipName);
   }
 });
