@@ -13,6 +13,7 @@ import { initExports } from './exports.js';
 import { initTimeline } from './timeline.js';
 import { initIdentityGraph, initIdentityPage } from './identityGraph.js';
 import { initColumnMapper } from './columnMapper.js';
+import { openPasteModal, initPasteText } from './pasteText.js';
 import { collectFileNodes, collectHintedNodes, downloadBlob, copyToClipboard, showNotification, MAX_SEARCH_MATCHES_PER_FILE, SEARCH_BATCH_SIZE } from './shared.js';
 
 // DOM refs
@@ -79,6 +80,11 @@ function updateDashboardVisibility() {
   const credFiles = state.flatFiles.filter(f => f._passwordFileHint);
   const cookieFiles = state.flatFiles.filter(f => f._cookieFileHint);
   const autofillFiles = state.flatFiles.filter(f => f._autofillHint);
+  const historyFiles = state.flatFiles.filter(f => f._historyHint);
+  const sysInfoFiles = state.flatFiles.filter(f => f._sysInfoHint);
+  const creditCardFiles = state.flatFiles.filter(f => f._creditCardHint);
+  const cryptoWalletFiles = state.flatFiles.filter(f => f._cryptoWalletHint);
+  const messengerFiles = state.flatFiles.filter(f => f._messengerHint);
 
   const dashCred = document.getElementById('dashCredIntel');
   const dashCookie = document.getElementById('dashCookieIntel');
@@ -88,12 +94,11 @@ function updateDashboardVisibility() {
   dashCred.classList.toggle('hidden', credFiles.length === 0);
   dashCookie.classList.toggle('hidden', cookieFiles.length === 0);
   dashAutofill.classList.toggle('hidden', autofillFiles.length === 0);
-  noData.classList.toggle('hidden', credFiles.length > 0 || cookieFiles.length > 0);
 
-  // Show extra data type indicators
-  const creditCardFiles = state.flatFiles.filter(f => f._creditCardHint);
-  const cryptoWalletFiles = state.flatFiles.filter(f => f._cryptoWalletHint);
-  const messengerFiles = state.flatFiles.filter(f => f._messengerHint);
+  const hasAnyData = credFiles.length > 0 || cookieFiles.length > 0 ||
+    autofillFiles.length > 0 || historyFiles.length > 0 || sysInfoFiles.length > 0 ||
+    creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0;
+  noData.classList.toggle('hidden', hasAnyData);
 
   const extraEl = document.getElementById('dashExtraIntel');
   const extraBody = document.getElementById('dashExtraBody');
@@ -576,10 +581,12 @@ async function handleFiles(files) {
       fileArray.length === 1 ? fileArray[0].name : `${fileArray.length} files`;
     document.getElementById('currentFileSize').textContent = formatBytes(totalSize);
     addMoreBtn.classList.remove('hidden');
+    document.getElementById('pasteMoreBtn').classList.remove('hidden');
   } else {
     document.getElementById('currentFileName').textContent = fileArray[0].name;
     document.getElementById('currentFileSize').textContent = formatBytes(fileArray[0].size);
     addMoreBtn.classList.add('hidden');
+    document.getElementById('pasteMoreBtn').classList.add('hidden');
   }
 
   results.classList.remove('visible');
@@ -628,6 +635,90 @@ async function handleAddMoreFiles(files) {
   }
 }
 
+// Paste text
+
+async function handlePasteText() {
+  const result = await openPasteModal();
+  if (!result) return;
+
+  const { text, name, type } = result;
+  let fileName = name + '.txt';
+
+  // Avoid overwriting if name already exists in tree
+  if (state.fileTree && state.fileTree.children) {
+    let i = 2;
+    while (state.fileTree.children[fileName]) {
+      fileName = name + ' ' + i + '.txt';
+      i++;
+    }
+  }
+
+  const file = new File([text], fileName, { type: 'text/plain' });
+
+  if (state.fileTree && state.isMultiFileMode) {
+    // Add to existing analysis
+    loading.classList.add('visible');
+    try {
+      await addFilesToTree([file]);
+
+      const node = state.fileTree.children[fileName];
+      if (node) {
+        applyManualType(node, type);
+        setManualType(fileName, type);
+      }
+
+      state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
+
+      const totalFiles = state.flatFiles.filter(f => f.type === 'file').length;
+      const totalSize = state.flatFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+      document.getElementById('currentFileName').textContent = `${totalFiles} files`;
+      document.getElementById('currentFileSize').textContent = formatBytes(totalSize);
+
+      loading.classList.remove('visible');
+      runAnalysis(state.fileTree, state.rootZipName);
+      emit('reanalyze');
+      showNotification(`Added "${fileName}". Analysis updated.`, 'info');
+    } catch (err) {
+      loading.classList.remove('visible');
+      showNotification(`Failed to add pasted text: ${err.message}`, 'error');
+    }
+  } else {
+    // Start new analysis
+    resetState();
+    setMultiFileMode(true);
+
+    dropZone.style.display = 'none';
+    uploadInfo.style.display = 'none';
+    resetZone.classList.add('visible');
+
+    document.getElementById('currentFileName').textContent = fileName;
+    document.getElementById('currentFileSize').textContent = formatBytes(file.size);
+    document.getElementById('addMoreBtn').classList.remove('hidden');
+    document.getElementById('pasteMoreBtn').classList.remove('hidden');
+
+    results.classList.remove('visible');
+    document.getElementById('errorList').classList.remove('visible');
+    loading.classList.add('visible');
+
+    try {
+      await addFilesToTree([file]);
+
+      const node = state.fileTree.children[fileName];
+      if (node) {
+        applyManualType(node, type);
+        setManualType(fileName, type);
+      }
+
+      state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
+      emit('extracted');
+    } catch (err) {
+      loading.classList.remove('visible');
+      showNotification(`Failed to process pasted text: ${err.message}`, 'error');
+      resetUI();
+    }
+  }
+}
+
 // Manual type selection queue
 
 async function processTypeSelectionQueue(files) {
@@ -657,6 +748,7 @@ function resetUI() {
   fileInput.value = '';
   document.getElementById('addMoreInput').value = '';
   document.getElementById('addMoreBtn').classList.add('hidden');
+  document.getElementById('pasteMoreBtn').classList.add('hidden');
 
   document.getElementById('dashCredIntel').classList.add('hidden');
   document.getElementById('dashCookieIntel').classList.add('hidden');
@@ -783,6 +875,15 @@ document.getElementById('addMoreInput').addEventListener('change', (e) => {
   }
 });
 
+document.getElementById('pasteTextBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  handlePasteText();
+});
+
+document.getElementById('pasteMoreBtn').addEventListener('click', () => {
+  handlePasteText();
+});
+
 // Buttons
 
 document.getElementById('resetBtn').addEventListener('click', resetUI);
@@ -892,6 +993,7 @@ document.addEventListener('keydown', (e) => {
 try { initPasswordModal(); } catch (e) { console.error('initPasswordModal failed:', e); }
 try { initFileTypeModal(); } catch (e) { console.error('initFileTypeModal failed:', e); }
 try { initColumnMapper(); } catch (e) { console.error('initColumnMapper failed:', e); }
+try { initPasteText(); } catch (e) { console.error('initPasteText failed:', e); }
 try { initBrowser(); } catch (e) { console.error('initBrowser failed:', e); }
 try { initPreview(); } catch (e) { console.error('initPreview failed:', e); }
 try { initDataPages(); } catch (e) { console.error('initDataPages failed:', e); }

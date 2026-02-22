@@ -49,6 +49,7 @@
       <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Drop a file here or click to browse">
         <h2>Drop file here or click to browse</h2>
         <p>Archives and individual files supported</p>
+        <button class="paste-text-trigger" id="pasteTextBtn">or paste text</button>
         <input type="file" id="fileInput" multiple aria-hidden="true">
       </div>
       <div class="upload-info" id="uploadInfo">
@@ -69,6 +70,7 @@
           </div>
           <div class="current-file-actions">
             <button class="btn-add-more hidden" id="addMoreBtn">Add More Files</button>
+            <button class="btn-add-more hidden" id="pasteMoreBtn">Paste Text</button>
             <button class="btn-reset" id="resetBtn">Clear &amp; Start Over</button>
           </div>
         </div>
@@ -150,7 +152,7 @@
 
           <!-- No data message (shown when nothing detected) -->
           <div class="no-data hidden" id="overviewNoData">
-            No credential or cookie data detected in this archive.
+            No recognised data detected.
           </div>
 
           <!-- Error list -->
@@ -449,6 +451,43 @@
           </div>
           <div class="filetype-pending hidden" id="fileTypePending">
             <span id="fileTypePendingCount">0</span> more file(s) pending
+          </div>
+        </div>
+      </div>
+
+      <!-- Paste text modal -->
+      <div class="modal-overlay" id="pasteTextModal" role="dialog" aria-modal="true" aria-label="Paste text">
+        <div class="modal modal-paste-text">
+          <h3>Paste Text</h3>
+          <p>Paste content and select a type.</p>
+          <div class="paste-name-group">
+            <label for="pasteTextName">Name</label>
+            <input type="text" id="pasteTextName" class="paste-text-name" placeholder="Pasted Text" autocomplete="off">
+          </div>
+          <textarea id="pasteTextArea" class="paste-text-area" rows="10" placeholder="Paste text here..."></textarea>
+          <div class="paste-type-options" id="pasteTypeOptions">
+            <button class="filetype-option active" data-type="credentials">
+              <span class="filetype-icon">Credentials</span>
+            </button>
+            <button class="filetype-option" data-type="cookies">
+              <span class="filetype-icon">Cookies</span>
+            </button>
+            <button class="filetype-option" data-type="autofill">
+              <span class="filetype-icon">Autofill</span>
+            </button>
+            <button class="filetype-option" data-type="history">
+              <span class="filetype-icon">History</span>
+            </button>
+            <button class="filetype-option" data-type="sysinfo">
+              <span class="filetype-icon">System Info</span>
+            </button>
+            <button class="filetype-option" data-type="other">
+              <span class="filetype-icon">Other</span>
+            </button>
+          </div>
+          <div class="modal-actions">
+            <button class="modal-btn modal-btn-cancel" id="pasteTextCancel">Cancel</button>
+            <button class="modal-btn modal-btn-submit" id="pasteTextSubmit">Load</button>
           </div>
         </div>
       </div>

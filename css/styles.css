@@ -2972,6 +2972,108 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/* Paste text modal                                                    */
+/* ------------------------------------------------------------------ */
+
+.modal-paste-text {
+  max-width: 520px;
+}
+
+.paste-name-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.paste-name-group label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.paste-text-name {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.paste-text-name:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.paste-text-area {
+  width: 100%;
+  min-height: 140px;
+  padding: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  resize: vertical;
+  margin-bottom: 0.75rem;
+  box-sizing: border-box;
+}
+
+.paste-text-area:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.paste-text-area::placeholder {
+  color: var(--text-muted);
+}
+
+.paste-type-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.paste-type-options .filetype-option {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.75rem;
+}
+
+.paste-type-options .filetype-option::after {
+  display: none;
+}
+
+.paste-type-options .filetype-option.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.paste-text-trigger {
+  display: inline-block;
+  margin-top: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.paste-text-trigger:hover {
+  background: var(--accent-dim);
+}
+
+/* ------------------------------------------------------------------ */
 /* Column mapper modal                                                 */
 /* ------------------------------------------------------------------ */
 
