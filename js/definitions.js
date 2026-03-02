@@ -12,6 +12,7 @@ export const SIGNAL_WEIGHTS = {
   FOLDER:          3,
   FILE_PATTERN:    2,
   STRUCTURE:       4,
+  ASCII_BANNER:    6,
 };
 
 export const CONFIDENCE_THRESHOLDS = {
@@ -68,6 +69,10 @@ export const SIGNATURES = {
     sysinfoContent: [
       { pattern: /REDLINE/i, label: 'Sysinfo header: REDLINE branding' },
       { pattern: /@logs_russia/i, label: 'Sysinfo content: @logs_russia' },
+    ],
+    asciiBanners: [
+      '* ____ _____ ____ _ ___ _ _ _____ *',
+      '* | _ \\|_____| _ \\',
     ],
     folders: [
       { pattern: /^Browser$/i, label: 'Folder: Browser/' },
@@ -149,7 +154,11 @@ export const SIGNATURES = {
       { pattern: /^Version Build$/i, label: 'Sysinfo key: Version Build' },
       { pattern: /^Log date$/i, label: 'Sysinfo key: Log date' },
     ],
-    sysinfoContent: [],
+    sysinfoContent: [
+      { pattern: /LummaC2/i, label: 'Sysinfo content: LummaC2 branding' },
+      { pattern: /\bLID:\s*/i, label: 'Sysinfo content: LID field' },
+      { pattern: /Configuration:\s*/i, label: 'Sysinfo content: Configuration field' },
+    ],
     folders: [
       { pattern: /^Browser$/i, label: 'Folder: Browser/' },
       { pattern: /^Browser\/AutoFills$/i, label: 'Folder: Browser/AutoFills/' },
@@ -187,9 +196,16 @@ export const SIGNATURES = {
       { pattern: /^Elevated$/i, label: 'Sysinfo key: Elevated' },
       { pattern: /^Netbios$/i, label: 'Sysinfo key: Netbios' },
       { pattern: /^Execution Path$/i, label: 'Sysinfo key: Execution Path' },
+      { pattern: /^Running Path$/i, label: 'Sysinfo key: Running Path' },
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
     ],
     sysinfoContent: [
       { pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/i, label: 'Sysinfo content: Time with (sig:...) hash' },
+      { pattern: /STEALC/i, label: 'Sysinfo content: STEALC branding' },
+    ],
+    asciiBanners: [
+      '______ ______ ______ ______ __ ______',
+      '/\\ ___\\/\\ __',
     ],
     folders: [],
     files: [
@@ -294,9 +310,14 @@ export const SIGNATURES = {
       { pattern: /^OS\s*Version$/i, label: 'Sysinfo key: OS Version' },
       { pattern: /^IP\s*Address$/i, label: 'Sysinfo key: IP Address' },
       { pattern: /^Tracker$/i, label: 'Sysinfo key: Tracker' },
+      { pattern: /^Bot_ID$/i, label: 'Sysinfo key: Bot_ID' },
+      { pattern: /^Build compile date$/i, label: 'Sysinfo key: Build compile date' },
     ],
     sysinfoContent: [
       { pattern: /Raccoon/i, label: 'Sysinfo content: Raccoon branding' },
+    ],
+    asciiBanners: [
+      '\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584',
     ],
     folders: [
       { pattern: /^Browser$/i, label: 'Folder: Browser/' },
@@ -397,7 +418,7 @@ export const SIGNATURES = {
       { pattern: /^Computer\s*Name$/i, label: 'Sysinfo key: Computer Name' },
     ],
     sysinfoContent: [
-      { pattern: /Mystic/i, label: 'Sysinfo content: Mystic branding' },
+      { pattern: /Mystic\s*Stealer/i, label: 'Sysinfo content: Mystic Stealer branding' },
     ],
     folders: [
       { pattern: /^Browsers$/i, label: 'Folder: Browsers/' },
@@ -420,7 +441,7 @@ export const SIGNATURES = {
       { pattern: /^IP$/i, label: 'Sysinfo key: IP' },
     ],
     sysinfoContent: [
-      { pattern: /Aurora/i, label: 'Sysinfo content: Aurora branding' },
+      { pattern: /Aurora\s*Stealer/i, label: 'Sysinfo content: Aurora Stealer branding' },
     ],
     folders: [
       { pattern: /^Browsers$/i, label: 'Folder: Browsers/' },
@@ -519,7 +540,10 @@ export const SIGNATURES = {
       { pattern: /^Build\s*ID$/i, label: 'Sysinfo key: Build ID' },
     ],
     sysinfoContent: [
-      { pattern: /META/i, label: 'Sysinfo content: META branding' },
+      { pattern: /\(\s*M\s*\|\s*E\s*\|\s*T\s*\|\s*A\s*\)/, label: 'Sysinfo content: META ASCII banner' },
+    ],
+    asciiBanners: [
+      '( M | E | T | A )',
     ],
     folders: [
       { pattern: /^Browser$/i, label: 'Folder: Browser/' },
@@ -543,6 +567,315 @@ export const SIGNATURES = {
         label: 'Structure: Browser/ + Wallets/ without FingerPrint (META variant)',
       },
     ],
+  },
+
+  CryptBot: {
+    sysinfoFile: { pattern: /^_?Information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^UserName \(ComputerName\)$/i, label: 'Sysinfo key: UserName (ComputerName)' },
+      { pattern: /^Local Date and Time$/i, label: 'Sysinfo key: Local Date and Time' },
+      { pattern: /^Display Resolution$/i, label: 'Sysinfo key: Display Resolution' },
+      { pattern: /^GPU$/i, label: 'Sysinfo key: GPU' },
+      { pattern: /^RAM$/i, label: 'Sysinfo key: RAM' },
+    ],
+    sysinfoContent: [],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+      { pattern: /^Screenshot\.png$/i, label: 'File: Screenshot.png' },
+    ],
+    structures: [
+      {
+        test: (dirs, files) => {
+          return files.some(f => /^_Information\.txt$/i.test(f));
+        },
+        label: 'Structure: _Information.txt (underscore prefix)',
+      },
+    ],
+  },
+
+  Phemedrone: {
+    sysinfoFile: { pattern: /^Information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Clipboard text$/i, label: 'Sysinfo key: Clipboard text' },
+      { pattern: /^Antivirus products$/i, label: 'Sysinfo key: Antivirus products' },
+    ],
+    sysinfoContent: [
+      { pattern: /Geolocation Data/i, label: 'Sysinfo section: Geolocation Data' },
+      { pattern: /Hardware Info/i, label: 'Sysinfo section: Hardware Info' },
+      { pattern: /Report Contents/i, label: 'Sysinfo section: Report Contents' },
+      { pattern: /Miscellaneous/i, label: 'Sysinfo section: Miscellaneous' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  DarkCrystalRAT: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^PC Name$/i, label: 'Sysinfo key: PC Name' },
+      { pattern: /^User Name$/i, label: 'Sysinfo key: User Name' },
+    ],
+    sysinfoContent: [
+      { pattern: /DarkCrystal/i, label: 'Sysinfo content: DarkCrystal branding' },
+      { pattern: /DCRAT/i, label: 'Sysinfo content: DCRAT branding' },
+    ],
+    asciiBanners: [
+      '___   _   ___   _   ______',
+      'DarkCrystal',
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  Meduza: {
+    sysinfoFile: { pattern: /^UserInfo\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^Log Date$/i, label: 'Sysinfo key: Log Date' },
+      { pattern: /^Build Name$/i, label: 'Sysinfo key: Build Name' },
+      { pattern: /^Computer Name$/i, label: 'Sysinfo key: Computer Name' },
+      { pattern: /^Operation System$/i, label: 'Sysinfo key: Operation System' },
+      { pattern: /^Execute Path$/i, label: 'Sysinfo key: Execute Path' },
+      { pattern: /^Country Code$/i, label: 'Sysinfo key: Country Code' },
+    ],
+    sysinfoContent: [
+      { pattern: /Meduza/i, label: 'Sysinfo content: Meduza branding' },
+    ],
+    folders: [
+      { pattern: /^Browser$/i, label: 'Folder: Browser/' },
+    ],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  Banshee: {
+    sysinfoFile: { pattern: /^system_information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^Log Date$/i, label: 'Sysinfo key: Log Date' },
+      { pattern: /^Build Name$/i, label: 'Sysinfo key: Build Name' },
+      { pattern: /^Country Code$/i, label: 'Sysinfo key: Country Code' },
+      { pattern: /^User Name$/i, label: 'Sysinfo key: User Name' },
+      { pattern: /^Operation System$/i, label: 'Sysinfo key: Operation System (typo is signature)' },
+    ],
+    sysinfoContent: [
+      { pattern: /macOS/i, label: 'Sysinfo content: macOS reference' },
+    ],
+    folders: [
+      { pattern: /^Browsers$/i, label: 'Folder: Browsers/' },
+    ],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  ExelaStealer: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Host Name$/i, label: 'Sysinfo key: Host Name' },
+      { pattern: /^OS Name$/i, label: 'Sysinfo key: OS Name' },
+      { pattern: /^OS Version$/i, label: 'Sysinfo key: OS Version' },
+    ],
+    sysinfoContent: [
+      { pattern: /t\.me\/exelastealer/i, label: 'Sysinfo content: Telegram Exela URL' },
+      { pattern: /ExelaStealer/i, label: 'Sysinfo content: ExelaStealer branding' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  Stealerium: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^VirtualMachine$/i, label: 'Sysinfo key: VirtualMachine' },
+      { pattern: /^BATTERY$/i, label: 'Sysinfo key: BATTERY' },
+      { pattern: /^WEBCAMS COUNT$/i, label: 'Sysinfo key: WEBCAMS COUNT' },
+    ],
+    sysinfoContent: [
+      { pattern: /\[IP\]/i, label: 'Sysinfo section: [IP]' },
+      { pattern: /\[Machine\]/i, label: 'Sysinfo section: [Machine]' },
+      { pattern: /\[Virtualization\]/i, label: 'Sysinfo section: [Virtualization]' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  XFiles: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Operation ID$/i, label: 'Sysinfo key: Operation ID' },
+      { pattern: /^Operating System$/i, label: 'Sysinfo key: Operating System' },
+      { pattern: /^Screens$/i, label: 'Sysinfo key: Screens' },
+    ],
+    sysinfoContent: [
+      { pattern: /Desktop Screenshot Taken/i, label: 'Sysinfo content: Desktop Screenshot Taken' },
+      { pattern: /Windows Processes/i, label: 'Sysinfo content: Windows Processes section' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  Noxty: {
+    sysinfoFile: { pattern: /^identification\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^User$/i, label: 'Sysinfo key: User' },
+      { pattern: /^Operating System$/i, label: 'Sysinfo key: Operating System' },
+      { pattern: /^Uptime$/i, label: 'Sysinfo key: Uptime' },
+      { pattern: /^ScreenResolution$/i, label: 'Sysinfo key: ScreenResolution' },
+    ],
+    sysinfoContent: [],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  Skalka: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Operation System$/i, label: 'Sysinfo key: Operation System' },
+      { pattern: /^Current JarFile Path$/i, label: 'Sysinfo key: Current JarFile Path (Java-based)' },
+    ],
+    sysinfoContent: [
+      { pattern: /Skalka/i, label: 'Sysinfo content: Skalka branding' },
+    ],
+    folders: [],
+    files: [],
+    structures: [],
+  },
+
+  RLStealer: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Operating system\s*$/i, label: 'Sysinfo key: Operating system (trailing space)' },
+      { pattern: /^PC user\s*$/i, label: 'Sysinfo key: PC user (trailing space)' },
+    ],
+    sysinfoContent: [
+      { pattern: /RL\s*Stealer/i, label: 'Sysinfo content: RL Stealer branding' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+    ],
+    structures: [],
+  },
+
+  Ailurophile: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^PC Type$/i, label: 'Sysinfo key: PC Type' },
+      { pattern: /^Allowed Extensions$/i, label: 'Sysinfo key: Allowed Extensions' },
+    ],
+    sysinfoContent: [
+      { pattern: /PC Type:\s*Microsoft Windows/i, label: 'Sysinfo content: PC Type Microsoft Windows' },
+      { pattern: /Ailurophile/i, label: 'Sysinfo content: Ailurophile branding' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  ArechClientV2: {
+    sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^FileLocation$/i, label: 'Sysinfo key: FileLocation' },
+      { pattern: /^Current Language$/i, label: 'Sysinfo key: Current Language' },
+      { pattern: /^MachineName$/i, label: 'Sysinfo key: MachineName' },
+      { pattern: /^Hardwares$/i, label: 'Sysinfo key: Hardwares' },
+    ],
+    sysinfoContent: [
+      { pattern: /ArechClient/i, label: 'Sysinfo content: ArechClient branding' },
+    ],
+    folders: [
+      { pattern: /^Browser$/i, label: 'Folder: Browser/' },
+    ],
+    files: [
+      { pattern: /^Clipboard\.txt$/i, label: 'File: Clipboard.txt' },
+      { pattern: /^ProcessList\.txt$/i, label: 'File: ProcessList.txt' },
+    ],
+    structures: [],
+  },
+
+  BlankGrabber: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Host Name$/i, label: 'Sysinfo key: Host Name' },
+      { pattern: /^System Manufacturer$/i, label: 'Sysinfo key: System Manufacturer' },
+      { pattern: /^Total Physical Memory$/i, label: 'Sysinfo key: Total Physical Memory' },
+    ],
+    sysinfoContent: [
+      { pattern: /Blank\s*Grabber/i, label: 'Sysinfo content: Blank Grabber branding' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+      { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  PredatorTheThief: {
+    sysinfoFile: { pattern: /^Information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^MachineID$/i, label: 'Sysinfo key: MachineID' },
+      { pattern: /^GUID$/i, label: 'Sysinfo key: GUID' },
+    ],
+    sysinfoContent: [
+      { pattern: /Predator\s*The\s*Thief/i, label: 'Sysinfo content: Predator The Thief branding' },
+      { pattern: /PredatorTheThief/i, label: 'Sysinfo content: PredatorTheThief branding' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^passwords\.txt$/i, label: 'File: passwords.txt' },
+      { pattern: /^cookies\.txt$/i, label: 'File: cookies.txt' },
+    ],
+    structures: [],
+  },
+
+  LucaStealer: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [],
+    sysinfoContent: [
+      { pattern: /Luca\s*Stealer/i, label: 'Sysinfo content: Luca Stealer branding' },
+      { pattern: /LucaStealer/i, label: 'Sysinfo content: LucaStealer branding' },
+    ],
+    folders: [],
+    files: [
+      { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
+    ],
+    structures: [],
   },
 };
 
@@ -652,6 +985,34 @@ export const FILE_TYPE_PATTERNS = {
       /^accounts\.txt$/i,
     ],
   },
+
+  credits: {
+    filePatterns: [
+      /^credits?\.txt$/i,
+      /^copyright\.txt$/i,
+      /^read\s*me\.txt$/i,
+    ],
+  },
+
+  software: {
+    filePatterns: [
+      /^installed\s*software\.txt$/i,
+      /^software\.txt$/i,
+      /^installed\s*programs?\.txt$/i,
+      /^programs?\s*list\.txt$/i,
+      /^installed\s*apps?\.txt$/i,
+      /^installed\s*browsers?\.txt$/i,
+    ],
+  },
+
+  processList: {
+    filePatterns: [
+      /^process\s*list\.txt$/i,
+      /^processes?\.txt$/i,
+      /^running\s*processes?\.txt$/i,
+      /^tasklist\.txt$/i,
+    ],
+  },
 };
 
 
@@ -757,6 +1118,7 @@ export const IOC_KEY_MAP = [
 export const CONTENT_IOC_PATTERNS = [
   { label: 'C2/Panel URL', pattern: /https?:\/\/[^\s"'<>]{5,}/gi },
   { label: 'Telegram Contact', pattern: /(?<![a-zA-Z0-9._%+-])@[a-zA-Z_]\w{3,}/g },
+  { label: 'Telegram Channel', pattern: /t\.me\/[a-zA-Z_]\w{3,}/gi },
   { label: 'Malware Signature', pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/gi },
 ];
 

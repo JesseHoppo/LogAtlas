@@ -1,6 +1,6 @@
 // Stealer family fingerprinting based on directory layout, filenames, and sysinfo.
 
-import { SIGNAL_WEIGHTS as W, SIGNATURES, CONFIDENCE_THRESHOLDS } from './definitions.js';
+import { SIGNAL_WEIGHTS as W, SIGNATURES, CONFIDENCE_THRESHOLDS, FILE_TYPE_PATTERNS } from './definitions.js';
 
 function scoreFamily(familyName, sig, ctx) {
   let score = 0;
@@ -34,7 +34,22 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 4. Folder matches
+  // 4. ASCII banners
+  if (sig.asciiBanners && sig.asciiBanners.length > 0) {
+    maxScore += W.ASCII_BANNER;
+    const allText = [ctx.sysinfoText, ctx.creditsText].filter(Boolean).join('\n');
+    if (allText) {
+      for (const banner of sig.asciiBanners) {
+        if (allText.includes(banner)) {
+          score += W.ASCII_BANNER;
+          matched.push(`ASCII banner: ${familyName} art detected`);
+          break;
+        }
+      }
+    }
+  }
+
+  // 5. Folder matches
   for (const f of sig.folders) {
     maxScore += W.FOLDER;
     if (ctx.dirs.some(d => f.pattern.test(d))) {
@@ -43,7 +58,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 5. File pattern matches
+  // 6. File pattern matches
   for (const fp of sig.files) {
     maxScore += W.FILE_PATTERN;
     if (ctx.files.some(f => fp.pattern.test(f))) {
@@ -52,7 +67,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 6. Structural tests
+  // 7. Structural tests
   for (const s of sig.structures) {
     maxScore += W.STRUCTURE;
     if (s.test(ctx.dirs, ctx.files)) {
@@ -64,7 +79,7 @@ function scoreFamily(familyName, sig, ctx) {
   return { family: familyName, score, maxScore, matched };
 }
 
-// Walk the file tree and collect dirs, files, and sysinfo node.
+// Walk the file tree and collect dirs, files, sysinfo node, and credits files.
 function collectContext(node, basePath, ctx) {
   if (!node || !node.children) return;
 
@@ -77,12 +92,15 @@ function collectContext(node, basePath, ctx) {
     } else {
       ctx.files.push(relPath);
 
-      // Detect sysinfo filename by common patterns
-      if (child._sysInfoHint || /^(?:information|UserInformation|system_info|Info|user_info|system|pc_info|build_info)\.txt$/i.test(child.name)) {
+      if (child._sysInfoHint || /^(?:information|UserInformation|system_info|Info|user_info|system|pc_info|build_info|UserInfo|_Information|identification)\.txt$/i.test(child.name)) {
         if (!ctx.sysinfoFilename) {
           ctx.sysinfoFilename = child.name;
           ctx.sysinfoNode = child;
         }
+      }
+
+      if (child._creditsFileHint || FILE_TYPE_PATTERNS.credits.filePatterns.some(rx => rx.test(child.name))) {
+        ctx.creditsNodes.push(child);
       }
     }
   }

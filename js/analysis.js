@@ -370,7 +370,7 @@ function findScreenshot(fileTree, rootName) {
 const SYSINFO_KV = /^([A-Za-z][A-Za-z0-9 _\/-]*?)\s*[:=]\s+(.*)/;
 
 async function runFingerprint(fileTree, rootName) {
-  const ctx = { dirs: [], files: [], sysinfoFilename: null, sysinfoNode: null, sysinfoKeys: [], sysinfoText: null };
+  const ctx = { dirs: [], files: [], sysinfoFilename: null, sysinfoNode: null, sysinfoKeys: [], sysinfoText: null, creditsNodes: [], creditsText: null };
 
   // If the archive has a single top-level dir, start inside it so paths match signatures
   let startNode = fileTree;
@@ -399,8 +399,174 @@ async function runFingerprint(fileTree, rootName) {
     }
   }
 
+  // Load credits/copyright files for ASCII banner detection
+  if (ctx.creditsNodes.length > 0) {
+    const creditsTexts = [];
+    for (const node of ctx.creditsNodes) {
+      try {
+        const content = await loadFileContent(node);
+        if (content) {
+          creditsTexts.push(new TextDecoder('utf-8').decode(content));
+        }
+      } catch {
+        // skip
+      }
+    }
+    if (creditsTexts.length > 0) {
+      ctx.creditsText = creditsTexts.join('\n');
+    }
+  }
+
   const result = fingerprintStealer(ctx);
   emit('analysis:fingerprint', result);
+}
+
+// Installed software
+
+async function analyzeSoftware(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_softwareFileHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:software', null);
+    return;
+  }
+
+  const entries = [];
+  const seen = new Set();
+  let parsedCount = 0;
+
+  const VERSION_PATTERNS = [
+    /^(.+?)\s*-\s*(.+)$/,                          // Name - Version
+    /^(.+?)\s*\(([^)]+)\)$/,                        // Name (Version)
+    /^(.+?)\s+(v?\d+\.\d+(?:\.\d+)?(?:[-.\w]*)?)$/i, // Name v1.2.3
+    /^(.+?)\s*\[([^\]]+)\]$/,                        // Name [Version]
+  ];
+
+  for (const { node } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const lines = text.split('\n');
+      let found = false;
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim()
+          .replace(/^[-_\s]+/, '')
+          .replace(/[-_\s]+$/, '')
+          .replace(/^\d+\)\s*/, '');
+
+        if (!line) continue;
+        if (line.includes('   ')) continue;  // skip lines with 3+ consecutive spaces
+        if (/https?:\/\//i.test(line) || /www\./i.test(line)) continue;  // skip URLs
+        if (/(===|\*\*\*|###|\$\$\$)/.test(line)) continue;  // skip separators
+        if (line.length > 120) continue;
+        if (/^[-=*#]{3,}$/.test(line)) continue;  // pure separator lines
+
+        let name = line;
+        let version = null;
+
+        for (const pattern of VERSION_PATTERNS) {
+          const match = line.match(pattern);
+          if (match) {
+            name = match[1].trim();
+            const verStr = match[2].trim();
+            if (/\d/.test(verStr)) {
+              version = verStr;
+            }
+            break;
+          }
+        }
+
+        if (name && !seen.has(name.toLowerCase())) {
+          seen.add(name.toLowerCase());
+          entries.push({ name, version });
+          found = true;
+        }
+      }
+      if (found) parsedCount++;
+    } catch {
+      // skip
+    }
+  }
+
+  if (entries.length === 0) {
+    emit('analysis:software', null);
+    return;
+  }
+
+  emit('analysis:software', { fileCount: parsedCount, entries, totalCount: entries.length });
+}
+
+// Process list
+
+async function analyzeProcessList(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_processListHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:processList', null);
+    return;
+  }
+
+  const entries = [];
+  const seen = new Set();
+  let parsedCount = 0;
+
+  for (const { node } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const lines = text.split('\n');
+      let found = false;
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (/^[-=*#]{3,}$/.test(line)) continue;  // separators
+        if (/^(Process|Name|PID|Image)/i.test(line) && /\t/.test(line)) continue;  // header row
+
+        let name = line;
+        let pid = null;
+
+        const bracketMatch = line.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
+        if (bracketMatch) {
+          name = bracketMatch[1].trim();
+          pid = bracketMatch[2];
+        } else {
+          const parts = line.split('\t').map(p => p.trim()).filter(Boolean);
+          if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+            name = parts[0];
+            pid = parts[1];
+          } else if (parts.length === 1) {
+            name = parts[0];
+          }
+        }
+
+        name = name.replace(/^[-*•]\s+/, '').trim();
+        if (!name || name.length > 200) continue;
+
+        const key = name.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          entries.push({ name, pid });
+          found = true;
+        }
+      }
+      if (found) parsedCount++;
+    } catch {
+      // skip
+    }
+  }
+
+  if (entries.length === 0) {
+    emit('analysis:processList', null);
+    return;
+  }
+
+  emit('analysis:processList', { fileCount: parsedCount, entries, uniqueCount: entries.length });
 }
 
 // Kick off all analyses
@@ -410,6 +576,8 @@ function runAnalysis(fileTree, rootName) {
   analyzeCookies(fileTree, rootName);
   analyzeSystemInfo(fileTree, rootName);
   analyzeAutofills(fileTree, rootName);
+  analyzeSoftware(fileTree, rootName);
+  analyzeProcessList(fileTree, rootName);
   findScreenshot(fileTree, rootName);
   runFingerprint(fileTree, rootName);
 }

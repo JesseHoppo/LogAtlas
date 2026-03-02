@@ -27,6 +27,9 @@
         <button class="sidebar-nav-item" data-page="cookies" id="navCookies" disabled>Cookies</button>
         <button class="sidebar-nav-item" data-page="autofills" id="navAutofills" disabled>Autofills</button>
         <button class="sidebar-nav-item" data-page="history" id="navHistory" disabled>History</button>
+        <button class="sidebar-nav-item" data-page="domains" id="navDomains" disabled>Domains</button>
+        <button class="sidebar-nav-item" data-page="software" id="navSoftware" disabled>Software</button>
+        <button class="sidebar-nav-item" data-page="processes" id="navProcesses" disabled>Processes</button>
         <button class="sidebar-nav-item" data-page="timeline" id="navTimeline" disabled>Timeline</button>
         <button class="sidebar-nav-item" data-page="identity" id="navIdentity" disabled>Identity</button>
         <div class="sidebar-divider"></div>
@@ -296,6 +299,52 @@
           <div class="data-page-stats" id="historyStats"></div>
           <div class="data-page-content" id="historyContent">
             <div class="no-data">No history data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Domains -->
+        <div class="page" id="pageDomains">
+          <h2 class="page-title">Domain Explorer</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="domainsSummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="domainsSearch" placeholder="Search domains..." autocomplete="off" aria-label="Search domains">
+              <button class="export-btn export-btn-primary" id="exportDomainsCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-stats" id="domainsStats"></div>
+          <div class="data-page-content" id="domainsContent">
+            <div class="no-data">No domain data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Software -->
+        <div class="page" id="pageSoftware">
+          <h2 class="page-title">Installed Software</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="softwareSummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="softwareSearch" placeholder="Search software..." autocomplete="off" aria-label="Search software">
+              <button class="export-btn export-btn-primary" id="exportSoftwareCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-content" id="softwareContent">
+            <div class="no-data">No software data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Processes -->
+        <div class="page" id="pageProcesses">
+          <h2 class="page-title">Running Processes</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="processesSummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="processesSearch" placeholder="Search processes..." autocomplete="off" aria-label="Search processes">
+              <button class="export-btn export-btn-primary" id="exportProcessesCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-content" id="processesContent">
+            <div class="no-data">No process data available.</div>
           </div>
         </div>
 

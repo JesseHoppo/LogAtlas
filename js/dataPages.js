@@ -15,6 +15,8 @@ let passwordsData = { rows: [], headers: [], fileCount: 0 };
 let cookiesData = { rows: [], headers: [], fileCount: 0 };
 let autofillsData = { entries: [], fileCount: 0 };
 let historyData = { entries: [], fileCount: 0 };
+let softwareData = { entries: [], fileCount: 0, totalCount: 0 };
+let processListData = { entries: [], fileCount: 0, uniqueCount: 0 };
 
 let historySortOrder = 'none';
 
@@ -32,6 +34,12 @@ let autofillsShown = 0;
 
 let historyFiltered = [];
 let historyShown = 0;
+
+let softwareFiltered = [];
+let softwareShown = 0;
+
+let processesFiltered = [];
+let processesShown = 0;
 
 // Progressive loading helpers
 
@@ -590,6 +598,92 @@ function renderHistoryPage(searchQuery = '') {
   content.innerHTML = html;
 }
 
+// Software rendering
+
+function softwareRowBuilder({ name, version }) {
+  return `<tr><td title="${escapeHtml(name)}">${escapeHtml(name)}</td><td>${escapeHtml(version || '')}</td></tr>`;
+}
+
+function renderSoftwarePage(searchQuery = '') {
+  const summary = document.getElementById('softwareSummary');
+  const content = document.getElementById('softwareContent');
+
+  if (softwareData.entries.length === 0) {
+    summary.textContent = 'No software data found';
+    content.innerHTML = '<div class="no-data">No software data available.</div>';
+    return;
+  }
+
+  let filtered = softwareData.entries;
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(e => e.name.toLowerCase().includes(q) || (e.version && e.version.toLowerCase().includes(q)));
+  }
+
+  softwareFiltered = filtered;
+  softwareShown = Math.min(PAGE_SIZE, filtered.length);
+
+  const total = softwareData.entries.length;
+  summary.textContent = filtered.length !== total
+    ? `Showing ${filtered.length.toLocaleString()} of ${total.toLocaleString()} programs from ${softwareData.fileCount} file(s)`
+    : `${total.toLocaleString()} programs from ${softwareData.fileCount} file(s)`;
+
+  let html = '<div class="data-table-container"><table class="data-table">';
+  html += '<thead><tr><th>Software Name</th><th>Version</th></tr></thead><tbody>';
+  html += buildRowsHtml(softwareRowBuilder, softwareFiltered, 0, softwareShown);
+  html += '</tbody></table></div>';
+
+  const remaining = softwareFiltered.length - softwareShown;
+  if (remaining > 0) {
+    html += buildShowMoreButton(remaining, 'software');
+  }
+
+  content.innerHTML = html;
+}
+
+// Process list rendering
+
+function processRowBuilder({ name, pid }) {
+  return `<tr><td title="${escapeHtml(name)}">${escapeHtml(name)}</td><td>${pid ? escapeHtml(String(pid)) : ''}</td></tr>`;
+}
+
+function renderProcessesPage(searchQuery = '') {
+  const summary = document.getElementById('processesSummary');
+  const content = document.getElementById('processesContent');
+
+  if (processListData.entries.length === 0) {
+    summary.textContent = 'No process data found';
+    content.innerHTML = '<div class="no-data">No process data available.</div>';
+    return;
+  }
+
+  let filtered = processListData.entries;
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(e => e.name.toLowerCase().includes(q));
+  }
+
+  processesFiltered = filtered;
+  processesShown = Math.min(PAGE_SIZE, filtered.length);
+
+  const total = processListData.entries.length;
+  summary.textContent = filtered.length !== total
+    ? `Showing ${filtered.length.toLocaleString()} of ${total.toLocaleString()} processes from ${processListData.fileCount} file(s)`
+    : `${total.toLocaleString()} processes from ${processListData.fileCount} file(s)`;
+
+  let html = '<div class="data-table-container"><table class="data-table">';
+  html += '<thead><tr><th>Process Name</th><th>PID</th></tr></thead><tbody>';
+  html += buildRowsHtml(processRowBuilder, processesFiltered, 0, processesShown);
+  html += '</tbody></table></div>';
+
+  const remaining = processesFiltered.length - processesShown;
+  if (remaining > 0) {
+    html += buildShowMoreButton(remaining, 'processes');
+  }
+
+  content.innerHTML = html;
+}
+
 // CSV export
 
 function escapeCSV(str) {
@@ -639,6 +733,24 @@ function exportHistoryCSV() {
   downloadBlob(csv, 'history.csv', 'text/csv');
 }
 
+function exportSoftwareCSV() {
+  if (softwareData.entries.length === 0) return;
+  let csv = 'Software Name,Version\n';
+  for (const { name, version } of softwareData.entries) {
+    csv += [name, version || ''].map(escapeCSV).join(',') + '\n';
+  }
+  downloadBlob(csv, 'software.csv', 'text/csv');
+}
+
+function exportProcessesCSV() {
+  if (processListData.entries.length === 0) return;
+  let csv = 'Process Name,PID\n';
+  for (const { name, pid } of processListData.entries) {
+    csv += [name, pid || ''].map(escapeCSV).join(',') + '\n';
+  }
+  downloadBlob(csv, 'processes.csv', 'text/csv');
+}
+
 // Show-more handler appends rows to existing tbody
 
 function handleShowMore(pageId, contentEl) {
@@ -652,6 +764,10 @@ function handleShowMore(pageId, contentEl) {
     filtered = autofillsFiltered; shown = autofillsShown; rowBuilder = autofillRowBuilder;
   } else if (pageId === 'history') {
     filtered = historyFiltered; shown = historyShown; rowBuilder = historyRowBuilder;
+  } else if (pageId === 'software') {
+    filtered = softwareFiltered; shown = softwareShown; rowBuilder = softwareRowBuilder;
+  } else if (pageId === 'processes') {
+    filtered = processesFiltered; shown = processesShown; rowBuilder = processRowBuilder;
   } else {
     return;
   }
@@ -668,6 +784,8 @@ function handleShowMore(pageId, contentEl) {
   else if (pageId === 'cookies') cookiesShown = nextEnd;
   else if (pageId === 'autofills') autofillsShown = nextEnd;
   else if (pageId === 'history') historyShown = nextEnd;
+  else if (pageId === 'software') softwareShown = nextEnd;
+  else if (pageId === 'processes') processesShown = nextEnd;
 
   const btn = contentEl.querySelector('.data-show-more');
   const remaining = filtered.length - nextEnd;
@@ -772,8 +890,28 @@ function initDataPages() {
     renderHistoryPage(historySearch?.value || '');
   });
 
+  // Software search
+  const softwareSearch = document.getElementById('softwareSearch');
+  let swDebounce = null;
+  softwareSearch?.addEventListener('input', () => {
+    clearTimeout(swDebounce);
+    swDebounce = setTimeout(() => {
+      renderSoftwarePage(softwareSearch.value);
+    }, 150);
+  });
+
+  // Process search
+  const processesSearch = document.getElementById('processesSearch');
+  let prDebounce = null;
+  processesSearch?.addEventListener('input', () => {
+    clearTimeout(prDebounce);
+    prDebounce = setTimeout(() => {
+      renderProcessesPage(processesSearch.value);
+    }, 150);
+  });
+
   // Delegated show-more handlers
-  for (const id of ['passwordsContent', 'cookiesContent', 'autofillsContent', 'historyContent']) {
+  for (const id of ['passwordsContent', 'cookiesContent', 'autofillsContent', 'historyContent', 'softwareContent', 'processesContent']) {
     const el = document.getElementById(id);
     el?.addEventListener('click', (e) => {
       const btn = e.target.closest('.data-show-more');
@@ -787,6 +925,8 @@ function initDataPages() {
   document.getElementById('exportCookiesCsv')?.addEventListener('click', exportCookiesCSV);
   document.getElementById('exportAutofillsCsv')?.addEventListener('click', exportAutofillsCSV);
   document.getElementById('exportHistoryCsv')?.addEventListener('click', exportHistoryCSV);
+  document.getElementById('exportSoftwareCsv')?.addEventListener('click', exportSoftwareCSV);
+  document.getElementById('exportProcessesCsv')?.addEventListener('click', exportProcessesCSV);
 
   async function reloadData() {
     if (!state.fileTree) return;
@@ -812,6 +952,22 @@ function initDataPages() {
   on('page:cookies', () => renderCookiesPage(cookiesValidOnly?.checked || false, cookiesSessionOnly?.checked || false, cookiesSearch?.value || ''));
   on('page:autofills', () => renderAutofillsPage(autofillsSearch?.value || ''));
   on('page:history', () => renderHistoryPage(historySearch?.value || ''));
+  on('page:software', () => renderSoftwarePage(softwareSearch?.value || ''));
+  on('page:processes', () => renderProcessesPage(processesSearch?.value || ''));
+
+  on('analysis:software', (data) => {
+    if (data && data.entries.length > 0) {
+      softwareData = data;
+      document.getElementById('navSoftware').disabled = false;
+    }
+  });
+
+  on('analysis:processList', (data) => {
+    if (data && data.entries.length > 0) {
+      processListData = data;
+      document.getElementById('navProcesses').disabled = false;
+    }
+  });
 
   on('reset', () => {
     passwordsData = { rows: [], headers: [], fileCount: 0 };
@@ -823,13 +979,21 @@ function initDataPages() {
     cookiesFiltered = []; cookiesShown = 0;
     autofillsFiltered = []; autofillsShown = 0;
     historyFiltered = []; historyShown = 0;
+    softwareData = { entries: [], fileCount: 0, totalCount: 0 };
+    processListData = { entries: [], fileCount: 0, uniqueCount: 0 };
+    softwareFiltered = []; softwareShown = 0;
+    processesFiltered = []; processesShown = 0;
 
     document.getElementById('navPasswords').disabled = true;
     document.getElementById('navCookies').disabled = true;
     document.getElementById('navAutofills').disabled = true;
     document.getElementById('navHistory').disabled = true;
+    document.getElementById('navSoftware').disabled = true;
+    document.getElementById('navProcesses').disabled = true;
 
     if (passwordsSearch) passwordsSearch.value = '';
+    if (softwareSearch) softwareSearch.value = '';
+    if (processesSearch) processesSearch.value = '';
     if (cookiesSearch) cookiesSearch.value = '';
     if (autofillsSearch) autofillsSearch.value = '';
     if (historySearch) historySearch.value = '';
@@ -847,5 +1011,7 @@ function getPasswordsData() { return passwordsData; }
 function getCookiesData() { return cookiesData; }
 function getAutofillsData() { return autofillsData; }
 function getHistoryData() { return historyData; }
+function getSoftwareData() { return softwareData; }
+function getProcessListData() { return processListData; }
 
-export { initDataPages, getPasswordsData, getCookiesData, getAutofillsData, getHistoryData, escapeCSV };
+export { initDataPages, getPasswordsData, getCookiesData, getAutofillsData, getHistoryData, getSoftwareData, getProcessListData, escapeCSV };

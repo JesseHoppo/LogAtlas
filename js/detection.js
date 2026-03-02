@@ -2,6 +2,24 @@
 
 import { FILE_TYPE_PATTERNS, TEXT_EXTENSIONS } from './definitions.js';
 
+// Credits/copyright files
+
+function isLikelyCreditsFile(name) {
+  return FILE_TYPE_PATTERNS.credits.filePatterns.some(rx => rx.test(name));
+}
+
+// Installed software files
+
+function isLikelySoftwareFile(name) {
+  return FILE_TYPE_PATTERNS.software.filePatterns.some(rx => rx.test(name));
+}
+
+// Process list files
+
+function isLikelyProcessListFile(name) {
+  return FILE_TYPE_PATTERNS.processList.filePatterns.some(rx => rx.test(name));
+}
+
 // Password files
 
 function isLikelyPasswordFilename(name, parentDir) {
@@ -90,6 +108,9 @@ function applyDetectionHints(node, name, parentDir) {
   if (isLikelyCreditCardFile(name, parentDir))     { node._creditCardHint = true;   detected = true; }
   if (isLikelyCryptoWalletFile(name, parentDir))   { node._cryptoWalletHint = true; detected = true; }
   if (isLikelyMessengerFile(name, parentDir))      { node._messengerHint = true;    detected = true; }
+  if (isLikelyCreditsFile(name))                   { node._creditsFileHint = true;  detected = true; }
+  if (isLikelySoftwareFile(name))                  { node._softwareFileHint = true; detected = true; }
+  if (isLikelyProcessListFile(name))               { node._processListHint = true;  detected = true; }
   return detected;
 }
 
@@ -103,5 +124,8 @@ export {
   isLikelyCreditCardFile,
   isLikelyCryptoWalletFile,
   isLikelyMessengerFile,
+  isLikelyCreditsFile,
+  isLikelySoftwareFile,
+  isLikelyProcessListFile,
   applyDetectionHints,
 };

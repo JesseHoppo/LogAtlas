@@ -3522,6 +3522,87 @@ body {
   color: var(--text-primary);
 }
 
+/* Domain Explorer */
+
+.domain-table .domain-row {
+  cursor: pointer;
+}
+.domain-table .domain-row:hover {
+  background: var(--bg-hover);
+}
+.domain-row-expanded {
+  background: var(--bg-secondary);
+}
+.domain-name-cell {
+  font-weight: 500;
+}
+.domain-expand-icon {
+  display: inline-block;
+  width: 1em;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.domain-table .domain-detail-row td {
+  padding: 0;
+  background: var(--bg-secondary);
+}
+.domain-detail {
+  padding: 0.75rem 1rem 0.75rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.domain-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.domain-detail-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.domain-subdomain-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.domain-subdomain-tag {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+.domain-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+.domain-detail-table th {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.domain-detail-table td {
+  padding: 0.2rem 0.5rem;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.domain-detail-more {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 0.25rem 0;
+}
+
 /* Utility class for toggling visibility from JS */
 .hidden {
   display: none !important;
