@@ -93,7 +93,11 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  return { family: familyName, score, maxScore, matched };
+  const selfIdMatched = sig.selfId && sig.selfId.length > 0 &&
+    score >= W.SELF_ID && matched.length > 0 &&
+    matched.some(m => sig.selfId.some(si => si.label === m));
+
+  return { family: familyName, score, maxScore, matched, selfIdMatched };
 }
 
 // Walk the file tree and collect dirs, files, sysinfo node, and credits files.
@@ -146,7 +150,8 @@ function fingerprintStealer(ctx) {
   }
 
   let confidence;
-  if (best.pct >= CONFIDENCE_THRESHOLDS.high) confidence = 'high';
+  if (best.selfIdMatched) confidence = 'high';
+  else if (best.pct >= CONFIDENCE_THRESHOLDS.high) confidence = 'high';
   else if (best.pct >= CONFIDENCE_THRESHOLDS.medium) confidence = 'medium';
   else confidence = 'low';
 

@@ -213,6 +213,7 @@ export const SIGNATURES = {
   Stealc: {
     selfId: [
       { pattern: /stealc\s+stealer/i, label: 'Self-ID: Stealc stealer' },
+      { pattern: /STEALC/i, label: 'Self-ID: STEALC branding' },
     ],
     sysinfoFile: { pattern: /^(?:Info|system_info)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -226,7 +227,6 @@ export const SIGNATURES = {
     ],
     sysinfoContent: [
       { pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/i, label: 'Sysinfo content: Time with (sig:...) hash' },
-      { pattern: /STEALC/i, label: 'Sysinfo content: STEALC branding' },
       { pattern: /forum\.exploit\.in/i, label: 'Sysinfo content: exploit.in forum URL' },
       { pattern: /xss\.is/i, label: 'Sysinfo content: xss.is forum URL' },
     ],
