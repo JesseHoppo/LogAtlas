@@ -43,7 +43,7 @@ function isLikelyCookieFile(name, parentDir) {
 
 function isLikelySystemInfoFile(name, parentDir) {
   if (FILE_TYPE_PATTERNS.sysinfo.filePatterns.some(rx => rx.test(name))) return true;
-  if (parentDir && FILE_TYPE_PATTERNS.sysinfo.dirPatterns.some(rx => rx.test(parentDir)) && /\.txt$/i.test(name)) return true;
+  if (parentDir && FILE_TYPE_PATTERNS.sysinfo.dirPatterns.some(rx => rx.test(parentDir)) && /\.(?:txt|json)$/i.test(name)) return true;
   return false;
 }
 

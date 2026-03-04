@@ -7,7 +7,22 @@ function scoreFamily(familyName, sig, ctx) {
   let maxScore = 0;
   const matched = [];
 
-  // 1. Sysinfo filename
+  // 1. Self-identification (stealer names itself explicitly)
+  if (sig.selfId && sig.selfId.length > 0) {
+    maxScore += W.SELF_ID;
+    const allText = [ctx.sysinfoText, ctx.creditsText, ctx.passwordHeaderText].filter(Boolean).join('\n');
+    if (allText) {
+      for (const si of sig.selfId) {
+        if (si.pattern.test(allText)) {
+          score += W.SELF_ID;
+          matched.push(si.label);
+          break;
+        }
+      }
+    }
+  }
+
+  // 2. Sysinfo filename
   if (sig.sysinfoFile) {
     maxScore += sig.sysinfoFile.weight;
     if (ctx.sysinfoFilename && sig.sysinfoFile.pattern.test(ctx.sysinfoFilename)) {
@@ -16,7 +31,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 2. Sysinfo keys
+  // 3. Sysinfo keys
   for (const sk of sig.sysinfoKeys) {
     maxScore += W.SYSINFO_KEY;
     if (ctx.sysinfoKeys.some(k => sk.pattern.test(k))) {
@@ -25,7 +40,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 3. Sysinfo content patterns
+  // 4. Sysinfo content patterns
   for (const sc of sig.sysinfoContent) {
     maxScore += W.SYSINFO_CONTENT;
     if (ctx.sysinfoText && sc.pattern.test(ctx.sysinfoText)) {
@@ -34,13 +49,15 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 4. ASCII banners
+  // 5. ASCII banners (whitespace-normalized comparison)
   if (sig.asciiBanners && sig.asciiBanners.length > 0) {
     maxScore += W.ASCII_BANNER;
-    const allText = [ctx.sysinfoText, ctx.creditsText].filter(Boolean).join('\n');
+    const allText = [ctx.sysinfoText, ctx.creditsText, ctx.passwordHeaderText].filter(Boolean).join('\n');
     if (allText) {
+      const normText = allText.replace(/[ \t]+/g, ' ');
       for (const banner of sig.asciiBanners) {
-        if (allText.includes(banner)) {
+        const normBanner = banner.replace(/[ \t]+/g, ' ');
+        if (normText.includes(normBanner)) {
           score += W.ASCII_BANNER;
           matched.push(`ASCII banner: ${familyName} art detected`);
           break;
@@ -49,7 +66,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 5. Folder matches
+  // 6. Folder matches
   for (const f of sig.folders) {
     maxScore += W.FOLDER;
     if (ctx.dirs.some(d => f.pattern.test(d))) {
@@ -58,7 +75,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 6. File pattern matches
+  // 7. File pattern matches
   for (const fp of sig.files) {
     maxScore += W.FILE_PATTERN;
     if (ctx.files.some(f => fp.pattern.test(f))) {
@@ -67,7 +84,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 7. Structural tests
+  // 8. Structural tests
   for (const s of sig.structures) {
     maxScore += W.STRUCTURE;
     if (s.test(ctx.dirs, ctx.files)) {
@@ -92,7 +109,7 @@ function collectContext(node, basePath, ctx) {
     } else {
       ctx.files.push(relPath);
 
-      if (child._sysInfoHint || /^(?:information|UserInformation|system_info|Info|user_info|system|pc_info|build_info|UserInfo|_Information|identification)\.txt$/i.test(child.name)) {
+      if (child._sysInfoHint || /^(?:information|UserInformation|system_info|Info|user_info|system|pc_info|build_info|UserInfo|_Information|identification|environment)\.(?:txt|json)$/i.test(child.name)) {
         if (!ctx.sysinfoFilename) {
           ctx.sysinfoFilename = child.name;
           ctx.sysinfoNode = child;
@@ -101,6 +118,9 @@ function collectContext(node, basePath, ctx) {
 
       if (child._creditsFileHint || FILE_TYPE_PATTERNS.credits.filePatterns.some(rx => rx.test(child.name))) {
         ctx.creditsNodes.push(child);
+      }
+      if (child._passwordFileHint || /^(?:passwords?|unique[\s_-]*passwords?)\.txt$/i.test(child.name)) {
+        if (!ctx.passwordNode) ctx.passwordNode = child;
       }
     }
   }

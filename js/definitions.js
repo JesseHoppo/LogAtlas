@@ -6,6 +6,7 @@
 // Stealer signatures
 
 export const SIGNAL_WEIGHTS = {
+  SELF_ID:         10,
   SYSINFO_FILE:    5,
   SYSINFO_KEY:     3,
   SYSINFO_CONTENT: 4,
@@ -23,6 +24,9 @@ export const CONFIDENCE_THRESHOLDS = {
 
 export const SIGNATURES = {
   Vidar: {
+    selfId: [
+      { pattern: /vidar\s+stealer/i, label: 'Self-ID: Vidar stealer' },
+    ],
     sysinfoFile: { pattern: /^information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Version$/i, label: 'Sysinfo key: Version' },
@@ -59,6 +63,9 @@ export const SIGNATURES = {
   },
 
   RedLine: {
+    selfId: [
+      { pattern: /redline\s+stealer/i, label: 'Self-ID: RedLine stealer' },
+    ],
     sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Domain Name$/i, label: 'Sysinfo key: Domain Name' },
@@ -103,6 +110,9 @@ export const SIGNATURES = {
   },
 
   Rhadamanthys: {
+    selfId: [
+      { pattern: /rhadamanthys/i, label: 'Self-ID: Rhadamanthys' },
+    ],
     sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Wallpaper Hash$/i, label: 'Sysinfo key: Wallpaper Hash' },
@@ -121,6 +131,10 @@ export const SIGNATURES = {
       { pattern: /^Browser\/UA$/i, label: 'Folder: Browser/UA/' },
       { pattern: /^Browser\/Path$/i, label: 'Folder: Browser/Path/' },
       { pattern: /^Browser\/Version$/i, label: 'Folder: Browser/Version/' },
+      { pattern: /^Browser\/Logins$/i, label: 'Folder: Browser/Logins/' },
+      { pattern: /^Browser\/Credits$/i, label: 'Folder: Browser/Credits/' },
+      { pattern: /^Browser\/Download$/i, label: 'Folder: Browser/Download/' },
+      { pattern: /^Browser\/Bookmarks$/i, label: 'Folder: Browser/Bookmarks/' },
       { pattern: /^Extension$/i, label: 'Folder: Extension/' },
     ],
     files: [
@@ -128,6 +142,9 @@ export const SIGNATURES = {
       { pattern: /^keychain\.txt$/i, label: 'File: keychain.txt (macOS)' },
       { pattern: /^GoogleTokens\.txt$/i, label: 'File: GoogleTokens.txt' },
       { pattern: /^Cards\.txt$/i, label: 'File: Cards.txt' },
+      { pattern: /^Brute\.txt$/i, label: 'File: Brute.txt' },
+      { pattern: /^Environment\.txt$/i, label: 'File: Environment.txt' },
+      { pattern: /^CreditCards\.txt$/i, label: 'File: CreditCards.txt' },
     ],
     structures: [
       {
@@ -148,6 +165,10 @@ export const SIGNATURES = {
   },
 
   Lumma: {
+    selfId: [
+      { pattern: /lummac2/i, label: 'Self-ID: LummaC2' },
+      { pattern: /lumma\s+stealer/i, label: 'Self-ID: Lumma stealer' },
+    ],
     sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Traffic$/i, label: 'Sysinfo key: Traffic' },
@@ -190,7 +211,10 @@ export const SIGNATURES = {
   },
 
   Stealc: {
-    sysinfoFile: { pattern: /^Info\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    selfId: [
+      { pattern: /stealc\s+stealer/i, label: 'Self-ID: Stealc stealer' },
+    ],
+    sysinfoFile: { pattern: /^(?:Info|system_info)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Build Date$/i, label: 'Sysinfo key: Build Date' },
       { pattern: /^Elevated$/i, label: 'Sysinfo key: Elevated' },
@@ -198,22 +222,33 @@ export const SIGNATURES = {
       { pattern: /^Execution Path$/i, label: 'Sysinfo key: Execution Path' },
       { pattern: /^Running Path$/i, label: 'Sysinfo key: Running Path' },
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^Laptop$/i, label: 'Sysinfo key: Laptop' },
     ],
     sysinfoContent: [
       { pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/i, label: 'Sysinfo content: Time with (sig:...) hash' },
       { pattern: /STEALC/i, label: 'Sysinfo content: STEALC branding' },
+      { pattern: /forum\.exploit\.in/i, label: 'Sysinfo content: exploit.in forum URL' },
+      { pattern: /xss\.is/i, label: 'Sysinfo content: xss.is forum URL' },
     ],
     asciiBanners: [
       '______ ______ ______ ______ __ ______',
       '/\\ ___\\/\\ __',
     ],
-    folders: [],
+    folders: [
+      { pattern: /^cookies$/i, label: 'Folder: cookies/' },
+      { pattern: /^autofill$/i, label: 'Folder: autofill/' },
+      { pattern: /^history$/i, label: 'Folder: history/' },
+      { pattern: /^AccountTokens$/i, label: 'Folder: AccountTokens/' },
+    ],
     files: [
       { pattern: /^All Passwords\.txt$/i, label: 'File: All Passwords.txt' },
+      { pattern: /^passwords\.txt$/i, label: 'File: passwords.txt' },
       { pattern: /^Screenshot\.png$/i, label: 'File: Screenshot.png' },
+      { pattern: /^screenshot\.jpg$/i, label: 'File: screenshot.jpg' },
       { pattern: /^DomainDetect\.txt$/i, label: 'File: DomainDetect.txt (singular)' },
       { pattern: /^Software\.txt$/i, label: 'File: Software.txt' },
       { pattern: /^Processes\.txt$/i, label: 'File: Processes.txt' },
+      { pattern: /^cookie_list\.txt$/i, label: 'File: cookie_list.txt' },
     ],
     structures: [
       {
@@ -241,10 +276,20 @@ export const SIGNATURES = {
         },
         label: 'Structure: GoogleAccounts/Restore_{Browser}_{Profile}.txt',
       },
+      {
+        test: (dirs, files) => {
+          // v2 layout: cookie files named with UUIDs
+          return files.some(f => /^cookies\/cookie_[0-9a-f]{8}-/i.test(f));
+        },
+        label: 'Structure: cookies/cookie_{UUID}.txt (v2 layout)',
+      },
     ],
   },
 
   Cuckoo: {
+    selfId: [
+      { pattern: /cuckoo\s+stealer/i, label: 'Self-ID: Cuckoo stealer' },
+    ],
     sysinfoFile: { pattern: /^system_info\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Laptop$/i, label: 'Sysinfo key: Laptop' },
@@ -277,10 +322,22 @@ export const SIGNATURES = {
         },
         label: 'Structure: browsers/{browser}/{profile}/ (raw DBs)',
       },
+      {
+        test: (dirs) => {
+          // Cuckoo-specific: requires both browsers/ and keys/ dirs (distinguishes from Stealc v2)
+          const hasBrowsers = dirs.some(d => /^browsers$/i.test(d));
+          const hasKeys = dirs.some(d => /^keys$/i.test(d));
+          return hasBrowsers && hasKeys;
+        },
+        label: 'Structure: browsers/ + keys/ (Cuckoo-specific raw DB layout)',
+      },
     ],
   },
 
   MacSync: {
+    selfId: [
+      { pattern: /macsync\s+stealer/i, label: 'Self-ID: MacSync Stealer' },
+    ],
     sysinfoFile: { pattern: /^Information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Build Tag$/i, label: 'Sysinfo key: Build Tag' },
@@ -303,6 +360,9 @@ export const SIGNATURES = {
   },
 
   Raccoon: {
+    selfId: [
+      { pattern: /raccoon\s+stealer/i, label: 'Self-ID: Raccoon stealer' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Computer\s*Name$/i, label: 'Sysinfo key: Computer Name' },
@@ -344,6 +404,9 @@ export const SIGNATURES = {
   },
 
   MarsStaler: {
+    selfId: [
+      { pattern: /mars\s+stealer/i, label: 'Self-ID: Mars Stealer' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Computer\s*Name$/i, label: 'Sysinfo key: Computer Name' },
@@ -378,6 +441,9 @@ export const SIGNATURES = {
   },
 
   RisePro: {
+    selfId: [
+      { pattern: /risepro/i, label: 'Self-ID: RisePro' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Build$/i, label: 'Sysinfo key: Build' },
@@ -411,6 +477,9 @@ export const SIGNATURES = {
   },
 
   MysticStealer: {
+    selfId: [
+      { pattern: /mystic\s*stealer/i, label: 'Self-ID: Mystic Stealer' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Bot\s*ID$/i, label: 'Sysinfo key: Bot ID' },
@@ -434,6 +503,9 @@ export const SIGNATURES = {
   },
 
   AuroraStealer: {
+    selfId: [
+      { pattern: /aurora\s*stealer/i, label: 'Self-ID: Aurora Stealer' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Build$/i, label: 'Sysinfo key: Build' },
@@ -466,6 +538,10 @@ export const SIGNATURES = {
   },
 
   AtomicStealer: {
+    selfId: [
+      { pattern: /atomic\s*stealer/i, label: 'Self-ID: Atomic Stealer' },
+      { pattern: /\bamos\b/i, label: 'Self-ID: AMOS (Atomic macOS Stealer)' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Mac\s*OS\s*Version$/i, label: 'Sysinfo key: MacOS Version' },
@@ -498,6 +574,9 @@ export const SIGNATURES = {
   },
 
   WhiteSnake: {
+    selfId: [
+      { pattern: /whitesnake/i, label: 'Self-ID: WhiteSnake' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Build\s*ID$/i, label: 'Sysinfo key: Build ID' },
@@ -532,6 +611,9 @@ export const SIGNATURES = {
   },
 
   META: {
+    selfId: [
+      { pattern: /meta\s+stealer/i, label: 'Self-ID: META stealer' },
+    ],
     sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Domain\s*Name$/i, label: 'Sysinfo key: Domain Name' },
@@ -616,6 +698,10 @@ export const SIGNATURES = {
   },
 
   DarkCrystalRAT: {
+    selfId: [
+      { pattern: /darkcrystal/i, label: 'Self-ID: DarkCrystal' },
+      { pattern: /\bDCRAT\b/i, label: 'Self-ID: DCRAT' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^PC Name$/i, label: 'Sysinfo key: PC Name' },
@@ -638,6 +724,9 @@ export const SIGNATURES = {
   },
 
   Meduza: {
+    selfId: [
+      { pattern: /meduza\s+stealer/i, label: 'Self-ID: Meduza stealer' },
+    ],
     sysinfoFile: { pattern: /^UserInfo\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
@@ -662,6 +751,9 @@ export const SIGNATURES = {
   },
 
   Banshee: {
+    selfId: [
+      { pattern: /banshee\s+stealer/i, label: 'Self-ID: Banshee stealer' },
+    ],
     sysinfoFile: { pattern: /^system_information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
@@ -685,6 +777,9 @@ export const SIGNATURES = {
   },
 
   ExelaStealer: {
+    selfId: [
+      { pattern: /exelastealer/i, label: 'Self-ID: ExelaStealer' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Host Name$/i, label: 'Sysinfo key: Host Name' },
@@ -760,6 +855,9 @@ export const SIGNATURES = {
   },
 
   Skalka: {
+    selfId: [
+      { pattern: /skalka/i, label: 'Self-ID: Skalka' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Operation System$/i, label: 'Sysinfo key: Operation System' },
@@ -774,6 +872,9 @@ export const SIGNATURES = {
   },
 
   RLStealer: {
+    selfId: [
+      { pattern: /rl\s*stealer/i, label: 'Self-ID: RL Stealer' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Operating system\s*$/i, label: 'Sysinfo key: Operating system (trailing space)' },
@@ -790,6 +891,9 @@ export const SIGNATURES = {
   },
 
   Ailurophile: {
+    selfId: [
+      { pattern: /ailurophile/i, label: 'Self-ID: Ailurophile' },
+    ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^PC Type$/i, label: 'Sysinfo key: PC Type' },
@@ -808,6 +912,9 @@ export const SIGNATURES = {
   },
 
   ArechClientV2: {
+    selfId: [
+      { pattern: /arechclient/i, label: 'Self-ID: ArechClient' },
+    ],
     sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^FileLocation$/i, label: 'Sysinfo key: FileLocation' },
@@ -877,6 +984,62 @@ export const SIGNATURES = {
     ],
     structures: [],
   },
+
+  SnatchAndHub: {
+    selfId: [
+      { pattern: /SNATCH\s*(?:&|and)\s*HUB/i, label: 'Self-ID: SNATCH & HUB' },
+      { pattern: /Forzatraffic/i, label: 'Self-ID: Forzatraffic panel' },
+    ],
+    asciiBanners: [
+      'SNATCH & HUB Motherfucker',
+    ],
+    sysinfoFile: null,
+    sysinfoKeys: [],
+    sysinfoContent: [],
+    folders: [],
+    files: [
+      { pattern: /^passwords\.txt$/i, label: 'File: passwords.txt' },
+      { pattern: /^unique[\s_-]*passwords\.txt$/i, label: 'File: unique_passwords.txt' },
+      { pattern: /^domain[\s_-]*detect(?:s)?\.txt$/i, label: 'File: domain detect.txt' },
+    ],
+    structures: [],
+  },
+
+  WorldWind: {
+    sysinfoFile: { pattern: /^pc[\s_-]*info\.(?:json|txt)$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^PcName$/i, label: 'Sysinfo key: PcName' },
+      { pattern: /^Hwid$/i, label: 'Sysinfo key: Hwid' },
+      { pattern: /^IsElevator$/i, label: 'Sysinfo key: IsElevator' },
+      { pattern: /^CpuCores$/i, label: 'Sysinfo key: CpuCores' },
+    ],
+    sysinfoContent: [],
+    folders: [
+      { pattern: /^Autofill$/i, label: 'Folder: Autofill/' },
+      { pattern: /^Cookies$/i, label: 'Folder: Cookies/' },
+      { pattern: /^FBFastCheck$/i, label: 'Folder: FBFastCheck/' },
+    ],
+    files: [
+      { pattern: /^passwords\.txt$/i, label: 'File: passwords.txt' },
+      { pattern: /^pc[\s_-]*info\.(?:json|txt)$/i, label: 'File: pc_info.json' },
+    ],
+    structures: [
+      {
+        test: (dirs, files) => {
+          return files.some(f => /^FBFastCheck\/Token_EAAB\.txt$/i.test(f));
+        },
+        label: 'Structure: FBFastCheck/Token_EAAB.txt present',
+      },
+      {
+        test: (dirs, files) => {
+          const hasCookieRestore = files.some(f => /^Chrome_cookie_restore_data_\d+\.txt$/i.test(f));
+          const hasNumberedCookies = files.some(f => /^Cookies\/Chrome_\d+\.txt$/i.test(f));
+          return hasCookieRestore || hasNumberedCookies;
+        },
+        label: 'Structure: Chrome_cookie_restore_data + numbered cookies',
+      },
+    ],
+  },
 };
 
 
@@ -894,6 +1057,7 @@ export const FILE_TYPE_PATTERNS = {
       /^logins?\.(txt|tsv|csv)$/i,
       /^credentials?\.(txt|tsv|csv)$/i,
       /^keychain(?:\s*data)?\.(txt|tsv|csv)$/i,
+      /^brute\.txt$/i,
     ],
     exclusions: [
       /bruteforce/i,
@@ -905,6 +1069,8 @@ export const FILE_TYPE_PATTERNS = {
   cookie: {
     patterns: [
       /^cookies?\.(txt|tsv|csv|json)$/i,
+      /^(?:chrome|firefox|edge)[\s_-]*cookie[\s_-]*restore[\s_-]*data[\s_-]*\d*\.txt$/i,
+      /^Cookies[\s_-]*(?:JSON|Netscape)\.txt$/i,
     ],
     browserProfiles: [
       /^(?:chrome|firefox|edge|opera|brave|vivaldi|chromium)[_\s]?\d+\.txt$/i,
@@ -921,8 +1087,9 @@ export const FILE_TYPE_PATTERNS = {
       /^system[\s_-]*info(?:rmation)?\.txt$/i,
       /^system\.txt$/i,
       /^info(?:rmation)?\.txt$/i,
-      /^pc[\s_-]*info(?:rmation)?\.txt$/i,
+      /^pc[\s_-]*info(?:rmation)?\.(?:txt|json)$/i,
       /^build[\s_-]*info\.txt$/i,
+      /^environment\.txt$/i,
     ],
     dirPatterns: [
       /^system$/i,
@@ -955,8 +1122,9 @@ export const FILE_TYPE_PATTERNS = {
     filePatterns: [
       /^(?:credit[\s_-]*)?cards?\.(txt|tsv|csv)$/i,
       /^cc[\s_-]?data\.(txt|tsv|csv)$/i,
+      /^CreditCards?\.(txt|tsv|csv)$/i,
     ],
-    folderPattern: /^(?:credit[\s_-]*)?cards?$/i,
+    folderPattern: /^(?:credit[\s_-]*)?cards?|credits?$/i,
   },
 
   cryptoWallet: {
@@ -978,11 +1146,14 @@ export const FILE_TYPE_PATTERNS = {
       /^messengers?$/i,
       /^discord$/i,
       /^telegram$/i,
+      /^FBFastCheck$/i,
     ],
     filePatterns: [
       /^token[s]?\.txt$/i,
       /^discord[\s_-]*token/i,
       /^accounts\.txt$/i,
+      /^Token_EAAB\.txt$/i,
+      /^IDs\.txt$/i,
     ],
   },
 
@@ -1012,6 +1183,17 @@ export const FILE_TYPE_PATTERNS = {
       /^running\s*processes?\.txt$/i,
       /^tasklist\.txt$/i,
     ],
+  },
+
+  domainDetect: {
+    filePatterns: [
+      /^domain[\s_-]*detect(?:s)?\.txt$/i,
+    ],
+  },
+
+  downloadHistory: {
+    folderPattern: /^downloads?$/i,
+    parentDirMatch: /^Browser$/i,
   },
 };
 

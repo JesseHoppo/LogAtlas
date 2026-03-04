@@ -178,18 +178,35 @@ async function analyzeSystemInfo(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const lines = text.split('\n');
       let found = false;
 
-      for (const line of lines) {
-        const clean = line.trim().replace(/^[-*•]\s+/, '');
-        const match = clean.match(KV_PATTERN);
-        if (match) {
-          const key = match[1].trim();
-          const value = match[2].trim();
-          if (value && !merged[key]) {
-            merged[key] = value;
-            found = true;
+      // JSON sysinfo
+      if (/\.json$/i.test(node.name)) {
+        try {
+          const obj = JSON.parse(text);
+          for (const [key, value] of Object.entries(obj)) {
+            const str = Array.isArray(value) ? value.join(', ') : String(value);
+            if (str && str !== 'null' && str !== '[]' && !merged[key]) {
+              merged[key] = str;
+              found = true;
+            }
+          }
+        } catch { /* not valid JSON, try KV */ }
+      }
+
+      // KV text parsing
+      if (!found) {
+        const lines = text.split('\n');
+        for (const line of lines) {
+          const clean = line.trim().replace(/^[-*•]\s+/, '');
+          const match = clean.match(KV_PATTERN);
+          if (match) {
+            const key = match[1].trim();
+            const value = match[2].trim();
+            if (value && !merged[key]) {
+              merged[key] = value;
+              found = true;
+            }
           }
         }
       }
@@ -218,6 +235,103 @@ async function analyzeSystemInfo(fileTree, rootName) {
   }
 
   emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText });
+
+  // Extract inline software/process sections from sysinfo text
+  extractInlineSections(combinedText);
+}
+
+function extractInlineSections(text) {
+  if (!text) return;
+  const lines = text.split('\n');
+
+  const SOFTWARE_HEADER = /^Installed (?:Apps|Software|Programs)\s*:/i;
+  const PROCESS_HEADER = /^Process (?:List|es)\s*:/i;
+  const SECTION_HEADER = /^[A-Z][A-Za-z ]+:$/;
+  const SUB_HEADER = /^(?:All Users|Current User)\s*:/i;
+
+  const VERSION_PATTERNS = [
+    /^(.+?)\s*-\s*(.+)$/,
+    /^(.+?)\s*\(([^)]+)\)$/,
+    /^(.+?)\s+(v?\d+\.\d+(?:\.\d+)?(?:[-.\w]*)?)$/i,
+    /^(.+?)\s*\[([^\]]+)\]$/,
+  ];
+
+  let softwareLines = null;
+  let processLines = null;
+  let currentTarget = null;
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+
+    if (SOFTWARE_HEADER.test(trimmed)) {
+      softwareLines = [];
+      currentTarget = softwareLines;
+      continue;
+    }
+    if (PROCESS_HEADER.test(trimmed)) {
+      processLines = [];
+      currentTarget = processLines;
+      continue;
+    }
+
+    // A new top-level section header ends the current section
+    if (currentTarget && trimmed && !rawLine.startsWith('\t') && SECTION_HEADER.test(trimmed) && !SUB_HEADER.test(trimmed)) {
+      currentTarget = null;
+      continue;
+    }
+
+    // Skip sub-headers
+    if (currentTarget && SUB_HEADER.test(trimmed)) continue;
+
+    if (currentTarget && rawLine.startsWith('\t') && trimmed) {
+      currentTarget.push(trimmed);
+    }
+  }
+
+  // Parse software entries
+  if (softwareLines && softwareLines.length > 0) {
+    const entries = [];
+    const seen = new Set();
+    for (const line of softwareLines) {
+      if (line.length > 120) continue;
+      let name = line;
+      let version = null;
+      for (const pattern of VERSION_PATTERNS) {
+        const match = line.match(pattern);
+        if (match) {
+          name = match[1].trim();
+          const verStr = match[2].trim();
+          if (/\d/.test(verStr)) version = verStr;
+          break;
+        }
+      }
+      if (name && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        entries.push({ name, version });
+      }
+    }
+    if (entries.length > 0) {
+      emit('analysis:software', { fileCount: 1, entries, totalCount: entries.length, inline: true });
+    }
+  }
+
+  // Parse process list entries
+  if (processLines && processLines.length > 0) {
+    const entries = [];
+    const seen = new Set();
+    for (const line of processLines) {
+      const name = line.replace(/^[-*•]\s+/, '').trim();
+      if (!name || name.length > 200) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        entries.push({ name, pid: null });
+      }
+    }
+    if (entries.length > 0) {
+      emit('analysis:processList', { fileCount: 1, entries, uniqueCount: entries.length, inline: true });
+    }
+  }
 }
 
 function extractIOCs(sysinfoEntries, sysinfoText) {
@@ -370,7 +484,7 @@ function findScreenshot(fileTree, rootName) {
 const SYSINFO_KV = /^([A-Za-z][A-Za-z0-9 _\/-]*?)\s*[:=]\s+(.*)/;
 
 async function runFingerprint(fileTree, rootName) {
-  const ctx = { dirs: [], files: [], sysinfoFilename: null, sysinfoNode: null, sysinfoKeys: [], sysinfoText: null, creditsNodes: [], creditsText: null };
+  const ctx = { dirs: [], files: [], sysinfoFilename: null, sysinfoNode: null, sysinfoKeys: [], sysinfoText: null, creditsNodes: [], creditsText: null, passwordNode: null, passwordHeaderText: null };
 
   // If the archive has a single top-level dir, start inside it so paths match signatures
   let startNode = fileTree;
@@ -388,10 +502,22 @@ async function runFingerprint(fileTree, rootName) {
       if (content) {
         const text = new TextDecoder('utf-8').decode(content);
         ctx.sysinfoText = text;
-        for (const line of text.split('\n')) {
-          const clean = line.trim().replace(/^[-*•]\s+/, '');
-          const match = clean.match(SYSINFO_KV);
-          if (match) ctx.sysinfoKeys.push(match[1].trim());
+
+        // JSON sysinfo
+        if (/\.json$/i.test(ctx.sysinfoNode.name)) {
+          try {
+            const obj = JSON.parse(text);
+            for (const key of Object.keys(obj)) ctx.sysinfoKeys.push(key);
+          } catch { /* try KV */ }
+        }
+
+        // KV text parsing
+        if (ctx.sysinfoKeys.length === 0) {
+          for (const line of text.split('\n')) {
+            const clean = line.trim().replace(/^[-*•]\s+/, '');
+            const match = clean.match(SYSINFO_KV);
+            if (match) ctx.sysinfoKeys.push(match[1].trim());
+          }
         }
       }
     } catch {
@@ -414,6 +540,19 @@ async function runFingerprint(fileTree, rootName) {
     }
     if (creditsTexts.length > 0) {
       ctx.creditsText = creditsTexts.join('\n');
+    }
+  }
+
+  // Password file header (some stealers embed branding here)
+  if (ctx.passwordNode) {
+    try {
+      const content = await loadFileContent(ctx.passwordNode);
+      if (content) {
+        const text = new TextDecoder('utf-8').decode(content);
+        ctx.passwordHeaderText = text.slice(0, 2000);
+      }
+    } catch {
+      // skip
     }
   }
 
