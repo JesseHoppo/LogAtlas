@@ -436,10 +436,11 @@ function parseDownloadFile(text) {
         else if (/^filename$/i.test(result.headers[i])) headerMap.file = i;
         else if (/^(?:recived|received)\s*bytes$/i.test(result.headers[i])) headerMap.size = i;
       }
-      const headers = ['File Path', 'Source URL'];
+      const headers = ['File Path', 'Source URL', 'File Size'];
       const rows = result.rows.map(row => [
         row[headerMap.file ?? -1] || '',
         row[headerMap.url ?? -1] || '',
+        row[headerMap.size ?? -1] || '',
       ]);
       return { headers, rows };
     }

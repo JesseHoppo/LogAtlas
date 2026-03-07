@@ -127,21 +127,38 @@ function getMimeType(name) {
   return mimeTypes[ext] || 'application/octet-stream';
 }
 
-// JSON syntax highlighting (input must be escaped first).
+// JSON syntax highlighting from raw JSON text.
 function syntaxHighlightJSON(jsonString) {
-  const escaped = escapeHtml(jsonString);
-  return escaped
-    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, (match) => {
-      let cls = 'json-string';
-      if (/:$/.test(match)) {
-        cls = 'json-key';
-        match = match.slice(0, -1) + '<span style="color: var(--text-muted)">:</span>';
+  const source = String(jsonString);
+  const tokenPattern = /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+\.?\d*(?:[eE][+-]?\d+)?)/g;
+
+  let html = '';
+  let lastIndex = 0;
+  let match;
+
+  while ((match = tokenPattern.exec(source)) !== null) {
+    html += escapeHtml(source.slice(lastIndex, match.index));
+
+    const token = match[0];
+    if (token.startsWith('"')) {
+      if (token.endsWith(':')) {
+        html += `<span class="json-key">${escapeHtml(token.slice(0, -1))}</span><span style="color: var(--text-muted)">:</span>`;
+      } else {
+        html += `<span class="json-string">${escapeHtml(token)}</span>`;
       }
-      return `<span class="${cls}">${match}</span>`;
-    })
-    .replace(/\b(true|false)\b/g, '<span class="json-boolean">$1</span>')
-    .replace(/\b(null)\b/g, '<span class="json-null">$1</span>')
-    .replace(/\b(-?\d+\.?\d*([eE][+-]?\d+)?)\b/g, '<span class="json-number">$1</span>');
+    } else if (token === 'true' || token === 'false') {
+      html += `<span class="json-boolean">${token}</span>`;
+    } else if (token === 'null') {
+      html += `<span class="json-null">${token}</span>`;
+    } else {
+      html += `<span class="json-number">${token}</span>`;
+    }
+
+    lastIndex = match.index + token.length;
+  }
+
+  html += escapeHtml(source.slice(lastIndex));
+  return html;
 }
 
 export {

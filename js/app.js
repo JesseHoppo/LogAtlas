@@ -41,6 +41,7 @@ const pages = {
   cookies: document.getElementById('pageCookies'),
   autofills: document.getElementById('pageAutofills'),
   history: document.getElementById('pageHistory'),
+  downloads: document.getElementById('pageDownloads'),
   domains: document.getElementById('pageDomains'),
   software: document.getElementById('pageSoftware'),
   processes: document.getElementById('pageProcesses'),
@@ -61,7 +62,7 @@ function navigateToPage(pageName) {
     item.classList.toggle('active', item.dataset.page === pageName);
   }
 
-  if (['passwords', 'cookies', 'autofills', 'history', 'domains', 'software', 'processes', 'timeline', 'identity'].includes(pageName)) {
+  if (['passwords', 'cookies', 'autofills', 'history', 'downloads', 'domains', 'software', 'processes', 'timeline', 'identity'].includes(pageName)) {
     emit('page:' + pageName);
   }
 }
@@ -381,6 +382,23 @@ on('analysis:autofill', (data) => {
   body.innerHTML = html;
 });
 
+on('analysis:downloads', (data) => {
+  const section = document.getElementById('dashDownloadIntel');
+  const summaryEl = document.getElementById('dashDownloadSummary');
+  const body = document.getElementById('dashDownloadBody');
+
+  if (!data || data.totalDownloads === 0) {
+    section.classList.add('hidden');
+    body.innerHTML = '';
+    summaryEl.textContent = 'Analyzing download files...';
+    return;
+  }
+
+  section.classList.remove('hidden');
+  summaryEl.textContent = `${data.totalDownloads.toLocaleString()} download entr${data.totalDownloads === 1 ? 'y' : 'ies'} from ${data.fileCount} file(s)`;
+  renderBarList(body, data.topDomains);
+});
+
 on('analysis:fingerprint', (data) => {
   const section = document.getElementById('dashFingerprint');
   const body = document.getElementById('dashFingerprintBody');
@@ -693,7 +711,6 @@ async function handleAddMoreFiles(files) {
     document.getElementById('currentFileSize').textContent = formatBytes(totalSize);
 
     loading.classList.remove('visible');
-    runAnalysis(state.fileTree, state.rootZipName);
     emit('reanalyze');
     showNotification(`Added ${fileArray.length} file(s). Analysis updated.`, 'info');
   } catch (err) {
@@ -742,7 +759,6 @@ async function handlePasteText() {
       document.getElementById('currentFileSize').textContent = formatBytes(totalSize);
 
       loading.classList.remove('visible');
-      runAnalysis(state.fileTree, state.rootZipName);
       emit('reanalyze');
       showNotification(`Added "${fileName}". Analysis updated.`, 'info');
     } catch (err) {
@@ -839,6 +855,7 @@ function resetUI() {
   document.getElementById('dashScreenshotBody').innerHTML = '';
 
   document.getElementById('dashAutofillIntel').classList.add('hidden');
+  document.getElementById('dashDownloadIntel').classList.add('hidden');
   document.getElementById('dashDomainDetect').classList.add('hidden');
   document.getElementById('dashDomainDetectBody').innerHTML = '';
   document.getElementById('dashExtraIntel').classList.add('hidden');
@@ -846,12 +863,15 @@ function resetUI() {
   document.getElementById('dashAutofillSummary').classList.add('dash-loading');
   document.getElementById('dashAutofillSummary').textContent = 'Analyzing autofill files...';
   document.getElementById('dashAutofillBody').innerHTML = '';
+  document.getElementById('dashDownloadSummary').textContent = 'Analyzing download files...';
+  document.getElementById('dashDownloadBody').innerHTML = '';
 
   document.getElementById('navSearch').disabled = true;
   document.getElementById('navBrowser').disabled = true;
   document.getElementById('navExports').disabled = true;
   document.getElementById('navTimeline').disabled = true;
   document.getElementById('navDomains').disabled = true;
+  document.getElementById('navDownloads').disabled = true;
   document.getElementById('navSoftware').disabled = true;
   document.getElementById('navProcesses').disabled = true;
   globalSearchInput.value = '';

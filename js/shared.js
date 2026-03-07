@@ -3,6 +3,7 @@
 const MAX_SEARCH_MATCHES_PER_FILE = 5;
 const BAR_CHART_MAX_ITEMS = 10;
 const SEARCH_BATCH_SIZE = 20;
+const CHROME_EPOCH_OFFSET = 11644473600000000n;
 
 // Tree walking
 
@@ -54,6 +55,77 @@ function extractBaseDomain(domain) {
   return parts.slice(-2).join('.');
 }
 
+// Timestamp parsing
+
+function parseTimestampValue(value) {
+  if (value instanceof Date) {
+    return !isNaN(value.getTime()) ? value : null;
+  }
+  if (value == null) return null;
+
+  const str = String(value).trim();
+  if (!str || str === '0' || /^(?:session|null|undefined|nan)$/i.test(str)) return null;
+
+  if (/^\d+$/.test(str)) {
+    try {
+      const num = BigInt(str);
+      let ms;
+      if (num > 13000000000000000n) {
+        // Chrome/WebKit epoch microseconds since 1601-01-01.
+        ms = Number((num - CHROME_EPOCH_OFFSET) / 1000n);
+      } else if (num > 1000000000000n) {
+        ms = Number(num); // already ms
+      } else {
+        ms = Number(num * 1000n); // seconds
+      }
+      const date = new Date(ms);
+      if (!isNaN(date.getTime()) && date.getFullYear() > 1970 && date.getFullYear() < 3000) {
+        return date;
+      }
+    } catch {
+      // fall through to string parsing
+    }
+  }
+
+  const normalized = str.includes('T') ? str : str.replace(' ', 'T');
+  const native = new Date(normalized);
+  if (!isNaN(native.getTime()) && native.getFullYear() > 1970 && native.getFullYear() < 3000) {
+    return native;
+  }
+
+  const dmyTime = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (dmyTime) {
+    let year = Number(dmyTime[3]);
+    if (year < 100) year += 2000;
+    const date = new Date(year, Number(dmyTime[2]) - 1, Number(dmyTime[1]), Number(dmyTime[4]), Number(dmyTime[5]), Number(dmyTime[6] || 0));
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  const dmy = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (dmy) {
+    let year = Number(dmy[3]);
+    if (year < 100) year += 2000;
+    const date = new Date(year, Number(dmy[2]) - 1, Number(dmy[1]));
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  const ymd = str.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (ymd) {
+    const date = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), Number(ymd[4] || 0), Number(ymd[5] || 0), Number(ymd[6] || 0));
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  const dMonY = str.match(/^(\d{1,2})\s+(\w{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (dMonY) {
+    let year = dMonY[3];
+    if (year.length === 2) year = '20' + year;
+    const date = new Date(`${dMonY[2]} ${dMonY[1]} ${year} ${dMonY[4]}:${dMonY[5]}:${dMonY[6] || '00'}`);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  return null;
+}
+
 // Cookie validity
 
 function checkCookieValidity(expiresValue) {
@@ -61,22 +133,9 @@ function checkCookieValidity(expiresValue) {
     return { status: 'session', label: 'Session' };
   }
 
-  let expiryDate;
-  const strVal = String(expiresValue);
-
-  if (strVal.includes('-') || strVal.includes('/') || strVal.includes('Z')) {
-    const date = new Date(strVal.replace(' ', 'T'));
-    if (!isNaN(date.getTime())) {
-      expiryDate = date;
-    } else {
-      return { status: 'session', label: 'Session' };
-    }
-  } else {
-    let timestamp = parseInt(strVal, 10);
-    if (isNaN(timestamp) || timestamp <= 0) return { status: 'session', label: 'Session' };
-    if (timestamp > 9999999999) timestamp = Math.floor(timestamp / 1000);
-    expiryDate = new Date(timestamp * 1000);
-    if (isNaN(expiryDate.getTime())) return { status: 'session', label: 'Session' };
+  const expiryDate = parseTimestampValue(expiresValue);
+  if (!expiryDate) {
+    return { status: 'unknown', label: 'Unknown expiry' };
   }
 
   const now = new Date();
@@ -175,6 +234,7 @@ export {
   collectFileNodes,
   extractDomain,
   extractBaseDomain,
+  parseTimestampValue,
   checkCookieValidity,
   formatRelativeTime,
   downloadBlob,

@@ -2,9 +2,9 @@
 
 import { state, on, emit } from './state.js';
 import { loadFileContent } from './extractor.js';
-import { escapeHtml } from './utils.js';
-import { parsePasswordFile, parseCookieFile, parseHistoryFile } from './transforms.js';
-import { collectHintedNodes, checkCookieValidity, extractDomain, extractBaseDomain, formatRelativeTime, downloadBlob } from './shared.js';
+import { escapeHtml, getFileExtension, formatBytes } from './utils.js';
+import { parsePasswordFile, parseCookieFile, parseHistoryFile, parseDownloadFile } from './transforms.js';
+import { collectHintedNodes, checkCookieValidity, extractDomain, extractBaseDomain, downloadBlob, parseTimestampValue } from './shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { FIELD_PATTERNS } from './definitions.js';
 import { openColumnMapper } from './columnMapper.js';
@@ -15,10 +15,11 @@ let passwordsData = { rows: [], headers: [], fileCount: 0 };
 let cookiesData = { rows: [], headers: [], fileCount: 0 };
 let autofillsData = { entries: [], fileCount: 0 };
 let historyData = { entries: [], fileCount: 0 };
+let downloadsData = { entries: [], fileCount: 0 };
 let softwareData = { entries: [], fileCount: 0, totalCount: 0 };
 let processListData = { entries: [], fileCount: 0, uniqueCount: 0 };
 
-let historySortOrder = 'none';
+let historySort = { key: 'none', order: 'none' };
 
 const PAGE_SIZE = 200;
 
@@ -34,6 +35,9 @@ let autofillsShown = 0;
 
 let historyFiltered = [];
 let historyShown = 0;
+
+let downloadsFiltered = [];
+let downloadsShown = 0;
 
 let softwareFiltered = [];
 let softwareShown = 0;
@@ -54,6 +58,60 @@ function buildRowsHtml(rowBuilder, items, start, end) {
     html += rowBuilder(items[i]);
   }
   return html;
+}
+
+function formatTimestampDisplay(date) {
+  if (!date) return '';
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function extractDownloadExtension(filePath, sourceUrl) {
+  const candidates = [filePath, sourceUrl];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const clean = candidate.split('?')[0].split('#')[0];
+    const segment = clean.split(/[\\/]/).pop() || '';
+    const ext = getFileExtension(segment);
+    if (ext) return ext;
+  }
+  return '';
+}
+
+function parseDownloadSize(rawValue) {
+  if (rawValue == null) return { raw: '', bytes: null, display: '' };
+
+  const raw = String(rawValue).trim();
+  if (!raw) return { raw: '', bytes: null, display: '' };
+
+  const normalized = raw.replace(/,/g, '');
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*(bytes?|b|kb|mb|gb|tb)?$/i);
+  if (!match) {
+    return { raw, bytes: null, display: raw };
+  }
+
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value < 0) {
+    return { raw, bytes: null, display: raw };
+  }
+
+  const unit = (match[2] || 'bytes').toLowerCase();
+  const multipliers = {
+    b: 1,
+    byte: 1,
+    bytes: 1,
+    kb: 1024,
+    mb: 1024 ** 2,
+    gb: 1024 ** 3,
+    tb: 1024 ** 4,
+  };
+  const bytes = Math.round(value * (multipliers[unit] || 1));
+  return { raw, bytes, display: formatBytes(bytes) };
 }
 
 // Data loading
@@ -252,11 +310,13 @@ async function loadHistoryData(fileTree, rootName) {
         for (const row of parsed.rows) {
           const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
           if (!url) continue;
+          const lastVisit = lastIdx >= 0 ? (row[lastIdx] || '').trim() : '';
           entries.push({
             url,
             title: titleIdx >= 0 ? (row[titleIdx] || '').trim() : '',
             visitCount: visitsIdx >= 0 ? (parseInt(row[visitsIdx], 10) || 1) : 1,
-            lastVisit: lastIdx >= 0 ? (row[lastIdx] || '').trim() : '',
+            lastVisit,
+            lastVisitDate: parseTimestampValue(lastVisit),
             source: path
           });
         }
@@ -267,6 +327,59 @@ async function loadHistoryData(fileTree, rootName) {
   }
 
   historyData = { entries, fileCount };
+}
+
+async function loadDownloadsData(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_downloadHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    downloadsData = { entries: [], fileCount: 0 };
+    return;
+  }
+
+  const entries = [];
+  let fileCount = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseDownloadFile(text);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+
+      const fileIdx = parsed.headers.findIndex(h => /^(?:file(?:\s*path)?|filename|path|download(?:\s*path)?)$/i.test(h));
+      const urlIdx = parsed.headers.findIndex(h => /^(?:source\s*url|url|download\s*url)$/i.test(h));
+      const sizeIdx = parsed.headers.findIndex(h => /^(?:file\s*size|size|bytes|received\s*bytes|recived\s*bytes)$/i.test(h));
+
+      for (const row of parsed.rows) {
+        const filePath = (fileIdx >= 0 ? row[fileIdx] : row[0]) || '';
+        const sourceUrl = (urlIdx >= 0 ? row[urlIdx] : row[1]) || '';
+        const sizeInfo = parseDownloadSize(sizeIdx >= 0 ? row[sizeIdx] : '');
+        const domain = extractDomain(sourceUrl) || '';
+        const extension = extractDownloadExtension(filePath, sourceUrl);
+
+        if (!filePath && !sourceUrl) continue;
+        entries.push({
+          filePath: filePath.trim(),
+          sourceUrl: sourceUrl.trim(),
+          fileSizeRaw: sizeInfo.raw,
+          fileSizeBytes: sizeInfo.bytes,
+          fileSizeDisplay: sizeInfo.display,
+          domain,
+          extension,
+          source: path,
+        });
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  downloadsData = { entries, fileCount };
 }
 
 // Password visibility
@@ -296,25 +409,76 @@ function passwordRowBuilder({ row }) {
   return html;
 }
 
+function trimRootPath(path) {
+  if (!path) return '';
+  if (state.rootZipName && path.startsWith(state.rootZipName + '/')) {
+    return path.slice(state.rootZipName.length + 1);
+  }
+  return path;
+}
+
+function chooseMapperNode(nodes, fileType) {
+  if (nodes.length === 1) return Promise.resolve(nodes[0]);
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay visible';
+    overlay.innerHTML = `
+      <div class="modal modal-filetype">
+        <h3>Choose File</h3>
+        <p>Select the ${escapeHtml(fileType)} file to remap.</p>
+        <div class="filetype-options">
+          ${nodes.map(({ node, path }, index) => `
+            <button class="filetype-option" data-idx="${index}">
+              <span class="filetype-icon">${escapeHtml(node.name || `File ${index + 1}`)}</span>
+              <span class="filetype-desc">${escapeHtml(trimRootPath(path))}</span>
+            </button>
+          `).join('')}
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-cancel" id="mapperChooseCancel">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    const cleanup = (selection) => {
+      overlay.remove();
+      resolve(selection);
+    };
+
+    overlay.querySelector('.filetype-options').addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.filetype-option');
+      if (!btn) return;
+      cleanup(nodes[parseInt(btn.dataset.idx, 10)] || null);
+    });
+
+    overlay.querySelector('#mapperChooseCancel').addEventListener('click', () => cleanup(null));
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) cleanup(null);
+    });
+
+    document.body.appendChild(overlay);
+  });
+}
+
 // Generic column mapper opener for any file type
 async function openMapperForHint(hintKey, fileType) {
   const nodes = [];
   collectHintedNodes(state.fileTree, hintKey, state.rootZipName, nodes);
   if (nodes.length === 0) return;
 
-  const firstNode = nodes[0].node;
-  const content = await loadFileContent(firstNode);
+  const selected = await chooseMapperNode(nodes, fileType);
+  if (!selected) return;
+
+  const content = await loadFileContent(selected.node);
   if (!content) return;
   const text = new TextDecoder('utf-8').decode(content);
-  const fileName = nodes[0].path || firstNode.name || 'Unknown file';
+  const fileName = selected.path || selected.node.name || 'Unknown file';
 
   const config = await openColumnMapper(text, fileName, fileType);
   if (!config) return;
 
-  for (const { node } of nodes) {
-    node._parseConfig = config;
-  }
-
+  selected.node._parseConfig = config;
   emit('reanalyze');
 }
 
@@ -516,8 +680,9 @@ function renderAutofillsPage(searchQuery = '') {
   content.innerHTML = html;
 }
 
-function historyRowBuilder({ url, title, visitCount }) {
-  return `<tr><td title="${escapeHtml(url)}">${escapeHtml(url)}</td><td title="${escapeHtml(title)}">${escapeHtml(title)}</td><td>${visitCount}</td></tr>`;
+function historyRowBuilder({ url, title, visitCount, lastVisit, lastVisitDate }) {
+  const displayLastVisit = lastVisitDate ? formatTimestampDisplay(lastVisitDate) : lastVisit;
+  return `<tr><td title="${escapeHtml(url)}">${escapeHtml(url)}</td><td title="${escapeHtml(title)}">${escapeHtml(title)}</td><td>${visitCount}</td><td title="${escapeHtml(lastVisit || displayLastVisit || '')}">${escapeHtml(displayLastVisit || '')}</td></tr>`;
 }
 
 function renderHistoryPage(searchQuery = '') {
@@ -535,13 +700,21 @@ function renderHistoryPage(searchQuery = '') {
   let filtered = [...historyData.entries];
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
-    filtered = filtered.filter(e => e.url.toLowerCase().includes(q) || e.title.toLowerCase().includes(q));
+    filtered = filtered.filter(e =>
+      e.url.toLowerCase().includes(q) ||
+      e.title.toLowerCase().includes(q) ||
+      e.lastVisit.toLowerCase().includes(q)
+    );
   }
 
-  if (historySortOrder === 'desc') {
-    filtered.sort((a, b) => b.visitCount - a.visitCount);
-  } else if (historySortOrder === 'asc') {
-    filtered.sort((a, b) => a.visitCount - b.visitCount);
+  if (historySort.key === 'visits') {
+    filtered.sort((a, b) => historySort.order === 'desc' ? b.visitCount - a.visitCount : a.visitCount - b.visitCount);
+  } else if (historySort.key === 'lastVisit') {
+    filtered.sort((a, b) => {
+      const aTime = a.lastVisitDate ? a.lastVisitDate.getTime() : -Infinity;
+      const bTime = b.lastVisitDate ? b.lastVisitDate.getTime() : -Infinity;
+      return historySort.order === 'desc' ? bTime - aTime : aTime - bTime;
+    });
   }
 
   historyFiltered = filtered;
@@ -550,6 +723,7 @@ function renderHistoryPage(searchQuery = '') {
   const domainCounts = {};
   for (const { url } of historyData.entries) {
     const domain = extractBaseDomain(extractDomain(url));
+    if (!domain) continue;
     domainCounts[domain] = (domainCounts[domain] || 0) + 1;
   }
   const topDomains = Object.entries(domainCounts)
@@ -557,8 +731,14 @@ function renderHistoryPage(searchQuery = '') {
     .slice(0, 10);
 
   const uniqueDomains = Object.keys(domainCounts).length;
+  const datedEntries = historyData.entries.filter(entry => entry.lastVisitDate);
+  const mostRecent = datedEntries.length > 0
+    ? datedEntries.reduce((latest, entry) => !latest || entry.lastVisitDate > latest.lastVisitDate ? entry : latest, null)
+    : null;
 
-  summary.textContent = `${historyData.entries.length.toLocaleString()} entries from ${historyData.fileCount} file(s)`;
+  summary.textContent = filtered.length !== historyData.entries.length
+    ? `Showing ${filtered.length.toLocaleString()} of ${historyData.entries.length.toLocaleString()} entries from ${historyData.fileCount} file(s)`
+    : `${historyData.entries.length.toLocaleString()} entries from ${historyData.fileCount} file(s)`;
 
   addAdjustColumnsBtn(summary, '_historyHint', 'history');
 
@@ -567,6 +747,10 @@ function renderHistoryPage(searchQuery = '') {
       <div class="data-page-stat-value">${uniqueDomains.toLocaleString()}</div>
       <div class="data-page-stat-label">Unique Domains</div>
     </div>
+    ${mostRecent ? `<div class="data-page-stat">
+      <div class="data-page-stat-value" style="font-size:0.95rem">${escapeHtml(formatTimestampDisplay(mostRecent.lastVisitDate))}</div>
+      <div class="data-page-stat-label">Most Recent Visit</div>
+    </div>` : ''}
   `;
 
   let html = '';
@@ -584,15 +768,109 @@ function renderHistoryPage(searchQuery = '') {
     html += '</div>';
   }
 
-  const visitsSortClass = historySortOrder === 'desc' ? 'sortable sort-desc' : historySortOrder === 'asc' ? 'sortable sort-asc' : 'sortable';
+  const visitsSortClass = historySort.key === 'visits' ? `sortable sort-${historySort.order}` : 'sortable';
+  const lastVisitSortClass = historySort.key === 'lastVisit' ? `sortable sort-${historySort.order}` : 'sortable';
   html += '<div class="data-table-container"><table class="data-table" id="historyTable">';
-  html += `<thead><tr><th>URL</th><th>Title</th><th class="${visitsSortClass}" id="historyVisitsHeader">Visits</th></tr></thead><tbody>`;
+  html += `<thead><tr><th>URL</th><th>Title</th><th class="${visitsSortClass}" id="historyVisitsHeader">Visits</th><th class="${lastVisitSortClass}" id="historyLastVisitHeader">Last Visit</th></tr></thead><tbody>`;
   html += buildRowsHtml(historyRowBuilder, historyFiltered, 0, historyShown);
   html += '</tbody></table></div>';
 
   const remaining = historyFiltered.length - historyShown;
   if (remaining > 0) {
     html += buildShowMoreButton(remaining, 'history');
+  }
+
+  content.innerHTML = html;
+}
+
+function downloadsRowBuilder({ filePath, sourceUrl, fileSizeDisplay, domain, extension }) {
+  return `<tr>
+    <td title="${escapeHtml(filePath)}">${escapeHtml(filePath)}</td>
+    <td title="${escapeHtml(sourceUrl)}">${escapeHtml(sourceUrl)}</td>
+    <td title="${escapeHtml(fileSizeDisplay || '')}">${escapeHtml(fileSizeDisplay || '')}</td>
+    <td>${escapeHtml(extension || '')}</td>
+    <td>${escapeHtml(domain || '')}</td>
+  </tr>`;
+}
+
+function renderDownloadsPage(searchQuery = '') {
+  const summary = document.getElementById('downloadsSummary');
+  const stats = document.getElementById('downloadsStats');
+  const content = document.getElementById('downloadsContent');
+
+  if (downloadsData.entries.length === 0) {
+    summary.textContent = 'No downloads found';
+    stats.innerHTML = '';
+    content.innerHTML = '<div class="no-data">No download data available.</div>';
+    return;
+  }
+
+  let filtered = downloadsData.entries;
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(e =>
+      e.filePath.toLowerCase().includes(q) ||
+      e.sourceUrl.toLowerCase().includes(q) ||
+      e.fileSizeRaw.toLowerCase().includes(q) ||
+      e.fileSizeDisplay.toLowerCase().includes(q) ||
+      e.domain.toLowerCase().includes(q) ||
+      e.extension.toLowerCase().includes(q)
+    );
+  }
+
+  downloadsFiltered = filtered;
+  downloadsShown = Math.min(PAGE_SIZE, filtered.length);
+
+  const extensionCounts = {};
+  let withSourceUrl = 0;
+  let withFileSize = 0;
+  let totalKnownBytes = 0;
+  let knownSizeCount = 0;
+
+  for (const entry of downloadsData.entries) {
+    if (entry.extension) extensionCounts[entry.extension] = (extensionCounts[entry.extension] || 0) + 1;
+    if (entry.sourceUrl) withSourceUrl++;
+    if (entry.fileSizeDisplay) withFileSize++;
+    if (entry.fileSizeBytes != null) {
+      totalKnownBytes += entry.fileSizeBytes;
+      knownSizeCount++;
+    }
+  }
+
+  const topExtension = Object.entries(extensionCounts).sort((a, b) => b[1] - a[1])[0];
+  const totalKnownSizeDisplay = knownSizeCount > 0 ? formatBytes(totalKnownBytes) : '-';
+
+  summary.textContent = filtered.length !== downloadsData.entries.length
+    ? `Showing ${filtered.length.toLocaleString()} of ${downloadsData.entries.length.toLocaleString()} downloads from ${downloadsData.fileCount} file(s)`
+    : `${downloadsData.entries.length.toLocaleString()} downloads from ${downloadsData.fileCount} file(s)`;
+
+  stats.innerHTML = `
+    <div class="data-page-stat">
+      <div class="data-page-stat-value">${withSourceUrl.toLocaleString()}</div>
+      <div class="data-page-stat-label">With Source URL</div>
+    </div>
+    <div class="data-page-stat">
+      <div class="data-page-stat-value">${withFileSize.toLocaleString()}</div>
+      <div class="data-page-stat-label">With File Size</div>
+    </div>
+    <div class="data-page-stat">
+      <div class="data-page-stat-value">${escapeHtml(topExtension ? topExtension[0] : '-')}</div>
+      <div class="data-page-stat-label">Top Extension</div>
+    </div>
+    <div class="data-page-stat">
+      <div class="data-page-stat-value">${escapeHtml(totalKnownSizeDisplay)}</div>
+      <div class="data-page-stat-label">Known Total Size</div>
+    </div>
+  `;
+
+  let html = '<div class="data-table-container"><table class="data-table">';
+  html += '<thead><tr><th>File Path</th><th>Source URL</th><th>File Size</th><th>Extension</th><th>Domain</th></tr></thead><tbody>';
+  html += buildRowsHtml(downloadsRowBuilder, downloadsFiltered, 0, downloadsShown);
+  html += '</tbody></table></div>';
+
+  const remaining = downloadsFiltered.length - downloadsShown;
+  if (remaining > 0) {
+    html += buildShowMoreButton(remaining, 'downloads');
   }
 
   content.innerHTML = html;
@@ -726,11 +1004,20 @@ function exportAutofillsCSV() {
 
 function exportHistoryCSV() {
   if (historyData.entries.length === 0) return;
-  let csv = 'URL,Title,Visits\n';
-  for (const { url, title, visitCount } of historyData.entries) {
-    csv += [url, title, visitCount].map(escapeCSV).join(',') + '\n';
+  let csv = 'URL,Title,Visits,Last Visit\n';
+  for (const { url, title, visitCount, lastVisit, lastVisitDate } of historyData.entries) {
+    csv += [url, title, visitCount, lastVisitDate ? lastVisitDate.toISOString() : lastVisit].map(escapeCSV).join(',') + '\n';
   }
   downloadBlob(csv, 'history.csv', 'text/csv');
+}
+
+function exportDownloadsCSV() {
+  if (downloadsData.entries.length === 0) return;
+  let csv = 'File Path,Source URL,File Size,Extension,Domain\n';
+  for (const { filePath, sourceUrl, fileSizeRaw, fileSizeDisplay, extension, domain } of downloadsData.entries) {
+    csv += [filePath, sourceUrl, fileSizeRaw || fileSizeDisplay, extension, domain].map(escapeCSV).join(',') + '\n';
+  }
+  downloadBlob(csv, 'downloads.csv', 'text/csv');
 }
 
 function exportSoftwareCSV() {
@@ -764,6 +1051,8 @@ function handleShowMore(pageId, contentEl) {
     filtered = autofillsFiltered; shown = autofillsShown; rowBuilder = autofillRowBuilder;
   } else if (pageId === 'history') {
     filtered = historyFiltered; shown = historyShown; rowBuilder = historyRowBuilder;
+  } else if (pageId === 'downloads') {
+    filtered = downloadsFiltered; shown = downloadsShown; rowBuilder = downloadsRowBuilder;
   } else if (pageId === 'software') {
     filtered = softwareFiltered; shown = softwareShown; rowBuilder = softwareRowBuilder;
   } else if (pageId === 'processes') {
@@ -784,6 +1073,7 @@ function handleShowMore(pageId, contentEl) {
   else if (pageId === 'cookies') cookiesShown = nextEnd;
   else if (pageId === 'autofills') autofillsShown = nextEnd;
   else if (pageId === 'history') historyShown = nextEnd;
+  else if (pageId === 'downloads') downloadsShown = nextEnd;
   else if (pageId === 'software') softwareShown = nextEnd;
   else if (pageId === 'processes') processesShown = nextEnd;
 
@@ -880,13 +1170,27 @@ function initDataPages() {
     }, 150);
   });
 
-  // Sort toggle on Visits header
+  const downloadsSearch = document.getElementById('downloadsSearch');
+  let dlDebounce = null;
+  downloadsSearch?.addEventListener('input', () => {
+    clearTimeout(dlDebounce);
+    dlDebounce = setTimeout(() => {
+      renderDownloadsPage(downloadsSearch.value);
+    }, 150);
+  });
+
+  // Sort toggle on History headers
   document.getElementById('historyContent')?.addEventListener('click', (e) => {
-    const header = e.target.closest('#historyVisitsHeader');
+    const header = e.target.closest('#historyVisitsHeader, #historyLastVisitHeader');
     if (!header) return;
-    if (historySortOrder === 'none') historySortOrder = 'desc';
-    else if (historySortOrder === 'desc') historySortOrder = 'asc';
-    else historySortOrder = 'none';
+    const nextKey = header.id === 'historyLastVisitHeader' ? 'lastVisit' : 'visits';
+    if (historySort.key !== nextKey) {
+      historySort = { key: nextKey, order: 'desc' };
+    } else if (historySort.order === 'desc') {
+      historySort = { key: nextKey, order: 'asc' };
+    } else {
+      historySort = { key: 'none', order: 'none' };
+    }
     renderHistoryPage(historySearch?.value || '');
   });
 
@@ -911,7 +1215,7 @@ function initDataPages() {
   });
 
   // Delegated show-more handlers
-  for (const id of ['passwordsContent', 'cookiesContent', 'autofillsContent', 'historyContent', 'softwareContent', 'processesContent']) {
+  for (const id of ['passwordsContent', 'cookiesContent', 'autofillsContent', 'historyContent', 'downloadsContent', 'softwareContent', 'processesContent']) {
     const el = document.getElementById(id);
     el?.addEventListener('click', (e) => {
       const btn = e.target.closest('.data-show-more');
@@ -925,6 +1229,7 @@ function initDataPages() {
   document.getElementById('exportCookiesCsv')?.addEventListener('click', exportCookiesCSV);
   document.getElementById('exportAutofillsCsv')?.addEventListener('click', exportAutofillsCSV);
   document.getElementById('exportHistoryCsv')?.addEventListener('click', exportHistoryCSV);
+  document.getElementById('exportDownloadsCsv')?.addEventListener('click', exportDownloadsCSV);
   document.getElementById('exportSoftwareCsv')?.addEventListener('click', exportSoftwareCSV);
   document.getElementById('exportProcessesCsv')?.addEventListener('click', exportProcessesCSV);
 
@@ -935,7 +1240,8 @@ function initDataPages() {
       loadPasswordsData(state.fileTree, state.rootZipName),
       loadCookiesData(state.fileTree, state.rootZipName),
       loadAutofillsData(state.fileTree, state.rootZipName),
-      loadHistoryData(state.fileTree, state.rootZipName)
+      loadHistoryData(state.fileTree, state.rootZipName),
+      loadDownloadsData(state.fileTree, state.rootZipName)
     ]);
     emit('data:loaded');
 
@@ -943,6 +1249,7 @@ function initDataPages() {
     document.getElementById('navCookies').disabled = cookiesData.rows.length === 0;
     document.getElementById('navAutofills').disabled = autofillsData.entries.length === 0;
     document.getElementById('navHistory').disabled = historyData.entries.length === 0;
+    document.getElementById('navDownloads').disabled = downloadsData.entries.length === 0;
   }
 
   on('extracted', reloadData);
@@ -952,6 +1259,7 @@ function initDataPages() {
   on('page:cookies', () => renderCookiesPage(cookiesValidOnly?.checked || false, cookiesSessionOnly?.checked || false, cookiesSearch?.value || ''));
   on('page:autofills', () => renderAutofillsPage(autofillsSearch?.value || ''));
   on('page:history', () => renderHistoryPage(historySearch?.value || ''));
+  on('page:downloads', () => renderDownloadsPage(downloadsSearch?.value || ''));
   on('page:software', () => renderSoftwarePage(softwareSearch?.value || ''));
   on('page:processes', () => renderProcessesPage(processesSearch?.value || ''));
 
@@ -974,11 +1282,13 @@ function initDataPages() {
     cookiesData = { rows: [], headers: [], fileCount: 0 };
     autofillsData = { entries: [], fileCount: 0 };
     historyData = { entries: [], fileCount: 0 };
-    historySortOrder = 'none';
+    downloadsData = { entries: [], fileCount: 0 };
+    historySort = { key: 'none', order: 'none' };
     passwordsFiltered = []; passwordsShown = 0;
     cookiesFiltered = []; cookiesShown = 0;
     autofillsFiltered = []; autofillsShown = 0;
     historyFiltered = []; historyShown = 0;
+    downloadsFiltered = []; downloadsShown = 0;
     softwareData = { entries: [], fileCount: 0, totalCount: 0 };
     processListData = { entries: [], fileCount: 0, uniqueCount: 0 };
     softwareFiltered = []; softwareShown = 0;
@@ -988,6 +1298,7 @@ function initDataPages() {
     document.getElementById('navCookies').disabled = true;
     document.getElementById('navAutofills').disabled = true;
     document.getElementById('navHistory').disabled = true;
+    document.getElementById('navDownloads').disabled = true;
     document.getElementById('navSoftware').disabled = true;
     document.getElementById('navProcesses').disabled = true;
 
@@ -997,6 +1308,7 @@ function initDataPages() {
     if (cookiesSearch) cookiesSearch.value = '';
     if (autofillsSearch) autofillsSearch.value = '';
     if (historySearch) historySearch.value = '';
+    if (downloadsSearch) downloadsSearch.value = '';
     if (cookiesValidOnly) cookiesValidOnly.checked = false;
     if (cookiesSessionOnly) cookiesSessionOnly.checked = false;
     if (passwordsHideCb) passwordsHideCb.checked = true;
@@ -1011,7 +1323,8 @@ function getPasswordsData() { return passwordsData; }
 function getCookiesData() { return cookiesData; }
 function getAutofillsData() { return autofillsData; }
 function getHistoryData() { return historyData; }
+function getDownloadsData() { return downloadsData; }
 function getSoftwareData() { return softwareData; }
 function getProcessListData() { return processListData; }
 
-export { initDataPages, getPasswordsData, getCookiesData, getAutofillsData, getHistoryData, getSoftwareData, getProcessListData, escapeCSV };
+export { initDataPages, getPasswordsData, getCookiesData, getAutofillsData, getHistoryData, getDownloadsData, getSoftwareData, getProcessListData, escapeCSV };

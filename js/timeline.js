@@ -2,7 +2,7 @@
 
 import { state, on } from './state.js';
 import { getCookiesData, getHistoryData, escapeCSV } from './dataPages.js';
-import { extractBaseDomain, extractDomain, collectFileNodes, downloadBlob } from './shared.js';
+import { extractBaseDomain, extractDomain, collectFileNodes, downloadBlob, parseTimestampValue } from './shared.js';
 import { escapeHtml } from './utils.js';
 import { CAPTURE_TIME_KEYS, IGNORE_DATE_KEYS, FIELD_PATTERNS, LIMITS } from './definitions.js';
 
@@ -17,84 +17,6 @@ const CATEGORIES = {
   cookie:  { label: 'Cookies', badgeClass: 'timeline-event-badge-cookie' },
   history: { label: 'History', badgeClass: 'timeline-event-badge-history' },
 };
-
-// Best-effort parser for loose date strings from sysinfo.
-function parseLooseDate(str) {
-  if (!str) return null;
-  const trimmed = str.trim();
-
-  // Try native Date parse first (handles ISO, RFC 2822, "Jan 18 2026", etc.)
-  const d = new Date(trimmed);
-  if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return d;
-
-  // DD/MM/YYYY HH:MM:SS or DD.MM.YYYY HH:MM:SS or DD-MM-YYYY HH:MM:SS
-  const dmyTime = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (dmyTime) {
-    let year = +dmyTime[3];
-    if (year < 100) year += 2000;
-    const test = new Date(year, +dmyTime[2] - 1, +dmyTime[1], +dmyTime[4], +dmyTime[5], +(dmyTime[6] || 0));
-    if (!isNaN(test.getTime())) return test;
-  }
-
-  // DD/MM/YYYY (date only)
-  const dmy = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
-  if (dmy) {
-    let year = +dmy[3];
-    if (year < 100) year += 2000;
-    const test = new Date(year, +dmy[2] - 1, +dmy[1]);
-    if (!isNaN(test.getTime())) return test;
-  }
-
-  // YYYY/MM/DD or YYYY-MM-DD (with optional time)
-  const ymd = trimmed.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-  if (ymd) {
-    const test = new Date(+ymd[1], +ymd[2] - 1, +ymd[3], +(ymd[4] || 0), +(ymd[5] || 0), +(ymd[6] || 0));
-    if (!isNaN(test.getTime())) return test;
-  }
-
-  // "07 Jan 26 15:03" - DD Mon YY HH:MM
-  const dMonY = trimmed.match(/^(\d{1,2})\s+(\w{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (dMonY) {
-    let yearStr = dMonY[3];
-    if (yearStr.length === 2) yearStr = '20' + yearStr;
-    const test = new Date(`${dMonY[2]} ${dMonY[1]} ${yearStr} ${dMonY[4]}:${dMonY[5]}:${dMonY[6] || '00'}`);
-    if (!isNaN(test.getTime())) return test;
-  }
-
-  return null;
-}
-
-// Parse lastVisit handles epoch seconds, ms, or ISO strings.
-function parseTimestamp(val) {
-  if (!val) return null;
-  const str = String(val).trim();
-  if (!str) return null;
-
-  // ISO string
-  if (str.includes('-') || str.includes('T') || str.includes('Z')) {
-    const d = new Date(str.replace(' ', 'T'));
-    if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return d;
-  }
-
-  // Numeric
-  const num = Number(str);
-  if (!isNaN(num) && num > 0) {
-    let ms;
-    if (num > 13000000000000000) {
-      // Chrome epoch (microseconds since 1601)
-      const offset = 11644473600000000;
-      ms = (num - offset) / 1000;
-    } else if (num > 1e12) {
-      ms = num; // already ms
-    } else {
-      ms = num * 1000; // seconds
-    }
-    const d = new Date(ms);
-    if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return d;
-  }
-
-  return null;
-}
 
 function formatDate(date) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -125,7 +47,7 @@ function extractStealerEvents(entries) {
   for (const [key, value] of Object.entries(entries)) {
     if (IGNORE_DATE_KEYS.some(rx => rx.test(key))) continue;
     if (CAPTURE_TIME_KEYS.some(rx => rx.test(key))) {
-      const date = parseLooseDate(value);
+      const date = parseTimestampValue(value);
       if (date) {
         let detail = `${key}: ${value}`;
         if (timezone) detail += ` (${timezone})`;
@@ -218,7 +140,7 @@ function extractCookieEvents(cookiesData) {
     // Parse expiration date
     const expiresIdx = headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
     if (expiresIdx >= 0) {
-      const expiresDate = parseTimestamp(row[expiresIdx]);
+      const expiresDate = parseTimestampValue(row[expiresIdx]);
       if (expiresDate) {
         if (!entry.earliestExpiry || expiresDate < entry.earliestExpiry) entry.earliestExpiry = expiresDate;
         if (!entry.latestExpiry || expiresDate > entry.latestExpiry) entry.latestExpiry = expiresDate;
@@ -259,7 +181,7 @@ function extractHistoryEvents(historyData) {
   // Collect entries that have parseable timestamps
   const dated = [];
   for (const entry of historyData.entries) {
-    const d = parseTimestamp(entry.lastVisit);
+    const d = entry.lastVisitDate || parseTimestampValue(entry.lastVisit);
     if (d) {
       dated.push({ ...entry, _date: d });
     }

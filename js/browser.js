@@ -442,7 +442,7 @@ async function exportSelectedZip() {
           const text = decoder.decode(content);
           let parsed = null;
           if (node._cookieFileHint) {
-            parsed = parseCookieFile(text);
+            parsed = parseCookieFile(text, node._parseConfig || null);
           } else {
             parsed = parsePasswordFile(text, node._parseConfig || null);
           }

@@ -150,9 +150,9 @@ function performSearch(query) {
     if (ext === 'json') {
       try {
         const parsed = JSON.parse(currentDecodedText);
-        formattedContent = syntaxHighlightJSON(escapeHtml(JSON.stringify(parsed, null, 2)));
+        formattedContent = syntaxHighlightJSON(JSON.stringify(parsed, null, 2));
       } catch (_) {
-        formattedContent = syntaxHighlightJSON(formattedContent);
+        formattedContent = syntaxHighlightJSON(currentDecodedText);
       }
     }
     textContent.innerHTML = formattedContent;
@@ -177,9 +177,9 @@ function performSearch(query) {
     if (ext === 'json') {
       try {
         const parsed = JSON.parse(currentDecodedText);
-        formattedContent = syntaxHighlightJSON(escapeHtml(JSON.stringify(parsed, null, 2)));
+        formattedContent = syntaxHighlightJSON(JSON.stringify(parsed, null, 2));
       } catch (_) {
-        formattedContent = syntaxHighlightJSON(formattedContent);
+        formattedContent = syntaxHighlightJSON(currentDecodedText);
       }
     }
     textContent.innerHTML = formattedContent;
@@ -242,9 +242,9 @@ function renderTextPreview(content, fileName, showAll = false) {
   if (ext === 'json') {
     try {
       const formatted = JSON.stringify(JSON.parse(content), null, 2);
-      formattedContent = syntaxHighlightJSON(showAll ? escapeHtml(formatted) : escapeHtml(formatted.split('\n').slice(0, LINE_CAP).join('\n')));
+      formattedContent = syntaxHighlightJSON(showAll ? formatted : formatted.split('\n').slice(0, LINE_CAP).join('\n'));
     } catch (_) {
-      formattedContent = syntaxHighlightJSON(escapeHtml(displayContent));
+      formattedContent = syntaxHighlightJSON(displayContent);
     }
   }
 
@@ -521,7 +521,7 @@ async function showPreview(name, size, pathSegments) {
           addTransformButton(false);
         }
       } else if (node._cookieFileHint) {
-        const parsed = parseCookieFile(text);
+        const parsed = parseCookieFile(text, node._parseConfig || null);
         if (parsed && parsed.rows.length > 0) {
           currentParsedData = parsed;
           addTransformButton(true);

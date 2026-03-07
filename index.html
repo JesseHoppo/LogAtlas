@@ -27,6 +27,7 @@
         <button class="sidebar-nav-item" data-page="cookies" id="navCookies" disabled>Cookies</button>
         <button class="sidebar-nav-item" data-page="autofills" id="navAutofills" disabled>Autofills</button>
         <button class="sidebar-nav-item" data-page="history" id="navHistory" disabled>History</button>
+        <button class="sidebar-nav-item" data-page="downloads" id="navDownloads" disabled>Downloads</button>
         <button class="sidebar-nav-item" data-page="domains" id="navDomains" disabled>Domains</button>
         <button class="sidebar-nav-item" data-page="software" id="navSoftware" disabled>Software</button>
         <button class="sidebar-nav-item" data-page="processes" id="navProcesses" disabled>Processes</button>
@@ -145,6 +146,12 @@
             <div class="dash-section-title">Autofill Data</div>
             <div class="dash-section-subtitle dash-loading" id="dashAutofillSummary">Analyzing autofill files...</div>
             <div id="dashAutofillBody"></div>
+          </div>
+
+          <div class="dash-section hidden" id="dashDownloadIntel">
+            <div class="dash-section-title">Download Activity</div>
+            <div class="dash-section-subtitle" id="dashDownloadSummary">Analyzing download files...</div>
+            <div class="dash-bar-list" id="dashDownloadBody"></div>
           </div>
 
           <!-- Domain detect (hidden until data arrives) -->
@@ -305,6 +312,22 @@
           <div class="data-page-stats" id="historyStats"></div>
           <div class="data-page-content" id="historyContent">
             <div class="no-data">No history data available.</div>
+          </div>
+        </div>
+
+        <!-- Page: Downloads -->
+        <div class="page" id="pageDownloads">
+          <h2 class="page-title">Downloads</h2>
+          <div class="data-page-header">
+            <div class="data-page-summary" id="downloadsSummary">Loading...</div>
+            <div class="data-page-actions">
+              <input type="text" class="data-page-search" id="downloadsSearch" placeholder="Search downloads..." autocomplete="off" aria-label="Search downloads">
+              <button class="export-btn export-btn-primary" id="exportDownloadsCsv">Download CSV</button>
+            </div>
+          </div>
+          <div class="data-page-stats" id="downloadsStats"></div>
+          <div class="data-page-content" id="downloadsContent">
+            <div class="no-data">No download data available.</div>
           </div>
         </div>
 

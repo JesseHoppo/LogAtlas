@@ -2576,6 +2576,10 @@ body {
   background: var(--bg-tertiary);
   color: var(--text-muted);
 }
+.validity-badge-unknown {
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--warning);
+}
 
 /* Session cookie badges and stats */
 .cookie-auth {
