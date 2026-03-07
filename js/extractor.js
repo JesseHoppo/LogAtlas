@@ -448,6 +448,7 @@ function applyManualType(node, fileType) {
   delete node._creditsFileHint;
   delete node._softwareFileHint;
   delete node._processListHint;
+  delete node._clipboardHint;
   delete node._parseConfig;
 
   switch (fileType) {

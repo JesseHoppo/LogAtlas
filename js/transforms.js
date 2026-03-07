@@ -366,14 +366,40 @@ function parseHistoryFile(text, config) {
   // If explicit config from column mapper, use it directly
   if (config) return parseWithConfig(clean, config);
 
+  const normalized = normalizeSeparators(clean);
+
   // Try structured delimited detection first
-  const format = detectFormat(clean);
+  const format = detectFormat(normalized);
   if (format && format.type === 'delimited') {
-    return parseDelimited(clean, format);
+    return parseDelimited(normalized, format);
+  }
+
+  // Block format (URL/TITLE/TIME or URL/Title/Visit Count blocks)
+  if (format && format.type === 'block') {
+    const result = parseBlocks(normalized, format.headers);
+    if (result && result.rows.length > 0) {
+      // Normalize header names to standard form
+      const headerMap = { headers: [], indices: {} };
+      for (let i = 0; i < result.headers.length; i++) {
+        const h = result.headers[i].toLowerCase();
+        if (/^url$/i.test(result.headers[i])) headerMap.indices.url = i;
+        else if (/^title$/i.test(result.headers[i])) headerMap.indices.title = i;
+        else if (/^(?:time|last\s*visit|date)$/i.test(result.headers[i])) headerMap.indices.time = i;
+        else if (/^visit\s*count$/i.test(result.headers[i])) headerMap.indices.visits = i;
+      }
+      const headers = ['URL', 'Title', 'Visits', 'Last Visit'];
+      const rows = result.rows.map(row => [
+        row[headerMap.indices.url ?? -1] || '',
+        row[headerMap.indices.title ?? -1] || '',
+        row[headerMap.indices.visits ?? -1] || '1',
+        row[headerMap.indices.time ?? -1] || '',
+      ]);
+      return { headers, rows };
+    }
   }
 
   // Fallback: line-by-line URL extraction
-  const lines = clean.split('\n').map(l => l.trim()).filter(l => l);
+  const lines = normalized.split('\n').map(l => l.trim()).filter(l => l);
   const rows = [];
   for (const line of lines) {
     if (/^https?:\/\//i.test(line)) {
@@ -391,15 +417,36 @@ function parseHistoryFile(text, config) {
 
 function parseDownloadFile(text) {
   const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const normalized = normalizeSeparators(clean);
 
   // Try structured delimited detection first
-  const format = detectFormat(clean);
+  const format = detectFormat(normalized);
   if (format && format.type === 'delimited') {
-    return parseDelimited(clean, format);
+    return parseDelimited(normalized, format);
+  }
+
+  // Block format (URL/Filename/Recived bytes blocks)
+  if (format && format.type === 'block') {
+    const result = parseBlocks(normalized, format.headers);
+    if (result && result.rows.length > 0) {
+      const headerMap = {};
+      for (let i = 0; i < result.headers.length; i++) {
+        const h = result.headers[i].toLowerCase();
+        if (/^url$/i.test(result.headers[i])) headerMap.url = i;
+        else if (/^filename$/i.test(result.headers[i])) headerMap.file = i;
+        else if (/^(?:recived|received)\s*bytes$/i.test(result.headers[i])) headerMap.size = i;
+      }
+      const headers = ['File Path', 'Source URL'];
+      const rows = result.rows.map(row => [
+        row[headerMap.file ?? -1] || '',
+        row[headerMap.url ?? -1] || '',
+      ]);
+      return { headers, rows };
+    }
   }
 
   // Paired-line format: filepath on one line, URL on next, separated by blank lines
-  const lines = clean.split('\n');
+  const lines = normalized.split('\n');
   const rows = [];
   let i = 0;
   while (i < lines.length) {

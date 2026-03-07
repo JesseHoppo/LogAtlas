@@ -303,6 +303,34 @@ on('analysis:sysinfo', (data) => {
   }
 });
 
+on('analysis:clipboard', (data) => {
+  if (!data || !data.entries || data.entries.length === 0) return;
+  const iocSection = document.getElementById('dashIOCs');
+  const iocBody = document.getElementById('dashIOCBody');
+  iocSection.classList.remove('hidden');
+
+  const items = [];
+  for (const entry of data.entries) {
+    if (entry.urls.length > 0) {
+      for (const url of entry.urls) {
+        items.push({ label: 'Clipboard URL', value: url });
+      }
+    } else if (entry.text.length <= 500) {
+      items.push({ label: 'Clipboard', value: entry.text });
+    }
+  }
+  if (items.length === 0) return;
+
+  const html = items.map(ioc =>
+    `<div class="dash-ioc-item">
+      <span class="dash-ioc-label">${escapeHtml(ioc.label)}</span>
+      <span class="dash-ioc-value">${escapeHtml(ioc.value)}</span>
+      <button class="dash-ioc-copy" title="Copy" data-copy="${escapeAttr(ioc.value)}">Copy</button>
+    </div>`
+  ).join('');
+  iocBody.insertAdjacentHTML('beforeend', html);
+});
+
 on('analysis:autofill', (data) => {
   const section = document.getElementById('dashAutofillIntel');
   const summaryEl = document.getElementById('dashAutofillSummary');

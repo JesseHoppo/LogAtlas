@@ -175,44 +175,68 @@ export const SIGNATURES = {
     selfId: [
       { pattern: /lummac2/i, label: 'Self-ID: LummaC2' },
       { pattern: /lumma\s+stealer/i, label: 'Self-ID: Lumma stealer' },
+      { pattern: /lumma\s*id/i, label: 'Self-ID: Lumma ID' },
     ],
-    sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoFile: { pattern: /^System\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
-      { pattern: /^Traffic$/i, label: 'Sysinfo key: Traffic' },
-      { pattern: /^Version Build$/i, label: 'Sysinfo key: Version Build' },
-      { pattern: /^Log date$/i, label: 'Sysinfo key: Log date' },
+      { pattern: /^LummaC2 Build$/i, label: 'Sysinfo key: LummaC2 Build' },
+      { pattern: /^LID$/i, label: 'Sysinfo key: LID' },
+      { pattern: /^Configuration$/i, label: 'Sysinfo key: Configuration' },
+      { pattern: /^Local Date$/i, label: 'Sysinfo key: Local Date' },
+      { pattern: /^Elevated$/i, label: 'Sysinfo key: Elevated' },
+      { pattern: /^NetBIOS$/i, label: 'Sysinfo key: NetBIOS' },
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
     ],
     sysinfoContent: [
       { pattern: /LummaC2/i, label: 'Sysinfo content: LummaC2 branding' },
-      { pattern: /\bLID:\s*/i, label: 'Sysinfo content: LID field' },
-      { pattern: /Configuration:\s*/i, label: 'Sysinfo content: Configuration field' },
+      { pattern: /LID[\s(]*/i, label: 'Sysinfo content: LID field' },
+      { pattern: /@lummanowork/i, label: 'Sysinfo content: @lummanowork contact' },
+      { pattern: /lummamarketplace/i, label: 'Sysinfo content: lummamarketplace' },
+      { pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/i, label: 'Sysinfo content: Time with (sig:...) hash' },
     ],
     folders: [
-      { pattern: /^Browser$/i, label: 'Folder: Browser/' },
-      { pattern: /^Browser\/AutoFills$/i, label: 'Folder: Browser/AutoFills/' },
-      { pattern: /^Browser\/CreditCards$/i, label: 'Folder: Browser/CreditCards/' },
-      { pattern: /^Messengers$/i, label: 'Folder: Messengers/' },
-      { pattern: /^Messengers\/Discord$/i, label: 'Folder: Messengers/Discord/' },
+      { pattern: /^Chrome$/i, label: 'Folder: Chrome/' },
+      { pattern: /^Edge$/i, label: 'Folder: Edge/' },
+      { pattern: /^Cookies$/i, label: 'Folder: Cookies/' },
+      { pattern: /^GoogleAccounts$/i, label: 'Folder: GoogleAccounts/' },
+      { pattern: /^Applications$/i, label: 'Folder: Applications/' },
+      { pattern: /^Wallets$/i, label: 'Folder: Wallets/' },
+      { pattern: /^Important Files$/i, label: 'Folder: Important Files/' },
     ],
     files: [
-      { pattern: /^CreditCards\.txt$/i, label: 'File: CreditCards.txt (root)' },
+      { pattern: /^All Passwords\.txt$/i, label: 'File: All Passwords.txt' },
+      { pattern: /^Brute\.txt$/i, label: 'File: Brute.txt' },
       { pattern: /^Clipboard\.txt$/i, label: 'File: Clipboard.txt' },
+      { pattern: /^DomainDetect\.txt$/i, label: 'File: DomainDetect.txt' },
+      { pattern: /^Software\.txt$/i, label: 'File: Software.txt' },
+      { pattern: /^Processes\.txt$/i, label: 'File: Processes.txt' },
+      { pattern: /^Screen\.png$/i, label: 'File: Screen.png' },
     ],
     structures: [
       {
-        test: (dirs, files) => {
-          return files.some(f => /Cookies\/[^/]+_\[[a-z0-9]{5}\]\.txt$/i.test(f));
+        test: (dirs) => {
+          return dirs.some(d => /^Chrome\/[^/]+$/i.test(d)) ||
+                 dirs.some(d => /^Edge\/[^/]+$/i.test(d));
         },
-        label: 'Structure: cookie files with _[5char] hash suffix',
+        label: 'Structure: Chrome/Edge as top-level dirs with profiles',
       },
       {
         test: (dirs, files) => {
-          const hasBrowser = dirs.some(d => /^Browser$/i.test(d));
-          const hasMessengers = dirs.some(d => /^Messengers$/i.test(d));
-          const noFingerPrint = !dirs.some(d => /^Browser\/FingerPrint$/i.test(d));
-          return hasBrowser && hasMessengers && noFingerPrint;
+          return files.some(f => /^(?:Chrome|Edge|Firefox|Opera|Brave)\/Debug\.txt$/i.test(f));
         },
-        label: 'Structure: Browser/ + Messengers/ without FingerPrint',
+        label: 'Structure: Debug.txt inside browser dirs',
+      },
+      {
+        test: (dirs, files) => {
+          return files.some(f => /^Cookies\/Cookies_/i.test(f));
+        },
+        label: 'Structure: Cookies/Cookies_{Browser}_{Profile}.txt',
+      },
+      {
+        test: (dirs, files) => {
+          return files.some(f => /^GoogleAccounts\/Restore_/i.test(f));
+        },
+        label: 'Structure: GoogleAccounts/Restore_{Browser}_{Profile}.txt',
       },
     ],
   },
@@ -232,6 +256,7 @@ export const SIGNATURES = {
       { pattern: /^Running Path$/i, label: 'Sysinfo key: Running Path' },
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
       { pattern: /^Laptop$/i, label: 'Sysinfo key: Laptop' },
+      { pattern: /^Build ID$/i, label: 'Sysinfo key: Build ID' },
     ],
     sysinfoContent: [
       { pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/i, label: 'Sysinfo content: Time with (sig:...) hash' },
@@ -1168,6 +1193,7 @@ export const FILE_TYPE_PATTERNS = {
   cookie: {
     patterns: [
       /^cookies?\.(txt|tsv|csv|json)$/i,
+      /^cookies?[\s_-]*dev\.(txt|tsv|csv)$/i,
       /^(?:chrome|firefox|edge)[\s_-]*cookie[\s_-]*restore[\s_-]*data[\s_-]*\d*\.txt$/i,
       /^Cookies[\s_-]*(?:JSON|Netscape)\.txt$/i,
     ],
@@ -1215,7 +1241,7 @@ export const FILE_TYPE_PATTERNS = {
   },
 
   screenshot: {
-    namePattern: /(?:^|[\s_-])screenshots?\b/i,
+    namePattern: /(?:^|[\s_-])(?:screenshots?|screen)\b/i,
     extensions: /\.(jpg|jpeg|png|bmp|gif|webp)$/i,
   },
 
@@ -1250,6 +1276,8 @@ export const FILE_TYPE_PATTERNS = {
       /^FBFastCheck$/i,
       /^Email\s*Clients?$/i,
       /^Outlook/i,
+      /^Steam$/i,
+      /^AnyDesk$/i,
     ],
     filePatterns: [
       /^token[s]?\.txt$/i,
@@ -1258,6 +1286,13 @@ export const FILE_TYPE_PATTERNS = {
       /^Token_EAAB\.txt$/i,
       /^IDs\.txt$/i,
       /^steam[\s_-]*tokens?\.txt$/i,
+      /^(?:system|service|user)\.conf$/i,
+    ],
+  },
+
+  clipboard: {
+    filePatterns: [
+      /^clipboard\.txt$/i,
     ],
   },
 
@@ -1395,13 +1430,14 @@ export const IOC_KEY_MAP = [
   { label: 'City', patterns: [/^city$/i] },
   { label: 'HWID', patterns: [/^hwid$/i, /^machine\s*id$/i, /^machineid$/i, /^hardware\s*uuid$/i] },
   { label: 'GUID', patterns: [/^guid$/i] },
-  { label: 'Computer Name', patterns: [/^computer\s*name$/i, /^netbios\s*name$/i, /^netbios$/i] },
-  { label: 'User Name', patterns: [/^user\s*name$/i, /^username$/i] },
+  { label: 'Computer Name', patterns: [/^computer\s*name$/i, /^computer$/i, /^hostname$/i, /^netbios\s*name$/i, /^netbios$/i, /^pc$/i] },
+  { label: 'User Name', patterns: [/^user\s*name$/i, /^username$/i, /^user$/i] },
+  { label: 'Log ID', patterns: [/^lid$/i] },
   { label: 'OS', patterns: [/^os$/i, /^windows$/i, /^system\s*version$/i, /^os\s*version$/i, /^mac\s*os\s*version$/i] },
   { label: 'Malware Path', patterns: [/^running\s*path$/i, /^execution\s*path$/i, /^path$/i, /^work\s*dir$/i] },
-  { label: 'Build ID', patterns: [/^build$/i, /^build\s*id$/i, /^build\s*tag$/i, /^version\s*build$/i, /^version$/i] },
-  { label: 'Log Date', patterns: [/^date$/i, /^log\s*date$/i, /^system\s*date$/i, /^local\s*time$/i, /^current\s*time$/i, /^time$/i] },
-  { label: 'Antivirus', patterns: [/^antivirus$/i, /^av$/i, /^installed\s*av$/i] },
+  { label: 'Build ID', patterns: [/^build$/i, /^build\s*id$/i, /^build\s*tag$/i, /^version\s*build$/i, /^version$/i, /^lummac2\s*build$/i, /^build\s*date$/i] },
+  { label: 'Log Date', patterns: [/^date$/i, /^log\s*date$/i, /^system\s*date$/i, /^local\s*date$/i, /^local\s*time$/i, /^current\s*time$/i, /^time$/i] },
+  { label: 'Antivirus', patterns: [/^antivirus$/i, /^anti\s*virus$/i, /^av$/i, /^installed\s*av$/i] },
   { label: 'Product Key', patterns: [/^product\s*key$/i] },
   { label: 'Display Resolution', patterns: [/^display\s*resolution$/i, /^resolution$/i, /^screen\s*resolution$/i] },
   { label: 'Timezone', patterns: [/^time\s*zone$/i, /^timezone$/i, /^utc$/i] },
@@ -1424,6 +1460,7 @@ export const CAPTURE_TIME_KEYS = [
   /^date$/i,
   /^log\s*date$/i,
   /^system\s*date$/i,
+  /^local\s*date$/i,
   /^local\s*time$/i,
   /^current\s*time$/i,
   /^time$/i,
@@ -1442,8 +1479,8 @@ export const IGNORE_DATE_KEYS = [
 // Sysinfo → identity mapping
 
 export const IDENTITY_SYSINFO_KEYS = {
-  osUsername:    [/^user\s*name$/i, /^username$/i],
-  computerName: [/^computer\s*name$/i, /^netbios/i],
+  osUsername:    [/^user\s*name$/i, /^username$/i, /^user$/i],
+  computerName: [/^computer\s*name$/i, /^computer$/i, /^hostname$/i, /^netbios/i, /^pc$/i],
   country:      [/^country$/i],
 };
 

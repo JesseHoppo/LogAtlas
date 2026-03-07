@@ -119,6 +119,12 @@ function isLikelyMessengerFile(name, parentDir) {
   return false;
 }
 
+// Clipboard files
+
+function isLikelyClipboardFile(name) {
+  return FILE_TYPE_PATTERNS.clipboard.filePatterns.some(rx => rx.test(name));
+}
+
 // Apply all hints to a node. Returns true if anything was detected.
 function applyDetectionHints(node, name, parentDir) {
   let detected = false;
@@ -137,6 +143,7 @@ function applyDetectionHints(node, name, parentDir) {
   if (isLikelyProcessListFile(name))               { node._processListHint = true;  detected = true; }
   if (isLikelyDomainDetectFile(name))              { node._domainDetectHint = true; detected = true; }
   if (isLikelyBrowserPluginFile(name, parentDir))  { node._browserPluginHint = true; detected = true; }
+  if (isLikelyClipboardFile(name))                 { node._clipboardHint = true;    detected = true; }
   return detected;
 }
 
@@ -153,6 +160,7 @@ export {
   isLikelyBrowserPluginFile,
   isLikelyCryptoWalletFile,
   isLikelyMessengerFile,
+  isLikelyClipboardFile,
   isLikelyCreditsFile,
   isLikelySoftwareFile,
   isLikelyProcessListFile,

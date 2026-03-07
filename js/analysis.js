@@ -352,6 +352,40 @@ function extractInlineSections(text) {
   }
 }
 
+// Clipboard
+
+async function analyzeClipboard(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_clipboardHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:clipboard', null);
+    return;
+  }
+
+  const entries = [];
+  for (const { node } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content).trim();
+      if (!text) continue;
+      // Extract URLs from clipboard content
+      const urls = text.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+      entries.push({ text, urls });
+    } catch {
+      // skip
+    }
+  }
+
+  if (entries.length === 0) {
+    emit('analysis:clipboard', null);
+    return;
+  }
+
+  emit('analysis:clipboard', { entries });
+}
+
 function extractIOCs(sysinfoEntries, sysinfoText) {
   if (!sysinfoEntries) return null;
   const iocs = [];
@@ -837,6 +871,7 @@ function runAnalysis(fileTree, rootName) {
   analyzeDomainDetect(fileTree, rootName);
   analyzeSoftware(fileTree, rootName);
   analyzeProcessList(fileTree, rootName);
+  analyzeClipboard(fileTree, rootName);
   findScreenshot(fileTree, rootName);
   runFingerprint(fileTree, rootName);
 }
