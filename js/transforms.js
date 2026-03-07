@@ -3,12 +3,42 @@
 import { FIELD_PATTERNS } from './definitions.js';
 
 const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]*?)\s*:\s+(.*)/;
+const AUTOFILL_KV_PATTERN = /^([A-Za-z_][A-Za-z0-9_.$\-[\]]*)\s*:\s*(.+)$/;
+const HISTORY_URL_PATTERN = /^(?:(?:[a-z][a-z0-9+.-]*):\/\/\/?|about:)/i;
+const GOOGLE_RESTORE_TOKEN_PATTERN = /^(?!https?:\/\/)(?!file:\/\/)([^:\s]{20,}):(\d{6,})$/;
 
 // Separator lines (e.g. ===============) are normalised to blank lines
 const SEPARATOR_LINE = /^[=\-*~_]{3,}\s*$/gm;
 
 function normalizeSeparators(text) {
   return text.replace(SEPARATOR_LINE, '');
+}
+
+function stripLeadingNoiseLines(text) {
+  const lines = text.split('\n');
+  let start = 0;
+
+  while (start < lines.length) {
+    const trimmed = lines[start].trim();
+    if (!trimmed) {
+      start++;
+      continue;
+    }
+
+    if (
+      /^\*.*\*$/.test(trimmed) ||
+      /^telegram\s*:/i.test(trimmed) ||
+      /^[*=_~#-]{3,}$/.test(trimmed) ||
+      /^[\\/()|_ \-]{6,}$/.test(trimmed)
+    ) {
+      start++;
+      continue;
+    }
+
+    break;
+  }
+
+  return lines.slice(start).join('\n');
 }
 
 function mostCommon(arr) {
@@ -402,7 +432,7 @@ function parseHistoryFile(text, config) {
   const lines = normalized.split('\n').map(l => l.trim()).filter(l => l);
   const rows = [];
   for (const line of lines) {
-    if (/^https?:\/\//i.test(line)) {
+    if (HISTORY_URL_PATTERN.test(line)) {
       rows.push([line, '', '1', '']);
     }
   }
@@ -523,6 +553,20 @@ function convertCookieTimestamp(raw) {
 const COOKIE_HEADERS = ['Domain', 'SubDomain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
 const JSON_COOKIE_HEADERS = ['Domain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
 
+function parseGoogleRestoreTokens(lines) {
+  const rows = [];
+
+  for (const line of lines) {
+    const match = line.match(GOOGLE_RESTORE_TOKEN_PATTERN);
+    if (!match) return null;
+    const token = match[1];
+    const accountId = match[2];
+    rows.push(['accounts.google.com', 'FALSE', '/', 'TRUE', 'Session', `restore_token_${accountId}`, token]);
+  }
+
+  return rows.length > 0 ? { headers: COOKIE_HEADERS, rows } : null;
+}
+
 function parseJSONCookies(text) {
   try {
     const data = JSON.parse(text);
@@ -586,8 +630,10 @@ function parseCookieFile(text, config) {
   // If explicit config from column mapper, use it directly
   if (config) return parseWithConfig(clean, config);
 
+  const sanitized = stripLeadingNoiseLines(clean).trim();
+
   // Try JSON format first
-  const trimmed = clean.trim();
+  const trimmed = sanitized || clean.trim();
   if (trimmed.startsWith('[')) {
     const jsonResult = parseJSONCookies(trimmed);
     if (jsonResult) return jsonResult;
@@ -600,8 +646,11 @@ function parseCookieFile(text, config) {
     }
   }
 
-  const lines = clean.split('\n').map(l => l.trim()).filter(l => l !== '');
+  const lines = (sanitized || clean).split('\n').map(l => l.trim()).filter(l => l !== '');
   if (lines.length === 0) return null;
+
+  const restoreTokens = parseGoogleRestoreTokens(lines);
+  if (restoreTokens) return restoreTokens;
 
   // Check for Netscape cookie format (7 tab-separated fields)
   const sample = lines.slice(0, 20);
@@ -634,12 +683,58 @@ function parseCookieFile(text, config) {
   }
 
   // Fallback: try generic delimited detection (CSV, pipe, etc.)
-  const format = detectFormat(clean);
+  const format = detectFormat(sanitized || clean);
   if (format && format.type === 'delimited') {
-    return parseDelimited(clean, format);
+    return parseDelimited(sanitized || clean, format);
   }
 
   return null;
+}
+
+function parseAutofillFile(text, config) {
+  const clean = normalizeSeparators(text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+
+  if (config) {
+    const parsed = parseWithConfig(clean, config);
+    if (!parsed || parsed.rows.length === 0) return null;
+    const fieldIdx = parsed.headers.findIndex(h => /^field$/i.test(h));
+    const valueIdx = parsed.headers.findIndex(h => /^value$/i.test(h));
+    if (fieldIdx < 0 || valueIdx < 0) return parsed;
+    const rows = parsed.rows
+      .map(row => [(row[fieldIdx] || '').trim(), (row[valueIdx] || '').trim()])
+      .filter(([name, value]) => name && value);
+    return rows.length > 0 ? { headers: ['Field', 'Value'], rows } : null;
+  }
+
+  const parsed = parsePasswordFile(clean, null);
+  if (parsed && parsed.rows.length > 0) {
+    const nameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formField.test(h));
+    const valueIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formValue.test(h));
+    if (nameIdx >= 0 && valueIdx >= 0) {
+      const rows = parsed.rows
+        .map(row => [(row[nameIdx] || '').trim(), (row[valueIdx] || '').trim()])
+        .filter(([name, value]) => name && value);
+      if (rows.length > 0) return { headers: ['Field', 'Value'], rows };
+    }
+  }
+
+  const lines = stripLeadingNoiseLines(clean).split('\n').map(line => line.trim()).filter(Boolean);
+  const rows = [];
+
+  for (const line of lines) {
+    let match = line.match(AUTOFILL_KV_PATTERN);
+    if (match && !/^(?:https?|file)$/i.test(match[1])) {
+      rows.push([match[1].trim(), match[2].trim()]);
+      continue;
+    }
+
+    match = line.match(/^([A-Za-z_$][A-Za-z0-9_.$-]*)\s+(.+)$/);
+    if (match) {
+      rows.push([match[1].trim(), match[2].trim()]);
+    }
+  }
+
+  return rows.length > 0 ? { headers: ['Field', 'Value'], rows } : null;
 }
 
 // CSV generation (RFC 4180)
@@ -654,6 +749,7 @@ function toCSV(parsed) {
 export {
   detectFormat,
   parsePasswordFile,
+  parseAutofillFile,
   parseWithConfig,
   parseCookieFile,
   parseHistoryFile,

@@ -14,7 +14,7 @@ import {
   syntaxHighlightJSON,
   MAX_PREVIEW_SIZE,
 } from './utils.js';
-import { parsePasswordFile, parseCookieFile, toCSV } from './transforms.js';
+import { parsePasswordFile, parseCookieFile, parseAutofillFile, parseHistoryFile, toCSV } from './transforms.js';
 import { downloadBlob, copyToClipboard, showNotification } from './shared.js';
 import { openColumnMapper } from './columnMapper.js';
 
@@ -350,6 +350,22 @@ function clearTransformButtons() {
   btns.forEach(b => b.remove());
 }
 
+function parsePreviewText(text, node, overrideConfig = null) {
+  if (!text) return null;
+
+  const config = overrideConfig ?? ((node && node._parseConfig) || null);
+
+  if (node && node._cookieFileHint) return parseCookieFile(text, config);
+  if (node && node._autofillHint) return parseAutofillFile(text, config);
+  if (node && node._historyHint) return parseHistoryFile(text, config);
+  if (node && node._passwordFileHint) return parsePasswordFile(text, config);
+
+  return parseCookieFile(text, null)
+    || parseHistoryFile(text, null)
+    || parseAutofillFile(text, null)
+    || parsePasswordFile(text, null);
+}
+
 function addTransformButton(prominent) {
   clearTransformButtons();
   const btn = document.createElement('button');
@@ -357,13 +373,7 @@ function addTransformButton(prominent) {
   btn.textContent = prominent ? 'Transform to CSV' : 'Try Transform';
   btn.addEventListener('click', () => {
     if (!currentParsedData && currentDecodedText) {
-      let parsed = null;
-      const config = (currentNode && currentNode._parseConfig) || null;
-      if (currentNode && currentNode._cookieFileHint) {
-        parsed = parseCookieFile(currentDecodedText, config);
-      }
-      if (!parsed) parsed = parsePasswordFile(currentDecodedText, config);
-      if (!parsed) parsed = parseCookieFile(currentDecodedText);
+      const parsed = parsePreviewText(currentDecodedText, currentNode);
       if (parsed && parsed.rows.length > 0) {
         currentParsedData = parsed;
       } else {
@@ -411,8 +421,7 @@ function showCSVView(showAll) {
       const config = await openColumnMapper(currentDecodedText, fileName, fileType);
       if (!config) return;
       if (currentNode) currentNode._parseConfig = config;
-      const parseFn = fileType === 'cookies' ? parseCookieFile : parsePasswordFile;
-      const parsed = parseFn(currentDecodedText, config);
+      const parsed = parsePreviewText(currentDecodedText, currentNode, config);
       if (parsed && parsed.rows.length > 0) {
         currentParsedData = parsed;
         showCSVView(false);
@@ -443,7 +452,7 @@ function showTransformError() {
 
   const el = document.createElement('div');
   el.className = 'preview-transform-error';
-  el.textContent = 'No structured credential data detected in this file.';
+  el.textContent = 'No structured data detected in this file.';
   elBody.insertBefore(el, elBody.firstChild);
   setTimeout(() => el.remove(), 4000);
 }
@@ -512,16 +521,8 @@ async function showPreview(name, size, pathSegments) {
       showSearchBar(true);
       copyBtn.classList.remove('hidden');
 
-      if (node._passwordFileHint) {
-        const parsed = parsePasswordFile(text, node._parseConfig || null);
-        if (parsed && parsed.rows.length > 0) {
-          currentParsedData = parsed;
-          addTransformButton(true);
-        } else {
-          addTransformButton(false);
-        }
-      } else if (node._cookieFileHint) {
-        const parsed = parseCookieFile(text, node._parseConfig || null);
+      if (node._passwordFileHint || node._cookieFileHint || node._autofillHint || node._historyHint) {
+        const parsed = parsePreviewText(text, node);
         if (parsed && parsed.rows.length > 0) {
           currentParsedData = parsed;
           addTransformButton(true);

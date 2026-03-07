@@ -141,8 +141,8 @@ function fingerprintStealer(ctx) {
     }
   }
 
-  // Sort by percentage score descending, then by absolute score
-  results.sort((a, b) => b.pct - a.pct || b.score - a.score);
+  // Prefer families with more total matched evidence, then break ties by how complete the match is.
+  results.sort((a, b) => b.score - a.score || b.pct - a.pct);
 
   const best = results[0];
   if (!best || best.pct < CONFIDENCE_THRESHOLDS.min) {

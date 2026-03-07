@@ -3,7 +3,7 @@
 import { state, on, emit } from './state.js';
 import { loadFileContent } from './extractor.js';
 import { escapeHtml, getFileExtension, formatBytes } from './utils.js';
-import { parsePasswordFile, parseCookieFile, parseHistoryFile, parseDownloadFile } from './transforms.js';
+import { parsePasswordFile, parseCookieFile, parseAutofillFile, parseHistoryFile, parseDownloadFile } from './transforms.js';
 import { collectHintedNodes, checkCookieValidity, extractDomain, extractBaseDomain, downloadBlob, parseTimestampValue } from './shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { FIELD_PATTERNS } from './definitions.js';
@@ -237,42 +237,17 @@ async function loadAutofillsData(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      let parsedSome = false;
-
-      const parsed = parsePasswordFile(text, node._parseConfig || null);
+      const parsed = parseAutofillFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
-        const nameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formField.test(h));
-        const valIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formValue.test(h));
-
-        if (nameIdx >= 0 && valIdx >= 0) {
-          for (const row of parsed.rows) {
-            const name = (row[nameIdx] || '').trim();
-            const value = (row[valIdx] || '').trim();
-            if (name && value) {
-              entries.push({ name, value, source: path });
-              parsedSome = true;
-            }
+        for (const row of parsed.rows) {
+          const name = (row[0] || '').trim();
+          const value = (row[1] || '').trim();
+          if (name && value) {
+            entries.push({ name, value, source: path });
           }
         }
+        fileCount++;
       }
-
-      // Fallback: simple "field value" format
-      if (!parsedSome) {
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-        for (const line of lines) {
-          const match = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+)$/);
-          if (match) {
-            const name = match[1].trim();
-            const value = match[2].trim();
-            if (name && value) {
-              entries.push({ name, value, source: path });
-              parsedSome = true;
-            }
-          }
-        }
-      }
-
-      if (parsedSome) fileCount++;
     } catch {
       // skip
     }

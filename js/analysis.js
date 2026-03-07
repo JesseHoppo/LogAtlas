@@ -2,7 +2,7 @@
 
 import { emit } from './state.js';
 import { loadFileContent } from './extractor.js';
-import { parsePasswordFile, parseCookieFile, parseDownloadFile } from './transforms.js';
+import { parsePasswordFile, parseCookieFile, parseAutofillFile, parseDownloadFile } from './transforms.js';
 import { collectHintedNodes, extractDomain, checkCookieValidity, topN } from './shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
@@ -159,7 +159,7 @@ async function analyzeCookies(fileTree, rootName) {
 
 // System info
 
-const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _\/-]*?)\s*[:=]\s+(.*)/;
+const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()%-]*?)\s*(?:=\s*|:\s+)(.*)/;
 
 async function analyzeSystemInfo(fileTree, rootName) {
   const nodes = [];
@@ -258,7 +258,7 @@ function extractInlineSections(text) {
   const BRACKET_SECTION = /^\[[A-Za-z][A-Za-z ]*\](?:\[\d+\])?$/;
   const SECTION_HEADER = /^[A-Z][A-Za-z ]+:$/;
   const SUB_HEADER = /^(?:All Users|Current User)\s*:/i;
-  const KV_LINE = /^[A-Za-z][A-Za-z0-9 _\/-]*?\s*[:=]\s+/;
+  const KV_LINE = /^[A-Za-z][A-Za-z0-9 _./()%-]*?\s*(?:=\s*|:\s+)/;
 
   const VERSION_PATTERNS = [
     /^(.+?)\s*-\s*(.+)$/,
@@ -444,39 +444,15 @@ async function analyzeAutofills(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      const parsed = parsePasswordFile(text, node._parseConfig || null);
+      const parsed = parseAutofillFile(text, node._parseConfig || null);
+      if (!parsed || parsed.rows.length === 0) continue;
 
-      // Try Name/Value block format first
-      if (parsed && parsed.rows.length > 0) {
-        const nameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formField.test(h));
-        const valIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formValue.test(h));
-
-        if (nameIdx >= 0 && valIdx >= 0) {
-          parsedCount++;
-          for (const row of parsed.rows) {
-            const name = (row[nameIdx] || '').trim();
-            const value = (row[valIdx] || '').trim();
-            if (name && value) entries.push({ name, value });
-          }
-          continue;
-        }
+      parsedCount++;
+      for (const row of parsed.rows) {
+        const name = (row[0] || '').trim();
+        const value = (row[1] || '').trim();
+        if (name && value) entries.push({ name, value });
       }
-
-      // Fallback: simple "field value" format (space/tab separated)
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-      let simpleCount = 0;
-      for (const line of lines) {
-        const match = line.match(/^([a-zA-Z_$][a-zA-Z0-9_.$-]*)\s+(.+)$/);
-        if (match) {
-          const name = match[1].trim();
-          const value = match[2].trim();
-          if (name && value) {
-            entries.push({ name, value });
-            simpleCount++;
-          }
-        }
-      }
-      if (simpleCount > 0) parsedCount++;
     } catch {
       // skip
     }
@@ -530,7 +506,7 @@ async function analyzeDomainDetect(fileTree, rootName) {
     return;
   }
 
-  const ENTRY_PATTERN = /\[([^\]]+)\]\s+(\S+)\s+\((\d+)\)/g;
+  const ENTRY_PATTERN = /(?:^|\s)(?:\d+\)\s*)?\[([^\]]+)\]\s+([^\s(]+)\s*\((\d+)\)/g;
   const categories = {};
 
   for (const { node } of nodes) {
@@ -538,16 +514,23 @@ async function analyzeDomainDetect(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
+      let currentCategory = 'General';
 
       for (const line of text.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed) continue;
 
         const colonIdx = trimmed.indexOf(':');
-        if (colonIdx < 0) continue;
-        const rest = trimmed.slice(colonIdx + 1);
+        const header = colonIdx >= 0 ? trimmed.slice(0, colonIdx).trim() : '';
+        const rest = (colonIdx >= 0 ? trimmed.slice(colonIdx + 1) : trimmed).trim();
+
+        if (colonIdx >= 0 && !rest) {
+          currentCategory = header || currentCategory;
+          continue;
+        }
 
         let match;
+        let matchedEntry = false;
         ENTRY_PATTERN.lastIndex = 0;
         while ((match = ENTRY_PATTERN.exec(rest)) !== null) {
           const label = match[1];
@@ -555,6 +538,14 @@ async function analyzeDomainDetect(fileTree, rootName) {
           const count = parseInt(match[3], 10);
           if (!categories[label]) categories[label] = [];
           categories[label].push({ domain, count });
+          currentCategory = label;
+          matchedEntry = true;
+        }
+
+        if (!matchedEntry && rest && !/\s/.test(rest) && /[A-Za-z]/.test(rest)) {
+          const label = header || currentCategory || 'General';
+          if (!categories[label]) categories[label] = [];
+          categories[label].push({ domain: rest, count: 1 });
         }
       }
     } catch {

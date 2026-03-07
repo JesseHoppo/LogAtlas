@@ -10,7 +10,7 @@ import {
 } from './utils.js';
 import { downloadBlob, copyToClipboard } from './shared.js';
 import { escapeCSV } from './dataPages.js';
-import { parsePasswordFile, parseCookieFile, toCSV } from './transforms.js';
+import { parsePasswordFile, parseCookieFile, parseAutofillFile, parseHistoryFile, toCSV } from './transforms.js';
 
 let elBreadcrumb;
 let elFileGrid;
@@ -437,12 +437,16 @@ async function exportSelectedZip() {
         const content = await loadFileContent(node);
         if (!content) continue;
 
-        if (result.applyTransforms && (node._passwordFileHint || node._cookieFileHint)) {
+        if (result.applyTransforms && (node._passwordFileHint || node._cookieFileHint || node._autofillHint || node._historyHint)) {
           const decoder = new TextDecoder('utf-8');
           const text = decoder.decode(content);
           let parsed = null;
           if (node._cookieFileHint) {
             parsed = parseCookieFile(text, node._parseConfig || null);
+          } else if (node._autofillHint) {
+            parsed = parseAutofillFile(text, node._parseConfig || null);
+          } else if (node._historyHint) {
+            parsed = parseHistoryFile(text, node._parseConfig || null);
           } else {
             parsed = parsePasswordFile(text, node._parseConfig || null);
           }
