@@ -33,6 +33,9 @@ export const SIGNATURES = {
       { pattern: /^GUID$/i, label: 'Sysinfo key: GUID' },
       { pattern: /^Work Dir$/i, label: 'Sysinfo key: Work Dir' },
       { pattern: /^MachineID$/i, label: 'Sysinfo key: MachineID' },
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^Display Language$/i, label: 'Sysinfo key: Display Language' },
+      { pattern: /^Keyboard Languages?$/i, label: 'Sysinfo key: Keyboard Languages' },
     ],
     sysinfoContent: [
       { pattern: /VIDAR/i, label: 'Sysinfo header: VIDAR branding' },
@@ -43,6 +46,10 @@ export const SIGNATURES = {
       { pattern: /^Autofill$/i, label: 'Folder: Autofill/' },
       { pattern: /^Cookies$/i, label: 'Folder: Cookies/' },
       { pattern: /^History$/i, label: 'Folder: History/' },
+      { pattern: /^CC$/i, label: 'Folder: CC/' },
+      { pattern: /^Downloads$/i, label: 'Folder: Downloads/' },
+      { pattern: /^Plugins$/i, label: 'Folder: Plugins/' },
+      { pattern: /^CreditCards$/i, label: 'Folder: CreditCards/' },
     ],
     files: [
       { pattern: /^unique_passwords\.txt$/i, label: 'File: unique_passwords.txt' },
@@ -214,6 +221,7 @@ export const SIGNATURES = {
     selfId: [
       { pattern: /stealc\s+stealer/i, label: 'Self-ID: Stealc stealer' },
       { pattern: /STEALC/i, label: 'Self-ID: STEALC branding' },
+      { pattern: /ottoman/i, label: 'Self-ID: OTTOMAN variant' },
     ],
     sysinfoFile: { pattern: /^(?:Info|system_info)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -819,7 +827,11 @@ export const SIGNATURES = {
   },
 
   XFiles: {
-    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    selfId: [
+      { pattern: /xfiles/i, label: 'Self-ID: XFiles' },
+      { pattern: /luciferxfiles/i, label: 'Self-ID: luciferxfiles' },
+    ],
+    sysinfoFile: { pattern: /^(?:System(?:\s*)?)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Operation ID$/i, label: 'Sysinfo key: Operation ID' },
       { pattern: /^Operating System$/i, label: 'Sysinfo key: Operating System' },
@@ -829,12 +841,28 @@ export const SIGNATURES = {
       { pattern: /Desktop Screenshot Taken/i, label: 'Sysinfo content: Desktop Screenshot Taken' },
       { pattern: /Windows Processes/i, label: 'Sysinfo content: Windows Processes section' },
     ],
-    folders: [],
+    folders: [
+      { pattern: /^Browsers$/i, label: 'Folder: Browsers/' },
+      { pattern: /^Email\s*Clients$/i, label: 'Folder: Email Clients/' },
+    ],
     files: [
       { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
       { pattern: /^Cookies\.txt$/i, label: 'File: Cookies.txt' },
+      { pattern: /^All\s*Passwords\.txt$/i, label: 'File: All Passwords.txt' },
+      { pattern: /^Desktop\s*Screenshot\b/i, label: 'File: Desktop Screenshot' },
+      { pattern: /^User-Agents/i, label: 'File: User-Agents' },
+      { pattern: /^Installed\s*Software\s*\[\d+\]\.txt$/i, label: 'File: Installed Software [N].txt' },
     ],
-    structures: [],
+    structures: [
+      {
+        test: (dirs, files) => {
+          const hasBrowsers = dirs.some(d => /^Browsers$/i.test(d));
+          const hasScreenshot = files.some(f => /Desktop\s*Screenshot/i.test(f));
+          return hasBrowsers && hasScreenshot;
+        },
+        label: 'Structure: Browsers/ + Desktop Screenshot',
+      },
+    ],
   },
 
   Noxty: {
@@ -1040,6 +1068,77 @@ export const SIGNATURES = {
       },
     ],
   },
+
+  BradMax: {
+    selfId: [
+      { pattern: /bradmax/i, label: 'Self-ID: BradMax' },
+    ],
+    sysinfoFile: { pattern: /^system_info\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Laptop$/i, label: 'Sysinfo key: Laptop' },
+      { pattern: /^Running Path$/i, label: 'Sysinfo key: Running Path' },
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+    ],
+    sysinfoContent: [
+      { pattern: /BradMax/i, label: 'Sysinfo content: BradMax branding' },
+    ],
+    asciiBanners: ['BradMax'],
+    folders: [
+      { pattern: /^cookies$/i, label: 'Folder: cookies/' },
+      { pattern: /^autofill$/i, label: 'Folder: autofill/' },
+      { pattern: /^history$/i, label: 'Folder: history/' },
+      { pattern: /^AccountTokens$/i, label: 'Folder: AccountTokens/' },
+    ],
+    files: [
+      { pattern: /^passwords\.txt$/i, label: 'File: passwords.txt' },
+      { pattern: /^cookie_list\.txt$/i, label: 'File: cookie_list.txt' },
+      { pattern: /^steam_tokens\.txt$/i, label: 'File: steam_tokens.txt' },
+      { pattern: /^brute\.txt$/i, label: 'File: brute.txt' },
+    ],
+    structures: [
+      {
+        test: (dirs) => {
+          const hasCookies = dirs.some(d => /^cookies$/i.test(d));
+          const hasHistory = dirs.some(d => /^history$/i.test(d));
+          const hasTokens = dirs.some(d => /^AccountTokens$/i.test(d));
+          return hasCookies && hasHistory && hasTokens;
+        },
+        label: 'Structure: cookies/ + history/ + AccountTokens/',
+      },
+    ],
+  },
+
+  EmojiStealer: {
+    sysinfoFile: { pattern: /^(?:PC[\s_-]*info|Information)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^System time$/i, label: 'Sysinfo key: System time' },
+      { pattern: /^Internet provider$/i, label: 'Sysinfo key: Internet provider' },
+      { pattern: /^Started as admin$/i, label: 'Sysinfo key: Started as admin' },
+    ],
+    sysinfoContent: [
+      { pattern: /NEW LOG/i, label: 'Sysinfo content: NEW LOG marker' },
+      { pattern: /Download link/i, label: 'Sysinfo content: Download link' },
+    ],
+    folders: [
+      { pattern: /^BrowserData$/i, label: 'Folder: BrowserData/' },
+    ],
+    files: [
+      { pattern: /^All[\s_]*Passwords\.txt$/i, label: 'File: All_Passwords.txt' },
+      { pattern: /^PC[\s_-]*info\.txt$/i, label: 'File: PC_info.txt' },
+      { pattern: /^BrowserDownloads\.txt$/i, label: 'File: BrowserDownloads.txt' },
+      { pattern: /^ProcessList\.txt$/i, label: 'File: ProcessList.txt' },
+    ],
+    structures: [
+      {
+        test: (dirs, files) => {
+          const hasBrowserData = dirs.some(d => /^BrowserData$/i.test(d));
+          const hasPCInfo = files.some(f => /^PC[\s_-]*info\.txt$/i.test(f));
+          return hasBrowserData && hasPCInfo;
+        },
+        label: 'Structure: BrowserData/ + PC_info.txt',
+      },
+    ],
+  },
 };
 
 
@@ -1077,6 +1176,7 @@ export const FILE_TYPE_PATTERNS = {
       /^(?:google\s?chrome|microsoft\s?edge)[_\s]?(?:default|profile)?\s*\d*\.txt$/i,
     ],
     textExtensions: TEXT_EXTENSIONS,
+    exclusions: [/^cookie[\s_-]*list\.txt$/i],
     excludeFolders: /^(?:auto[\s_-]*fills?|histor(?:y|ies)|downloads?|bookmarks?|passwords?|logins?|credit[\s_-]*cards?)$/i,
     parentDirMatch: /^cookies?$/i,
   },
@@ -1101,6 +1201,7 @@ export const FILE_TYPE_PATTERNS = {
   autofill: {
     filePatterns: [
       /^autofills?\.(txt|tsv|csv)$/i,
+      /^(?:important)[\s_-]*autofills?\.(txt|tsv|csv)$/i,
     ],
     folderPattern: /^auto[\s_-]*fills?$/i,
   },
@@ -1114,7 +1215,7 @@ export const FILE_TYPE_PATTERNS = {
   },
 
   screenshot: {
-    namePattern: /^screenshots?\b/i,
+    namePattern: /(?:^|[\s_-])screenshots?\b/i,
     extensions: /\.(jpg|jpeg|png|bmp|gif|webp)$/i,
   },
 
@@ -1124,7 +1225,7 @@ export const FILE_TYPE_PATTERNS = {
       /^cc[\s_-]?data\.(txt|tsv|csv)$/i,
       /^CreditCards?\.(txt|tsv|csv)$/i,
     ],
-    folderPattern: /^(?:credit[\s_-]*)?cards?|credits?$/i,
+    folderPattern: /^(?:credit[\s_-]*)?cards?|credits?|cc$/i,
   },
 
   cryptoWallet: {
@@ -1147,6 +1248,8 @@ export const FILE_TYPE_PATTERNS = {
       /^discord$/i,
       /^telegram$/i,
       /^FBFastCheck$/i,
+      /^Email\s*Clients?$/i,
+      /^Outlook/i,
     ],
     filePatterns: [
       /^token[s]?\.txt$/i,
@@ -1154,6 +1257,7 @@ export const FILE_TYPE_PATTERNS = {
       /^accounts\.txt$/i,
       /^Token_EAAB\.txt$/i,
       /^IDs\.txt$/i,
+      /^steam[\s_-]*tokens?\.txt$/i,
     ],
   },
 
@@ -1167,21 +1271,21 @@ export const FILE_TYPE_PATTERNS = {
 
   software: {
     filePatterns: [
-      /^installed\s*software\.txt$/i,
-      /^software\.txt$/i,
-      /^installed\s*programs?\.txt$/i,
-      /^programs?\s*list\.txt$/i,
-      /^installed\s*apps?\.txt$/i,
-      /^installed\s*browsers?\.txt$/i,
+      /^installed\s*software(?:\s*\[\d+\])?\.txt$/i,
+      /^software(?:\s*\[\d+\])?\.txt$/i,
+      /^installed\s*programs?(?:\s*\[\d+\])?\.txt$/i,
+      /^programs?\s*list(?:\s*\[\d+\])?\.txt$/i,
+      /^installed\s*apps?(?:\s*\[\d+\])?\.txt$/i,
+      /^installed\s*browsers?(?:\s*\[\d+\])?\.txt$/i,
     ],
   },
 
   processList: {
     filePatterns: [
-      /^process\s*list\.txt$/i,
-      /^processes?\.txt$/i,
-      /^running\s*processes?\.txt$/i,
-      /^tasklist\.txt$/i,
+      /^process\s*list(?:\s*\[\d+\])?\.txt$/i,
+      /^processes?(?:\s*\[\d+\])?\.txt$/i,
+      /^running\s*processes?(?:\s*\[\d+\])?\.txt$/i,
+      /^tasklist(?:\s*\[\d+\])?\.txt$/i,
     ],
   },
 
@@ -1192,8 +1296,17 @@ export const FILE_TYPE_PATTERNS = {
   },
 
   downloadHistory: {
+    filePatterns: [
+      /^(?:browser[\s_-]*)?downloads?\.(txt|tsv|csv)$/i,
+    ],
     folderPattern: /^downloads?$/i,
-    parentDirMatch: /^Browser$/i,
+  },
+
+  browserPlugin: {
+    folderPatterns: [
+      /^plugins?$/i,
+      /^extensions?$/i,
+    ],
   },
 };
 
@@ -1292,8 +1405,11 @@ export const IOC_KEY_MAP = [
   { label: 'Product Key', patterns: [/^product\s*key$/i] },
   { label: 'Display Resolution', patterns: [/^display\s*resolution$/i, /^resolution$/i, /^screen\s*resolution$/i] },
   { label: 'Timezone', patterns: [/^time\s*zone$/i, /^timezone$/i, /^utc$/i] },
-  { label: 'Language', patterns: [/^language$/i, /^system\s*language$/i, /^keyboard\s*layout$/i] },
+  { label: 'Language', patterns: [/^language$/i, /^system\s*language$/i, /^keyboard\s*layout$/i, /^keyboard\s*languages?$/i, /^display\s*language$/i] },
   { label: 'Tracker', patterns: [/^traffic$/i, /^tracker$/i, /^tag$/i] },
+  { label: 'Processor', patterns: [/^processor$/i, /^cpu$/i] },
+  { label: 'RAM', patterns: [/^ram$/i, /^memory$/i, /^total\s*memory$/i] },
+  { label: 'GPU', patterns: [/^video\s*card$/i, /^gpu$/i, /^graphics$/i, /^display\s*adapter$/i] },
 ];
 
 // Content-based IOC patterns (applied to raw sysinfo text)

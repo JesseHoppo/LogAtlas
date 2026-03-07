@@ -89,6 +89,8 @@ function updateDashboardVisibility() {
   const creditCardFiles = state.flatFiles.filter(f => f._creditCardHint);
   const cryptoWalletFiles = state.flatFiles.filter(f => f._cryptoWalletHint);
   const messengerFiles = state.flatFiles.filter(f => f._messengerHint);
+  const downloadFiles = state.flatFiles.filter(f => f._downloadHint);
+  const browserPluginFiles = state.flatFiles.filter(f => f._browserPluginHint);
   const softwareFiles = state.flatFiles.filter(f => f._softwareFileHint);
   const processFiles = state.flatFiles.filter(f => f._processListHint);
 
@@ -104,13 +106,13 @@ function updateDashboardVisibility() {
   const hasAnyData = credFiles.length > 0 || cookieFiles.length > 0 ||
     autofillFiles.length > 0 || historyFiles.length > 0 || sysInfoFiles.length > 0 ||
     creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0 ||
-    softwareFiles.length > 0 || processFiles.length > 0;
+    downloadFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0;
   noData.classList.toggle('hidden', hasAnyData);
 
   const extraEl = document.getElementById('dashExtraIntel');
   const extraBody = document.getElementById('dashExtraBody');
 
-  if (creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0) {
+  if (creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0 || downloadFiles.length > 0 || browserPluginFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0) {
     extraEl.classList.remove('hidden');
 
     let html = '<div class="dash-extra-items">';
@@ -122,6 +124,12 @@ function updateDashboardVisibility() {
     }
     if (messengerFiles.length > 0) {
       html += `<div class="dash-extra-item"><span class="dash-extra-icon">M</span><span>${messengerFiles.length} messenger/token file(s) detected</span></div>`;
+    }
+    if (downloadFiles.length > 0) {
+      html += `<div class="dash-extra-item"><span class="dash-extra-icon">DL</span><span>${downloadFiles.length} download history file(s) detected</span></div>`;
+    }
+    if (browserPluginFiles.length > 0) {
+      html += `<div class="dash-extra-item"><span class="dash-extra-icon">EXT</span><span>${browserPluginFiles.length} browser extension/plugin file(s) detected</span></div>`;
     }
     if (softwareFiles.length > 0) {
       html += `<div class="dash-extra-item"><span class="dash-extra-icon">SW</span><span>${softwareFiles.length} installed software file(s) detected</span></div>`;
@@ -414,6 +422,24 @@ on('analysis:screenshot', async (data) => {
   } catch {
     // skip if screenshot fails to load
   }
+});
+
+on('analysis:domainDetect', (data) => {
+  if (!data) return;
+  const section = document.getElementById('dashDomainDetect');
+  if (!section) return;
+  section.classList.remove('hidden');
+
+  const body = document.getElementById('dashDomainDetectBody');
+  let html = '';
+  for (const [label, entries] of Object.entries(data.categories)) {
+    const domains = entries.map(e => `${escapeHtml(e.domain)} (${e.count})`).join(', ');
+    html += `<div class="dash-kv-row">
+      <span class="dash-kv-key">${escapeHtml(label)}</span>
+      <span class="dash-kv-value">${domains}</span>
+    </div>`;
+  }
+  body.innerHTML = html;
 });
 
 // Global search
@@ -785,6 +811,8 @@ function resetUI() {
   document.getElementById('dashScreenshotBody').innerHTML = '';
 
   document.getElementById('dashAutofillIntel').classList.add('hidden');
+  document.getElementById('dashDomainDetect').classList.add('hidden');
+  document.getElementById('dashDomainDetectBody').innerHTML = '';
   document.getElementById('dashExtraIntel').classList.add('hidden');
   document.getElementById('dashExtraBody').innerHTML = '';
   document.getElementById('dashAutofillSummary').classList.add('dash-loading');
@@ -1022,6 +1050,47 @@ try { initDomainExplorer(); } catch (e) { console.error('initDomainExplorer fail
 document.getElementById('sidebarToggle').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('open');
 });
+
+// Auto-load from ?file= URL parameter (for R2/S3 hosted files)
+(async function checkFileParam() {
+  const params = new URLSearchParams(window.location.search);
+  const fileUrl = params.get('file');
+  if (!fileUrl) return;
+
+  try {
+    const parsed = new URL(fileUrl);
+    if (parsed.protocol !== 'https:') {
+      showNotification('Only HTTPS file URLs are supported.', 'error');
+      return;
+    }
+  } catch {
+    showNotification('Invalid file URL.', 'error');
+    return;
+  }
+
+  // Show loading state while downloading
+  dropZone.style.display = 'none';
+  uploadInfo.style.display = 'none';
+  loading.classList.add('visible');
+  loadingText.textContent = 'Downloading file...';
+
+  try {
+    const resp = await fetch(fileUrl);
+    if (!resp.ok) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
+
+    const blob = await resp.blob();
+    const fileName = decodeURIComponent(fileUrl.split('/').pop().split('?')[0]) || 'download.zip';
+    const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+
+    loading.classList.remove('visible');
+    handleFiles([file]);
+  } catch (err) {
+    loading.classList.remove('visible');
+    dropZone.style.display = '';
+    uploadInfo.style.display = '';
+    showNotification(`Failed to load file: ${err.message}`, 'error');
+  }
+})();
 
 // Dark mode toggle
 const themeToggle = document.getElementById('themeToggle');

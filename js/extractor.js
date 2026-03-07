@@ -438,6 +438,16 @@ function applyManualType(node, fileType) {
   delete node._autofillHint;
   delete node._historyHint;
   delete node._sysInfoHint;
+  delete node._creditCardHint;
+  delete node._downloadHint;
+  delete node._domainDetectHint;
+  delete node._browserPluginHint;
+  delete node._cryptoWalletHint;
+  delete node._messengerHint;
+  delete node._screenshotHint;
+  delete node._creditsFileHint;
+  delete node._softwareFileHint;
+  delete node._processListHint;
   delete node._parseConfig;
 
   switch (fileType) {

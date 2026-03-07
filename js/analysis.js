@@ -2,7 +2,7 @@
 
 import { emit } from './state.js';
 import { loadFileContent } from './extractor.js';
-import { parsePasswordFile, parseCookieFile } from './transforms.js';
+import { parsePasswordFile, parseCookieFile, parseDownloadFile } from './transforms.js';
 import { collectHintedNodes, extractDomain, checkCookieValidity, topN } from './shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
@@ -197,14 +197,21 @@ async function analyzeSystemInfo(fileTree, rootName) {
       // KV text parsing
       if (!found) {
         const lines = text.split('\n');
+        let lastKey = null;
         for (const line of lines) {
-          const clean = line.trim().replace(/^[-*•]\s+/, '');
+          const clean = line.trim().replace(/^[\p{So}\p{Sk}\u200d\ufe0f]+\s*/u, '').replace(/^[-*•]\s+/, '');
+          // Tab-indented continuation lines append to previous key
+          if (/^\t/.test(line) && lastKey && merged[lastKey] && clean) {
+            merged[lastKey] += ', ' + clean;
+            continue;
+          }
           const match = clean.match(KV_PATTERN);
           if (match) {
             const key = match[1].trim();
             const value = match[2].trim();
             if (value && !merged[key]) {
               merged[key] = value;
+              lastKey = key;
               found = true;
             }
           }
@@ -246,8 +253,12 @@ function extractInlineSections(text) {
 
   const SOFTWARE_HEADER = /^Installed (?:Apps|Software|Programs)\s*:/i;
   const PROCESS_HEADER = /^Process (?:List|es)\s*:/i;
+  const BRACKET_SOFTWARE = /^\[Software\]/i;
+  const BRACKET_PROCESS = /^\[Process(?:es)?\](?:\[\d+\])?/i;
+  const BRACKET_SECTION = /^\[[A-Za-z][A-Za-z ]*\](?:\[\d+\])?$/;
   const SECTION_HEADER = /^[A-Z][A-Za-z ]+:$/;
   const SUB_HEADER = /^(?:All Users|Current User)\s*:/i;
+  const KV_LINE = /^[A-Za-z][A-Za-z0-9 _\/-]*?\s*[:=]\s+/;
 
   const VERSION_PATTERNS = [
     /^(.+?)\s*-\s*(.+)$/,
@@ -263,27 +274,34 @@ function extractInlineSections(text) {
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
 
-    if (SOFTWARE_HEADER.test(trimmed)) {
+    if (SOFTWARE_HEADER.test(trimmed) || BRACKET_SOFTWARE.test(trimmed)) {
       softwareLines = [];
       currentTarget = softwareLines;
       continue;
     }
-    if (PROCESS_HEADER.test(trimmed)) {
+    if (PROCESS_HEADER.test(trimmed) || BRACKET_PROCESS.test(trimmed)) {
       processLines = [];
       currentTarget = processLines;
       continue;
     }
 
-    // A new top-level section header ends the current section
-    if (currentTarget && trimmed && !rawLine.startsWith('\t') && SECTION_HEADER.test(trimmed) && !SUB_HEADER.test(trimmed)) {
-      currentTarget = null;
-      continue;
+    // A new section header ends the current section (bracket, colon, or KV line)
+    if (currentTarget && trimmed) {
+      if (BRACKET_SECTION.test(trimmed) || (!rawLine.startsWith('\t') && SECTION_HEADER.test(trimmed) && !SUB_HEADER.test(trimmed))) {
+        currentTarget = null;
+        continue;
+      }
+      // KV lines (e.g. "Processor: Intel...") end the section too
+      if (KV_LINE.test(trimmed)) {
+        currentTarget = null;
+        continue;
+      }
     }
 
     // Skip sub-headers
     if (currentTarget && SUB_HEADER.test(trimmed)) continue;
 
-    if (currentTarget && rawLine.startsWith('\t') && trimmed) {
+    if (currentTarget && trimmed) {
       currentTarget.push(trimmed);
     }
   }
@@ -414,7 +432,7 @@ async function analyzeAutofills(fileTree, rootName) {
       const lines = text.split('\n').map(l => l.trim()).filter(l => l);
       let simpleCount = 0;
       for (const line of lines) {
-        const match = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+)$/);
+        const match = line.match(/^([a-zA-Z_$][a-zA-Z0-9_.$-]*)\s+(.+)$/);
         if (match) {
           const name = match[1].trim();
           const value = match[2].trim();
@@ -467,6 +485,106 @@ async function analyzeAutofills(fileTree, rootName) {
   });
 }
 
+// Domain detect
+
+async function analyzeDomainDetect(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_domainDetectHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:domainDetect', null);
+    return;
+  }
+
+  const ENTRY_PATTERN = /\[([^\]]+)\]\s+(\S+)\s+\((\d+)\)/g;
+  const categories = {};
+
+  for (const { node } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx < 0) continue;
+        const rest = trimmed.slice(colonIdx + 1);
+
+        let match;
+        ENTRY_PATTERN.lastIndex = 0;
+        while ((match = ENTRY_PATTERN.exec(rest)) !== null) {
+          const label = match[1];
+          const domain = match[2];
+          const count = parseInt(match[3], 10);
+          if (!categories[label]) categories[label] = [];
+          categories[label].push({ domain, count });
+        }
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (Object.keys(categories).length === 0) {
+    emit('analysis:domainDetect', null);
+    return;
+  }
+
+  emit('analysis:domainDetect', { categories });
+}
+
+// Download history
+
+async function analyzeDownloads(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_downloadHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:downloads', null);
+    return;
+  }
+
+  const allDomains = [];
+  let totalDownloads = 0;
+  let parsedCount = 0;
+
+  for (const { node } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseDownloadFile(text);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      parsedCount++;
+      totalDownloads += parsed.rows.length;
+
+      // Extract domains from URL column
+      const urlIdx = parsed.headers.findIndex(h => /url/i.test(h));
+      for (const row of parsed.rows) {
+        const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : (row[1] || '').trim();
+        if (url) allDomains.push(extractDomain(url));
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (totalDownloads === 0) {
+    emit('analysis:downloads', null);
+    return;
+  }
+
+  emit('analysis:downloads', {
+    fileCount: parsedCount,
+    totalDownloads,
+    topDomains: topN(allDomains, LIMITS.topDomains),
+  });
+}
+
 // Screenshot detection
 
 function findScreenshot(fileTree, rootName) {
@@ -514,7 +632,7 @@ async function runFingerprint(fileTree, rootName) {
         // KV text parsing
         if (ctx.sysinfoKeys.length === 0) {
           for (const line of text.split('\n')) {
-            const clean = line.trim().replace(/^[-*•]\s+/, '');
+            const clean = line.trim().replace(/^[\p{So}\p{Sk}\u200d\ufe0f]+\s*/u, '').replace(/^[-*•]\s+/, '');
             const match = clean.match(SYSINFO_KV);
             if (match) ctx.sysinfoKeys.push(match[1].trim());
           }
@@ -715,6 +833,8 @@ function runAnalysis(fileTree, rootName) {
   analyzeCookies(fileTree, rootName);
   analyzeSystemInfo(fileTree, rootName);
   analyzeAutofills(fileTree, rootName);
+  analyzeDownloads(fileTree, rootName);
+  analyzeDomainDetect(fileTree, rootName);
   analyzeSoftware(fileTree, rootName);
   analyzeProcessList(fileTree, rootName);
   findScreenshot(fileTree, rootName);

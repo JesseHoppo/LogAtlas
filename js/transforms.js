@@ -340,7 +340,14 @@ function parsePasswordFile(text, config) {
   if (config) return parseWithConfig(clean, config);
 
   const format = detectFormat(clean);
-  if (!format) return null;
+  if (!format) {
+    // Flat list fallback: one value per line (e.g. unique_passwords.txt)
+    const lines = clean.split('\n').map(l => l.trim()).filter(l => l);
+    if (lines.length > 0) {
+      return { headers: ['Password'], rows: lines.map(l => [l]) };
+    }
+    return null;
+  }
 
   if (format.type === 'block') {
     return parseBlocks(clean, format.headers);
@@ -377,6 +384,55 @@ function parseHistoryFile(text, config) {
     return { headers: ['URL', 'Title', 'Visits', 'Last Visit'], rows };
   }
 
+  return null;
+}
+
+// Download history parser (paired filepath + URL lines)
+
+function parseDownloadFile(text) {
+  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Try structured delimited detection first
+  const format = detectFormat(clean);
+  if (format && format.type === 'delimited') {
+    return parseDelimited(clean, format);
+  }
+
+  // Paired-line format: filepath on one line, URL on next, separated by blank lines
+  const lines = clean.split('\n');
+  const rows = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+
+    // Look for a filepath (starts with drive letter or / or contains backslash)
+    if (/^[A-Z]:\\|^\/|\\/.test(line)) {
+      const nextIdx = i + 1;
+      let url = '';
+      if (nextIdx < lines.length) {
+        const next = lines[nextIdx].trim();
+        if (/^https?:\/\//i.test(next)) {
+          url = next;
+          i = nextIdx + 1;
+        } else {
+          i++;
+        }
+      } else {
+        i++;
+      }
+      rows.push([line, url]);
+    } else if (/^https?:\/\//i.test(line)) {
+      rows.push(['', line]);
+      i++;
+    } else {
+      i++;
+    }
+  }
+
+  if (rows.length > 0) {
+    return { headers: ['File Path', 'Source URL'], rows };
+  }
   return null;
 }
 
@@ -455,6 +511,27 @@ function parseJSONCookies(text) {
   }
 }
 
+function findCookieArrayInObject(text) {
+  try {
+    const obj = JSON.parse(text);
+    const isCookieArray = (arr) =>
+      Array.isArray(arr) && arr.length > 0 && typeof arr[0] === 'object' && arr[0] !== null &&
+      Object.keys(arr[0]).some(k => /^(domain|host|host_key)$/i.test(k)) &&
+      Object.keys(arr[0]).some(k => /^(name|key)$/i.test(k));
+    // Search up to 3 levels deep for an array of cookie objects
+    function search(val, depth) {
+      if (depth > 3 || val === null || typeof val !== 'object') return null;
+      if (Array.isArray(val)) return isCookieArray(val) ? val : null;
+      for (const v of Object.values(val)) {
+        const found = search(v, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+    return search(obj, 0);
+  } catch { return null; }
+}
+
 function parseCookieFile(text, config) {
   const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
@@ -466,6 +543,13 @@ function parseCookieFile(text, config) {
   if (trimmed.startsWith('[')) {
     const jsonResult = parseJSONCookies(trimmed);
     if (jsonResult) return jsonResult;
+  }
+  if (trimmed.startsWith('{')) {
+    const arr = findCookieArrayInObject(trimmed);
+    if (arr) {
+      const jsonResult = parseJSONCookies(JSON.stringify(arr));
+      if (jsonResult) return jsonResult;
+    }
   }
 
   const lines = clean.split('\n').map(l => l.trim()).filter(l => l !== '');
@@ -525,6 +609,7 @@ export {
   parseWithConfig,
   parseCookieFile,
   parseHistoryFile,
+  parseDownloadFile,
   toCSV,
   splitCSVLine,
   inferColumnRoles,
