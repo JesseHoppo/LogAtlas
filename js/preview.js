@@ -14,7 +14,22 @@ import {
   syntaxHighlightJSON,
   MAX_PREVIEW_SIZE,
 } from './utils.js';
-import { parsePasswordFile, parseCookieFile, parseAutofillFile, parseHistoryFile, toCSV } from './transforms.js';
+import {
+  parsePasswordFile,
+  parseCookieFile,
+  parseAutofillFile,
+  parseSystemInfoFile,
+  parseHistoryFile,
+  parseBookmarkFile,
+  parseBrowserMetadataFile,
+  parseAccountTokenFile,
+  parseServiceArtifactFile,
+  parseDownloadFile,
+  parseDomainDetectFile,
+  parseClipboardFile,
+  parseCreditCardFile,
+  toCSV
+} from './transforms.js';
 import { downloadBlob, copyToClipboard, showNotification } from './shared.js';
 import { openColumnMapper } from './columnMapper.js';
 
@@ -60,6 +75,18 @@ function getNodeTypeLabel(node) {
   if (node._cookieFileHint) return 'cookies';
   if (node._autofillHint) return 'autofill';
   if (node._historyHint) return 'history';
+  if (node._bookmarkHint) return 'bookmarks';
+  if (node._browserMetadataHint) return 'browsermeta';
+  if (node._sysInfoHint) return 'sysinfo';
+  if (node._downloadHint) return 'downloads';
+  if (node._creditCardHint) return 'cards';
+  if (node._clipboardHint) return 'clipboard';
+  if (node._domainDetectHint) return 'detections';
+  if (node._accountTokenHint) return 'tokens';
+  if (node._serviceArtifactHint) return 'services';
+  if (node._softwareFileHint) return 'software';
+  if (node._processListHint) return 'processes';
+  if (node._screenshotHint) return 'screenshot';
   return null;
 }
 
@@ -68,7 +95,18 @@ function updateTypeButton() {
   if (!btn) return;
   const label = getNodeTypeLabel(currentNode);
   if (label) {
-    btn.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+    const labelMap = {
+      sysinfo: 'System Info',
+      downloads: 'Downloads',
+      cards: 'Credit Cards',
+      detections: 'Detections',
+      browsermeta: 'Browser Metadata',
+      tokens: 'Account Tokens',
+      services: 'Services',
+      processes: 'Processes',
+      screenshot: 'Screenshot',
+    };
+    btn.textContent = labelMap[label] || (label.charAt(0).toUpperCase() + label.slice(1));
     btn.className = 'preview-btn preview-type-btn preview-type-' + label;
   } else {
     btn.textContent = 'Set Type';
@@ -97,7 +135,43 @@ function showPreviewTypeMenu() {
         <button class="filetype-option" data-type="history" data-key="4">
           <span class="filetype-icon">History</span>
         </button>
-        <button class="filetype-option filetype-option-remove" data-type="none" data-key="5">
+        <button class="filetype-option" data-type="bookmarks" data-key="14">
+          <span class="filetype-icon">Bookmarks</span>
+        </button>
+        <button class="filetype-option" data-type="browsermeta" data-key="15">
+          <span class="filetype-icon">Browser Metadata</span>
+        </button>
+        <button class="filetype-option" data-type="sysinfo" data-key="5">
+          <span class="filetype-icon">System Info</span>
+        </button>
+        <button class="filetype-option" data-type="downloads" data-key="6">
+          <span class="filetype-icon">Downloads</span>
+        </button>
+        <button class="filetype-option" data-type="cards" data-key="7">
+          <span class="filetype-icon">Credit Cards</span>
+        </button>
+        <button class="filetype-option" data-type="clipboard" data-key="8">
+          <span class="filetype-icon">Clipboard</span>
+        </button>
+        <button class="filetype-option" data-type="detections" data-key="9">
+          <span class="filetype-icon">Detections</span>
+        </button>
+        <button class="filetype-option" data-type="tokens" data-key="16">
+          <span class="filetype-icon">Account Tokens</span>
+        </button>
+        <button class="filetype-option" data-type="services" data-key="17">
+          <span class="filetype-icon">Services</span>
+        </button>
+        <button class="filetype-option" data-type="software" data-key="10">
+          <span class="filetype-icon">Software</span>
+        </button>
+        <button class="filetype-option" data-type="processes" data-key="11">
+          <span class="filetype-icon">Processes</span>
+        </button>
+        <button class="filetype-option" data-type="screenshot" data-key="12">
+          <span class="filetype-icon">Screenshot</span>
+        </button>
+        <button class="filetype-option filetype-option-remove" data-type="none" data-key="13">
           <span class="filetype-icon">Remove Label</span>
         </button>
       </div>
@@ -357,7 +431,16 @@ function parsePreviewText(text, node, overrideConfig = null) {
 
   if (node && node._cookieFileHint) return parseCookieFile(text, config);
   if (node && node._autofillHint) return parseAutofillFile(text, config);
+  if (node && node._sysInfoHint) return parseSystemInfoFile(text, node.name || '');
   if (node && node._historyHint) return parseHistoryFile(text, config);
+  if (node && node._bookmarkHint) return parseBookmarkFile(text);
+  if (node && node._browserMetadataHint) return parseBrowserMetadataFile(text);
+  if (node && node._downloadHint) return parseDownloadFile(text);
+  if (node && node._creditCardHint) return parseCreditCardFile(text, config);
+  if (node && node._clipboardHint) return parseClipboardFile(text);
+  if (node && node._domainDetectHint) return parseDomainDetectFile(text);
+  if (node && node._accountTokenHint) return parseAccountTokenFile(text, node.name || '');
+  if (node && node._serviceArtifactHint) return parseServiceArtifactFile(text);
   if (node && node._passwordFileHint) return parsePasswordFile(text, config);
 
   return parseCookieFile(text, null)
@@ -399,6 +482,14 @@ function showCSVView(showAll) {
   elBody.innerHTML = renderCSVTable(currentParsedData, showAll);
   addCSVViewButtons();
 
+  const canAdjustColumns = currentNode && (
+    currentNode._passwordFileHint || currentNode._cookieFileHint ||
+    currentNode._autofillHint || currentNode._historyHint
+  );
+  if (!canAdjustColumns) {
+    document.getElementById('csvAdjustColumns')?.remove();
+  }
+
   const showAllBtn = document.getElementById('csvShowAll');
   if (showAllBtn) {
     showAllBtn.addEventListener('click', () => showCSVView(true));
@@ -439,7 +530,7 @@ function showTextView() {
 
   document.getElementById('previewDownload').textContent = 'Download';
 
-  if (currentParsedData || (currentNode && (currentNode._passwordFileHint || currentNode._cookieFileHint || currentNode._autofillHint || currentNode._historyHint))) {
+  if (currentParsedData || (currentNode && (currentNode._passwordFileHint || currentNode._cookieFileHint || currentNode._autofillHint || currentNode._sysInfoHint || currentNode._historyHint || currentNode._bookmarkHint || currentNode._browserMetadataHint || currentNode._downloadHint || currentNode._creditCardHint || currentNode._clipboardHint || currentNode._domainDetectHint || currentNode._accountTokenHint || currentNode._serviceArtifactHint))) {
     addTransformButton(true);
   } else if (getFileExtension(currentFile.name) === 'txt' || getFileExtension(currentFile.name) === 'tsv') {
     addTransformButton(false);
@@ -521,7 +612,7 @@ async function showPreview(name, size, pathSegments) {
       showSearchBar(true);
       copyBtn.classList.remove('hidden');
 
-      if (node._passwordFileHint || node._cookieFileHint || node._autofillHint || node._historyHint) {
+      if (node._passwordFileHint || node._cookieFileHint || node._autofillHint || node._sysInfoHint || node._historyHint) {
         const parsed = parsePreviewText(text, node);
         if (parsed && parsed.rows.length > 0) {
           currentParsedData = parsed;

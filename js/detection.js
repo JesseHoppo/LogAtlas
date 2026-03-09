@@ -2,6 +2,10 @@
 
 import { FILE_TYPE_PATTERNS, TEXT_EXTENSIONS } from './definitions.js';
 
+function normalizePath(fullPath) {
+  return String(fullPath || '').replace(/\\/g, '/');
+}
+
 // Credits/copyright files
 
 function isLikelyCreditsFile(name) {
@@ -64,6 +68,30 @@ function isLikelyHistoryFile(name, parentDir) {
   return h.filePatterns.some(rx => rx.test(name));
 }
 
+// Bookmark files
+
+function isLikelyBookmarkFile(name, parentDir, fullPath) {
+  const b = FILE_TYPE_PATTERNS.bookmark;
+  const normalizedPath = normalizePath(fullPath);
+  if (parentDir && b.folderPattern.test(parentDir) && TEXT_EXTENSIONS.test(name)) return true;
+  if (normalizedPath && /(^|\/)bookmarks?\//i.test(normalizedPath) && TEXT_EXTENSIONS.test(name)) return true;
+  return b.filePatterns.some(rx => rx.test(name));
+}
+
+// Browser metadata / debug files
+
+function isLikelyBrowserMetadataFile(name, parentDir, fullPath) {
+  const bm = FILE_TYPE_PATTERNS.browserMetadata;
+  const normalizedPath = normalizePath(fullPath);
+  if (/^debug\.txt$/i.test(name)) {
+    if (/(^|\/)(chrome|edge|firefox|opera|brave|vivaldi|chromium)\//i.test(normalizedPath)) return true;
+  } else if (bm.filePatterns.some(rx => rx.test(name))) {
+    return true;
+  }
+  if (parentDir && bm.folderPatterns.some(rx => rx.test(parentDir)) && TEXT_EXTENSIONS.test(name)) return true;
+  return bm.pathPatterns.some(rx => rx.test(normalizedPath));
+}
+
 // Screenshots
 
 function isLikelyScreenshot(name) {
@@ -110,13 +138,43 @@ function isLikelyCryptoWalletFile(name, parentDir) {
   return false;
 }
 
-// Messenger / token files
+// Account token files
 
-function isLikelyMessengerFile(name, parentDir) {
+function isLikelyAccountTokenFile(name, parentDir, fullPath) {
+  const at = FILE_TYPE_PATTERNS.accountToken;
+  const normalizedPath = normalizePath(fullPath);
+  if (at.pathPatterns.some(rx => rx.test(normalizedPath))) return true;
+  if (parentDir && at.folderPatterns.some(rx => rx.test(parentDir)) && TEXT_EXTENSIONS.test(name)) return true;
+  return at.filePatterns.some(rx => rx.test(name)) && (
+    /googleaccounts|fbfastcheck|discord|steam/i.test(normalizedPath) ||
+    /^(?:restore_|discordtokens?|discord\.txt|token_eaab\.txt|ids?\.txt|tokens?\.txt)/i.test(name)
+  );
+}
+
+// Service / messenger configuration artifacts
+
+function isLikelyServiceArtifactFile(name, parentDir, fullPath) {
+  const sa = FILE_TYPE_PATTERNS.serviceArtifact;
+  const normalizedPath = normalizePath(fullPath);
+  if (sa.pathPatterns.some(rx => rx.test(normalizedPath))) return true;
+
+  if (/^(?:system|service|user)\.conf$/i.test(name) && /anydesk/i.test(normalizedPath)) return true;
+  if (/^accounts\.txt$/i.test(name) && /(outlook|email clients?)/i.test(normalizedPath)) return true;
+  if (/^usersettings\.json$/i.test(name) && /outlook/i.test(normalizedPath)) return true;
+  if (/^token\.txt$/i.test(name) && /telegram/i.test(normalizedPath)) return true;
+  if (/^\d+\.(?:log|ldb)$/i.test(name) && /discord\/.*leveldb/i.test(normalizedPath)) return true;
+
+  return sa.filePatterns.some(rx => rx.test(name)) && /(telegram|outlook|anydesk|discord)/i.test(normalizedPath);
+}
+
+// Legacy messenger / token files
+
+function isLikelyMessengerFile(name, parentDir, fullPath) {
   const m = FILE_TYPE_PATTERNS.messenger;
-  if (m.filePatterns.some(rx => rx.test(name))) return true;
-  if (parentDir && m.folderPatterns.some(rx => rx.test(parentDir))) return true;
-  return false;
+  if (isLikelyAccountTokenFile(name, parentDir, fullPath) || isLikelyServiceArtifactFile(name, parentDir, fullPath)) {
+    return false;
+  }
+  return m.filePatterns.some(rx => rx.test(name));
 }
 
 // Clipboard files
@@ -126,18 +184,22 @@ function isLikelyClipboardFile(name) {
 }
 
 // Apply all hints to a node. Returns true if anything was detected.
-function applyDetectionHints(node, name, parentDir) {
+function applyDetectionHints(node, name, parentDir, fullPath = '') {
   let detected = false;
   if (isLikelyPasswordFilename(name, parentDir)) { node._passwordFileHint = true; detected = true; }
   if (isLikelyCookieFile(name, parentDir))        { node._cookieFileHint = true;   detected = true; }
   if (isLikelySystemInfoFile(name, parentDir))     { node._sysInfoHint = true;      detected = true; }
   if (isLikelyAutofillFile(name, parentDir))       { node._autofillHint = true;     detected = true; }
   if (isLikelyHistoryFile(name, parentDir))        { node._historyHint = true;      detected = true; }
+  if (isLikelyBookmarkFile(name, parentDir, fullPath)) { node._bookmarkHint = true; detected = true; }
+  if (isLikelyBrowserMetadataFile(name, parentDir, fullPath)) { node._browserMetadataHint = true; detected = true; }
   if (isLikelyScreenshot(name))                    { node._screenshotHint = true;   detected = true; }
   if (isLikelyCreditCardFile(name, parentDir))     { node._creditCardHint = true;   detected = true; }
   if (isLikelyDownloadFile(name, parentDir))       { node._downloadHint = true;     detected = true; }
   if (isLikelyCryptoWalletFile(name, parentDir))   { node._cryptoWalletHint = true; detected = true; }
-  if (isLikelyMessengerFile(name, parentDir))      { node._messengerHint = true;    detected = true; }
+  if (isLikelyAccountTokenFile(name, parentDir, fullPath)) { node._accountTokenHint = true; detected = true; }
+  if (isLikelyServiceArtifactFile(name, parentDir, fullPath)) { node._serviceArtifactHint = true; detected = true; }
+  if (isLikelyMessengerFile(name, parentDir, fullPath))      { node._messengerHint = true;    detected = true; }
   if (isLikelyCreditsFile(name))                   { node._creditsFileHint = true;  detected = true; }
   if (isLikelySoftwareFile(name))                  { node._softwareFileHint = true; detected = true; }
   if (isLikelyProcessListFile(name))               { node._processListHint = true;  detected = true; }
@@ -153,12 +215,16 @@ export {
   isLikelySystemInfoFile,
   isLikelyAutofillFile,
   isLikelyHistoryFile,
+  isLikelyBookmarkFile,
+  isLikelyBrowserMetadataFile,
   isLikelyScreenshot,
   isLikelyCreditCardFile,
   isLikelyDownloadFile,
   isLikelyDomainDetectFile,
   isLikelyBrowserPluginFile,
   isLikelyCryptoWalletFile,
+  isLikelyAccountTokenFile,
+  isLikelyServiceArtifactFile,
   isLikelyMessengerFile,
   isLikelyClipboardFile,
   isLikelyCreditsFile,

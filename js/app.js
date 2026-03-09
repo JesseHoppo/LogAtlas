@@ -28,6 +28,7 @@ const resetZone = document.getElementById('resetZone');
 const uploadInfo = document.getElementById('uploadInfo');
 
 let sysInfoSourcePath = null;
+let overviewScreenshotUrl = null;
 
 // Page navigation
 
@@ -41,7 +42,15 @@ const pages = {
   cookies: document.getElementById('pageCookies'),
   autofills: document.getElementById('pageAutofills'),
   history: document.getElementById('pageHistory'),
+  bookmarks: document.getElementById('pageBookmarks'),
+  browsermeta: document.getElementById('pageBrowserMeta'),
+  tokens: document.getElementById('pageTokens'),
+  services: document.getElementById('pageServices'),
   downloads: document.getElementById('pageDownloads'),
+  cards: document.getElementById('pageCards'),
+  clipboard: document.getElementById('pageClipboard'),
+  detections: document.getElementById('pageDetections'),
+  screenshots: document.getElementById('pageScreenshots'),
   domains: document.getElementById('pageDomains'),
   software: document.getElementById('pageSoftware'),
   processes: document.getElementById('pageProcesses'),
@@ -62,7 +71,7 @@ function navigateToPage(pageName) {
     item.classList.toggle('active', item.dataset.page === pageName);
   }
 
-  if (['passwords', 'cookies', 'autofills', 'history', 'downloads', 'domains', 'software', 'processes', 'timeline', 'identity'].includes(pageName)) {
+  if (['passwords', 'cookies', 'autofills', 'history', 'bookmarks', 'browsermeta', 'tokens', 'services', 'downloads', 'cards', 'clipboard', 'detections', 'screenshots', 'domains', 'software', 'processes', 'timeline', 'identity'].includes(pageName)) {
     emit('page:' + pageName);
   }
 }
@@ -86,11 +95,18 @@ function updateDashboardVisibility() {
   const cookieFiles = state.flatFiles.filter(f => f._cookieFileHint);
   const autofillFiles = state.flatFiles.filter(f => f._autofillHint);
   const historyFiles = state.flatFiles.filter(f => f._historyHint);
+  const bookmarkFiles = state.flatFiles.filter(f => f._bookmarkHint);
+  const browserMetaFiles = state.flatFiles.filter(f => f._browserMetadataHint);
   const sysInfoFiles = state.flatFiles.filter(f => f._sysInfoHint);
   const creditCardFiles = state.flatFiles.filter(f => f._creditCardHint);
   const cryptoWalletFiles = state.flatFiles.filter(f => f._cryptoWalletHint);
+  const tokenFiles = state.flatFiles.filter(f => f._accountTokenHint);
+  const serviceFiles = state.flatFiles.filter(f => f._serviceArtifactHint);
   const messengerFiles = state.flatFiles.filter(f => f._messengerHint);
   const downloadFiles = state.flatFiles.filter(f => f._downloadHint);
+  const domainDetectFiles = state.flatFiles.filter(f => f._domainDetectHint);
+  const clipboardFiles = state.flatFiles.filter(f => f._clipboardHint);
+  const screenshotFiles = state.flatFiles.filter(f => f._screenshotHint);
   const browserPluginFiles = state.flatFiles.filter(f => f._browserPluginHint);
   const softwareFiles = state.flatFiles.filter(f => f._softwareFileHint);
   const processFiles = state.flatFiles.filter(f => f._processListHint);
@@ -105,15 +121,18 @@ function updateDashboardVisibility() {
   dashAutofill.classList.toggle('hidden', autofillFiles.length === 0);
 
   const hasAnyData = credFiles.length > 0 || cookieFiles.length > 0 ||
-    autofillFiles.length > 0 || historyFiles.length > 0 || sysInfoFiles.length > 0 ||
+    autofillFiles.length > 0 || historyFiles.length > 0 || bookmarkFiles.length > 0 ||
+    browserMetaFiles.length > 0 || sysInfoFiles.length > 0 ||
     creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0 ||
-    downloadFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0;
+    tokenFiles.length > 0 || serviceFiles.length > 0 ||
+    downloadFiles.length > 0 || domainDetectFiles.length > 0 || clipboardFiles.length > 0 ||
+    screenshotFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0;
   noData.classList.toggle('hidden', hasAnyData);
 
   const extraEl = document.getElementById('dashExtraIntel');
   const extraBody = document.getElementById('dashExtraBody');
 
-  if (creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0 || downloadFiles.length > 0 || browserPluginFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0) {
+  if (creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || tokenFiles.length > 0 || serviceFiles.length > 0 || messengerFiles.length > 0 || downloadFiles.length > 0 || clipboardFiles.length > 0 || browserPluginFiles.length > 0 || bookmarkFiles.length > 0 || browserMetaFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0) {
     extraEl.classList.remove('hidden');
 
     let html = '<div class="dash-extra-items">';
@@ -123,11 +142,26 @@ function updateDashboardVisibility() {
     if (cryptoWalletFiles.length > 0) {
       html += `<div class="dash-extra-item"><span class="dash-extra-icon">W</span><span>${cryptoWalletFiles.length} crypto wallet file(s) detected</span></div>`;
     }
+    if (tokenFiles.length > 0) {
+      html += `<div class="dash-extra-item dash-extra-warning"><span class="dash-extra-icon">TK</span><span>${tokenFiles.length} account token file(s) detected</span></div>`;
+    }
+    if (serviceFiles.length > 0) {
+      html += `<div class="dash-extra-item"><span class="dash-extra-icon">SV</span><span>${serviceFiles.length} service artifact file(s) detected</span></div>`;
+    }
     if (messengerFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">M</span><span>${messengerFiles.length} messenger/token file(s) detected</span></div>`;
+      html += `<div class="dash-extra-item"><span class="dash-extra-icon">M</span><span>${messengerFiles.length} unclassified service file(s) detected</span></div>`;
     }
     if (downloadFiles.length > 0) {
       html += `<div class="dash-extra-item"><span class="dash-extra-icon">DL</span><span>${downloadFiles.length} download history file(s) detected</span></div>`;
+    }
+    if (clipboardFiles.length > 0) {
+      html += `<div class="dash-extra-item"><span class="dash-extra-icon">CL</span><span>${clipboardFiles.length} clipboard file(s) detected</span></div>`;
+    }
+    if (bookmarkFiles.length > 0) {
+      html += `<div class="dash-extra-item"><span class="dash-extra-icon">BM</span><span>${bookmarkFiles.length} bookmark file(s) detected</span></div>`;
+    }
+    if (browserMetaFiles.length > 0) {
+      html += `<div class="dash-extra-item"><span class="dash-extra-icon">MD</span><span>${browserMetaFiles.length} browser metadata file(s) detected</span></div>`;
     }
     if (browserPluginFiles.length > 0) {
       html += `<div class="dash-extra-item"><span class="dash-extra-icon">EXT</span><span>${browserPluginFiles.length} browser extension/plugin file(s) detected</span></div>`;
@@ -439,6 +473,10 @@ on('analysis:fingerprint', (data) => {
 });
 
 on('analysis:screenshot', async (data) => {
+  if (overviewScreenshotUrl) {
+    URL.revokeObjectURL(overviewScreenshotUrl);
+    overviewScreenshotUrl = null;
+  }
   if (!data || !data.node) return;
 
   const section = document.getElementById('dashScreenshot');
@@ -453,8 +491,12 @@ on('analysis:screenshot', async (data) => {
     const mime = mimeMap[ext] || 'image/png';
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
+    overviewScreenshotUrl = url;
 
-    body.innerHTML = `<img class="dash-screenshot-img dash-screenshot-clickable" src="${url}" alt="Screenshot from log (click to enlarge)">`;
+    const subtitle = data.entries && data.entries.length > 1
+      ? `<div class="dash-section-subtitle">${data.entries.length} screenshots detected</div>`
+      : '';
+    body.innerHTML = `${subtitle}<img class="dash-screenshot-img dash-screenshot-clickable" src="${url}" alt="Screenshot from log (click to enlarge)">`;
     section.classList.remove('hidden');
 
     const img = body.querySelector('.dash-screenshot-img');
@@ -853,6 +895,10 @@ function resetUI() {
 
   document.getElementById('dashScreenshot').classList.add('hidden');
   document.getElementById('dashScreenshotBody').innerHTML = '';
+  if (overviewScreenshotUrl) {
+    URL.revokeObjectURL(overviewScreenshotUrl);
+    overviewScreenshotUrl = null;
+  }
 
   document.getElementById('dashAutofillIntel').classList.add('hidden');
   document.getElementById('dashDownloadIntel').classList.add('hidden');
@@ -872,6 +918,10 @@ function resetUI() {
   document.getElementById('navTimeline').disabled = true;
   document.getElementById('navDomains').disabled = true;
   document.getElementById('navDownloads').disabled = true;
+  document.getElementById('navCards').disabled = true;
+  document.getElementById('navClipboard').disabled = true;
+  document.getElementById('navDetections').disabled = true;
+  document.getElementById('navScreenshots').disabled = true;
   document.getElementById('navSoftware').disabled = true;
   document.getElementById('navProcesses').disabled = true;
   globalSearchInput.value = '';

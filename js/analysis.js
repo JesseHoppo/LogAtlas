@@ -2,11 +2,42 @@
 
 import { emit } from './state.js';
 import { loadFileContent } from './extractor.js';
-import { parsePasswordFile, parseCookieFile, parseAutofillFile, parseDownloadFile } from './transforms.js';
+import {
+  parsePasswordFile,
+  parseCookieFile,
+  parseAutofillFile,
+  parseSystemInfoFile,
+  parseBookmarkFile,
+  parseBrowserMetadataFile,
+  parseAccountTokenFile,
+  parseServiceArtifactFile,
+  parseDownloadFile,
+  parseDomainDetectFile,
+  parseClipboardFile,
+  parseCreditCardFile,
+} from './transforms.js';
 import { collectHintedNodes, extractDomain, checkCookieValidity, topN } from './shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
 import { FIELD_PATTERNS, EMAIL_REGEX, PHONE_REGEX, IOC_KEY_MAP, CONTENT_IOC_PATTERNS, LIMITS } from './definitions.js';
+
+function inferBrowserFromPath(pathText) {
+  const match = String(pathText || '').match(/\b(Chrome|Edge|Firefox|Opera|Brave|Vivaldi|Chromium|YandexBrowser|Safari)\b/i);
+  return match ? match[1] : '';
+}
+
+function inferServiceFromPath(pathText) {
+  const value = String(pathText || '');
+  if (/googleaccounts/i.test(value)) return 'Google';
+  if (/accounttokens?/i.test(value)) return 'Google';
+  if (/discord/i.test(value)) return 'Discord';
+  if (/steam/i.test(value)) return 'Steam';
+  if (/fbfastcheck/i.test(value)) return 'Facebook';
+  if (/telegram/i.test(value)) return 'Telegram';
+  if (/anydesk/i.test(value)) return 'AnyDesk';
+  if (/outlook/i.test(value)) return 'Outlook';
+  return '';
+}
 
 // Credentials
 
@@ -26,7 +57,7 @@ async function analyzeCredentials(fileTree, rootName) {
   let uniqueCredentials = 0;
   let parsedCount = 0;
 
-  for (const { node, path } of nodes) {
+  for (const { node } of nodes) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
@@ -159,8 +190,6 @@ async function analyzeCookies(fileTree, rootName) {
 
 // System info
 
-const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()%-]*?)\s*(?:=\s*|:\s+)(.*)/;
-
 async function analyzeSystemInfo(fileTree, rootName) {
   const nodes = [];
   collectHintedNodes(fileTree, '_sysInfoHint', rootName, nodes);
@@ -178,46 +207,15 @@ async function analyzeSystemInfo(fileTree, rootName) {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      let found = false;
+      const parsed = parseSystemInfoFile(text, node.name);
+      if (!parsed || !parsed.entries) continue;
 
-      // JSON sysinfo
-      if (/\.json$/i.test(node.name)) {
-        try {
-          const obj = JSON.parse(text);
-          for (const [key, value] of Object.entries(obj)) {
-            const str = Array.isArray(value) ? value.join(', ') : String(value);
-            if (str && str !== 'null' && str !== '[]' && !merged[key]) {
-              merged[key] = str;
-              found = true;
-            }
-          }
-        } catch { /* not valid JSON, try KV */ }
-      }
-
-      // KV text parsing
-      if (!found) {
-        const lines = text.split('\n');
-        let lastKey = null;
-        for (const line of lines) {
-          const clean = line.trim().replace(/^[\p{So}\p{Sk}\u200d\ufe0f]+\s*/u, '').replace(/^[-*•]\s+/, '');
-          // Tab-indented continuation lines append to previous key
-          if (/^\t/.test(line) && lastKey && merged[lastKey] && clean) {
-            merged[lastKey] += ', ' + clean;
-            continue;
-          }
-          const match = clean.match(KV_PATTERN);
-          if (match) {
-            const key = match[1].trim();
-            const value = match[2].trim();
-            if (value && !merged[key]) {
-              merged[key] = value;
-              lastKey = key;
-              found = true;
-            }
-          }
+      for (const [key, value] of Object.entries(parsed.entries)) {
+        if (value && !merged[key]) {
+          merged[key] = value;
         }
       }
-      if (found) sourceFiles.push(node.name);
+      sourceFiles.push(node.name);
     } catch {
       // skip
     }
@@ -364,15 +362,30 @@ async function analyzeClipboard(fileTree, rootName) {
   }
 
   const entries = [];
+  let fileCount = 0;
+  let urlCount = 0;
+  let commandCount = 0;
+  let pathCount = 0;
   for (const { node } of nodes) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content).trim();
-      if (!text) continue;
-      // Extract URLs from clipboard content
-      const urls = text.match(/https?:\/\/[^\s"'<>]+/gi) || [];
-      entries.push({ text, urls });
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseClipboardFile(text);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      for (const row of parsed.rows) {
+        const type = (row[0] || 'Text').trim() || 'Text';
+        const entryText = (row[1] || '').trim();
+        const urls = (row[2] || '').trim() ? row[2].trim().split(/\s+/).filter(Boolean) : [];
+        if (!entryText) continue;
+
+        if (urls.length > 0) urlCount += urls.length;
+        if (type === 'Command') commandCount++;
+        if (type === 'Path') pathCount++;
+        entries.push({ type, text: entryText, urls });
+      }
     } catch {
       // skip
     }
@@ -383,7 +396,7 @@ async function analyzeClipboard(fileTree, rootName) {
     return;
   }
 
-  emit('analysis:clipboard', { entries });
+  emit('analysis:clipboard', { entries, fileCount, urlCount, commandCount, pathCount });
 }
 
 function extractIOCs(sysinfoEntries, sysinfoText) {
@@ -506,47 +519,31 @@ async function analyzeDomainDetect(fileTree, rootName) {
     return;
   }
 
-  const ENTRY_PATTERN = /(?:^|\s)(?:\d+\)\s*)?\[([^\]]+)\]\s+([^\s(]+)\s*\((\d+)\)/g;
   const categories = {};
+  const entries = [];
+  let fileCount = 0;
+  let totalHits = 0;
 
   for (const { node } of nodes) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
       const text = new TextDecoder('utf-8').decode(content);
-      let currentCategory = 'General';
+      const parsed = parseDomainDetectFile(text);
+      if (!parsed || parsed.rows.length === 0) continue;
 
-      for (const line of text.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
+      fileCount++;
+      for (const row of parsed.rows) {
+        const section = (row[0] || 'General').trim() || 'General';
+        const label = (row[1] || '').trim();
+        const target = (row[2] || '').trim();
+        const count = Math.max(parseInt(row[3], 10) || 1, 1);
+        if (!target) continue;
 
-        const colonIdx = trimmed.indexOf(':');
-        const header = colonIdx >= 0 ? trimmed.slice(0, colonIdx).trim() : '';
-        const rest = (colonIdx >= 0 ? trimmed.slice(colonIdx + 1) : trimmed).trim();
-
-        if (colonIdx >= 0 && !rest) {
-          currentCategory = header || currentCategory;
-          continue;
-        }
-
-        let match;
-        let matchedEntry = false;
-        ENTRY_PATTERN.lastIndex = 0;
-        while ((match = ENTRY_PATTERN.exec(rest)) !== null) {
-          const label = match[1];
-          const domain = match[2];
-          const count = parseInt(match[3], 10);
-          if (!categories[label]) categories[label] = [];
-          categories[label].push({ domain, count });
-          currentCategory = label;
-          matchedEntry = true;
-        }
-
-        if (!matchedEntry && rest && !/\s/.test(rest) && /[A-Za-z]/.test(rest)) {
-          const label = header || currentCategory || 'General';
-          if (!categories[label]) categories[label] = [];
-          categories[label].push({ domain: rest, count: 1 });
-        }
+        if (!categories[section]) categories[section] = [];
+        categories[section].push({ domain: target, count, label });
+        entries.push({ section, label, target, count });
+        totalHits += count;
       }
     } catch {
       // skip
@@ -558,7 +555,273 @@ async function analyzeDomainDetect(fileTree, rootName) {
     return;
   }
 
-  emit('analysis:domainDetect', { categories });
+  emit('analysis:domainDetect', { fileCount, totalHits, categories, entries });
+}
+
+async function analyzeCreditCards(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_creditCardHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:creditCards', null);
+    return;
+  }
+
+  const last4 = new Set();
+  let fileCount = 0;
+  let totalCards = 0;
+  let withHolder = 0;
+  let withCvc = 0;
+  let withExpiry = 0;
+
+  for (const { node } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseCreditCardFile(text, node._parseConfig || null);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      totalCards += parsed.rows.length;
+      for (const row of parsed.rows) {
+        const cardNumber = (row[0] || '').trim();
+        const nameOnCard = (row[1] || '').trim();
+        const cvc = (row[2] || '').trim();
+        const expiration = (row[3] || '').trim();
+        const tail = cardNumber.replace(/\D/g, '').slice(-4);
+        if (tail) last4.add(tail);
+        if (nameOnCard) withHolder++;
+        if (cvc) withCvc++;
+        if (expiration && expiration !== '/') withExpiry++;
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (totalCards === 0) {
+    emit('analysis:creditCards', null);
+    return;
+  }
+
+  emit('analysis:creditCards', {
+    fileCount,
+    totalCards,
+    withHolder,
+    withCvc,
+    withExpiry,
+    uniqueLast4: last4.size,
+  });
+}
+
+async function analyzeBookmarks(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_bookmarkHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:bookmarks', null);
+    return;
+  }
+
+  const allDomains = [];
+  const browserCounts = [];
+  let fileCount = 0;
+  let totalBookmarks = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseBookmarkFile(text);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      totalBookmarks += parsed.rows.length;
+
+      const browser = inferBrowserFromPath(path || node.name);
+      if (browser) browserCounts.push(browser);
+
+      for (const row of parsed.rows) {
+        const url = (row[0] || '').trim();
+        if (!url) continue;
+        const domain = extractDomain(url);
+        if (domain) allDomains.push(domain);
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (totalBookmarks === 0) {
+    emit('analysis:bookmarks', null);
+    return;
+  }
+
+  emit('analysis:bookmarks', {
+    fileCount,
+    totalBookmarks,
+    uniqueDomains: new Set(allDomains).size,
+    topDomains: topN(allDomains, LIMITS.topDomains),
+    browsers: topN(browserCounts, 10),
+  });
+}
+
+async function analyzeBrowserMetadata(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_browserMetadataHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:browserMetadata', null);
+    return;
+  }
+
+  const categories = {};
+  const browsers = [];
+  let fileCount = 0;
+  let totalEntries = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseBrowserMetadataFile(text);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      totalEntries += parsed.rows.length;
+      const browser = inferBrowserFromPath(path || node.name);
+      if (browser) browsers.push(browser);
+
+      const category = /\/path\//i.test(path) ? 'Path'
+        : /\/ua\//i.test(path) ? 'User Agent'
+        : /\/version\//i.test(path) ? 'Version'
+        : /debug\.txt$/i.test(node.name) ? 'Debug'
+        : 'Metadata';
+      categories[category] = (categories[category] || 0) + parsed.rows.length;
+    } catch {
+      // skip
+    }
+  }
+
+  if (totalEntries === 0) {
+    emit('analysis:browserMetadata', null);
+    return;
+  }
+
+  emit('analysis:browserMetadata', {
+    fileCount,
+    totalEntries,
+    categories,
+    browsers: topN(browsers, 10),
+  });
+}
+
+async function analyzeAccountTokens(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_accountTokenHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:accountTokens', null);
+    return;
+  }
+
+  const services = [];
+  const types = [];
+  const accounts = new Set();
+  let fileCount = 0;
+  let totalEntries = 0;
+  let withValue = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseAccountTokenFile(text, path || node.name);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      totalEntries += parsed.rows.length;
+      const service = inferServiceFromPath(path || node.name) || 'Unknown';
+
+      for (const row of parsed.rows) {
+        const type = (row[0] || 'Token').trim();
+        const value = (row[1] || '').trim();
+        const accountId = (row[2] || '').trim();
+        services.push(service);
+        if (type) types.push(type);
+        if (value) withValue++;
+        if (accountId) accounts.add(`${service}:${accountId}`);
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (totalEntries === 0) {
+    emit('analysis:accountTokens', null);
+    return;
+  }
+
+  emit('analysis:accountTokens', {
+    fileCount,
+    totalEntries,
+    withValue,
+    uniqueAccounts: accounts.size,
+    services: topN(services, 10),
+    tokenTypes: topN(types, 10),
+  });
+}
+
+async function analyzeServiceArtifacts(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_serviceArtifactHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:serviceArtifacts', null);
+    return;
+  }
+
+  const services = [];
+  const keys = [];
+  let fileCount = 0;
+  let totalEntries = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseServiceArtifactFile(text);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      totalEntries += parsed.rows.length;
+      const service = inferServiceFromPath(path || node.name) || 'Unknown';
+      services.push(service);
+      for (const row of parsed.rows) {
+        const key = (row[1] || '').trim();
+        if (key) keys.push(key);
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (totalEntries === 0) {
+    emit('analysis:serviceArtifacts', null);
+    return;
+  }
+
+  emit('analysis:serviceArtifacts', {
+    fileCount,
+    totalEntries,
+    services: topN(services, 10),
+    topKeys: topN(keys, 10),
+  });
 }
 
 // Download history
@@ -619,12 +882,10 @@ function findScreenshot(fileTree, rootName) {
     emit('analysis:screenshot', null);
     return;
   }
-  emit('analysis:screenshot', { node: nodes[0].node, path: nodes[0].path });
+  emit('analysis:screenshot', { node: nodes[0].node, path: nodes[0].path, entries: nodes });
 }
 
 // Stealer fingerprinting
-
-const SYSINFO_KV = /^([A-Za-z][A-Za-z0-9 _\/-]*?)\s*[:=]\s+(.*)/;
 
 async function runFingerprint(fileTree, rootName) {
   const ctx = { dirs: [], files: [], sysinfoFilename: null, sysinfoNode: null, sysinfoKeys: [], sysinfoText: null, creditsNodes: [], creditsText: null, passwordNode: null, passwordHeaderText: null };
@@ -645,22 +906,9 @@ async function runFingerprint(fileTree, rootName) {
       if (content) {
         const text = new TextDecoder('utf-8').decode(content);
         ctx.sysinfoText = text;
-
-        // JSON sysinfo
-        if (/\.json$/i.test(ctx.sysinfoNode.name)) {
-          try {
-            const obj = JSON.parse(text);
-            for (const key of Object.keys(obj)) ctx.sysinfoKeys.push(key);
-          } catch { /* try KV */ }
-        }
-
-        // KV text parsing
-        if (ctx.sysinfoKeys.length === 0) {
-          for (const line of text.split('\n')) {
-            const clean = line.trim().replace(/^[\p{So}\p{Sk}\u200d\ufe0f]+\s*/u, '').replace(/^[-*•]\s+/, '');
-            const match = clean.match(SYSINFO_KV);
-            if (match) ctx.sysinfoKeys.push(match[1].trim());
-          }
+        const parsed = parseSystemInfoFile(text, ctx.sysinfoNode.name);
+        if (parsed && parsed.entries) {
+          ctx.sysinfoKeys.push(...Object.keys(parsed.entries));
         }
       }
     } catch {
@@ -858,7 +1106,12 @@ function runAnalysis(fileTree, rootName) {
   analyzeCookies(fileTree, rootName);
   analyzeSystemInfo(fileTree, rootName);
   analyzeAutofills(fileTree, rootName);
+  analyzeBookmarks(fileTree, rootName);
+  analyzeBrowserMetadata(fileTree, rootName);
+  analyzeAccountTokens(fileTree, rootName);
+  analyzeServiceArtifacts(fileTree, rootName);
   analyzeDownloads(fileTree, rootName);
+  analyzeCreditCards(fileTree, rootName);
   analyzeDomainDetect(fileTree, rootName);
   analyzeSoftware(fileTree, rootName);
   analyzeProcessList(fileTree, rootName);

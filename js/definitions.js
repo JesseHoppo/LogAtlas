@@ -29,11 +29,14 @@ export const SIGNATURES = {
     ],
     sysinfoFile: { pattern: /^information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
+      { pattern: /^Country$/i, label: 'Sysinfo key: Country' },
       { pattern: /^Version$/i, label: 'Sysinfo key: Version' },
       { pattern: /^GUID$/i, label: 'Sysinfo key: GUID' },
       { pattern: /^Work Dir$/i, label: 'Sysinfo key: Work Dir' },
       { pattern: /^MachineID$/i, label: 'Sysinfo key: MachineID' },
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^Computer Name$/i, label: 'Sysinfo key: Computer Name' },
+      { pattern: /^User Name$/i, label: 'Sysinfo key: User Name' },
       { pattern: /^Display Language$/i, label: 'Sysinfo key: Display Language' },
       { pattern: /^Keyboard Languages?$/i, label: 'Sysinfo key: Keyboard Languages' },
     ],
@@ -41,6 +44,9 @@ export const SIGNATURES = {
       { pattern: /VIDAR/i, label: 'Sysinfo header: VIDAR branding' },
       { pattern: /vidars\.su/i, label: 'Sysinfo content: vidars.su URL' },
       { pattern: /[\u0400-\u04FF]{3,}/u, label: 'Sysinfo content: Cyrillic text' },
+      { pattern: /^\[Hardware\]$/m, label: 'Sysinfo section: [Hardware]' },
+      { pattern: /^\[Processes\]$/m, label: 'Sysinfo section: [Processes]' },
+      { pattern: /^\[Software\]$/m, label: 'Sysinfo section: [Software]' },
     ],
     folders: [
       { pattern: /^Autofill$/i, label: 'Folder: Autofill/' },
@@ -75,6 +81,12 @@ export const SIGNATURES = {
     ],
     sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
+      { pattern: /^Build ID$/i, label: 'Sysinfo key: Build ID' },
+      { pattern: /^FileLocation$/i, label: 'Sysinfo key: FileLocation' },
+      { pattern: /^UserName$/i, label: 'Sysinfo key: UserName' },
+      { pattern: /^MachineName$/i, label: 'Sysinfo key: MachineName' },
+      { pattern: /^Log date$/i, label: 'Sysinfo key: Log date' },
+      { pattern: /^Hardwares$/i, label: 'Sysinfo key: Hardwares' },
       { pattern: /^Domain Name$/i, label: 'Sysinfo key: Domain Name' },
       { pattern: /^Admin Group$/i, label: 'Sysinfo key: Admin Group' },
       { pattern: /^Integrity$/i, label: 'Sysinfo key: Integrity' },
@@ -120,8 +132,14 @@ export const SIGNATURES = {
     selfId: [
       { pattern: /rhadamanthys/i, label: 'Self-ID: Rhadamanthys' },
     ],
-    sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoFile: { pattern: /^(?:UserInformation|system)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
+      { pattern: /^Install Date$/i, label: 'Sysinfo key: Install Date' },
+      { pattern: /^Traffic Name$/i, label: 'Sysinfo key: Traffic Name' },
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^User Name$/i, label: 'Sysinfo key: User Name' },
+      { pattern: /^Computer Name$/i, label: 'Sysinfo key: Computer Name' },
+      { pattern: /^Domain Name$/i, label: 'Sysinfo key: Domain Name' },
       { pattern: /^Wallpaper Hash$/i, label: 'Sysinfo key: Wallpaper Hash' },
       { pattern: /^Product Key$/i, label: 'Sysinfo key: Product Key' },
       { pattern: /^MachineID$/i, label: 'Sysinfo key: MachineID' },
@@ -179,13 +197,14 @@ export const SIGNATURES = {
     ],
     sysinfoFile: { pattern: /^System\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
-      { pattern: /^LummaC2 Build$/i, label: 'Sysinfo key: LummaC2 Build' },
-      { pattern: /^LID$/i, label: 'Sysinfo key: LID' },
+      { pattern: /^LummaC2(?:,\s*| )Build$/i, label: 'Sysinfo key: LummaC2 Build' },
+      { pattern: /^LID(?:\s*\(Lumma ID\))?$/i, label: 'Sysinfo key: LID' },
       { pattern: /^Configuration$/i, label: 'Sysinfo key: Configuration' },
       { pattern: /^Local Date$/i, label: 'Sysinfo key: Local Date' },
       { pattern: /^Elevated$/i, label: 'Sysinfo key: Elevated' },
       { pattern: /^NetBIOS$/i, label: 'Sysinfo key: NetBIOS' },
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^Screen resolution$/i, label: 'Sysinfo key: Screen resolution' },
     ],
     sysinfoContent: [
       { pattern: /LummaC2/i, label: 'Sysinfo content: LummaC2 branding' },
@@ -241,7 +260,27 @@ export const SIGNATURES = {
     ],
   },
 
-  Stealc: {
+  Astris: {
+    sysinfoFile: { pattern: /^Information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Build$/i, label: 'Sysinfo key: Build' },
+      { pattern: /^Public IP Address$/i, label: 'Sysinfo key: Public IP Address' },
+      { pattern: /^Internet Provider$/i, label: 'Sysinfo key: Internet Provider' },
+      { pattern: /^Product Key$/i, label: 'Sysinfo key: Product Key' },
+      { pattern: /^Antiviruses$/i, label: 'Sysinfo key: Antiviruses' },
+    ],
+    sysinfoContent: [
+      { pattern: /^\[General\]$/m, label: 'Sysinfo section: [General]' },
+      { pattern: /^\[Machine\]$/m, label: 'Sysinfo section: [Machine]' },
+      { pattern: /^\[Network\]$/m, label: 'Sysinfo section: [Network]' },
+      { pattern: /^\[Hardware\]$/m, label: 'Sysinfo section: [Hardware]' },
+    ],
+    folders: [],
+    files: [],
+    structures: [],
+  },
+
+  StealC: {
     selfId: [
       { pattern: /stealc\s+stealer/i, label: 'Self-ID: Stealc stealer' },
       { pattern: /STEALC/i, label: 'Self-ID: STEALC branding' },
@@ -255,10 +294,15 @@ export const SIGNATURES = {
       { pattern: /^Execution Path$/i, label: 'Sysinfo key: Execution Path' },
       { pattern: /^Running Path$/i, label: 'Sysinfo key: Running Path' },
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^UserName$/i, label: 'Sysinfo key: UserName' },
+      { pattern: /^Cores$/i, label: 'Sysinfo key: Cores' },
+      { pattern: /^Display Resolution$/i, label: 'Sysinfo key: Display Resolution' },
       { pattern: /^Laptop$/i, label: 'Sysinfo key: Laptop' },
       { pattern: /^Build ID$/i, label: 'Sysinfo key: Build ID' },
     ],
     sysinfoContent: [
+      { pattern: /^Network Info:$/m, label: 'Sysinfo section: Network Info' },
+      { pattern: /^System Summary:$/m, label: 'Sysinfo section: System Summary' },
       { pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/i, label: 'Sysinfo content: Time with (sig:...) hash' },
       { pattern: /forum\.exploit\.in/i, label: 'Sysinfo content: exploit.in forum URL' },
       { pattern: /xss\.is/i, label: 'Sysinfo content: xss.is forum URL' },
@@ -404,6 +448,7 @@ export const SIGNATURES = {
       { pattern: /^IP\s*Address$/i, label: 'Sysinfo key: IP Address' },
       { pattern: /^Tracker$/i, label: 'Sysinfo key: Tracker' },
       { pattern: /^Bot_ID$/i, label: 'Sysinfo key: Bot_ID' },
+      { pattern: /^Launched at$/i, label: 'Sysinfo key: Launched at' },
       { pattern: /^Build compile date$/i, label: 'Sysinfo key: Build compile date' },
     ],
     sysinfoContent: [
@@ -436,7 +481,24 @@ export const SIGNATURES = {
     ],
   },
 
-  MarsStaler: {
+  Raccoon2: {
+    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^User ID$/i, label: 'Sysinfo key: User ID' },
+      { pattern: /^Last seen$/i, label: 'Sysinfo key: Last seen' },
+      { pattern: /^Build$/i, label: 'Sysinfo key: Build' },
+      { pattern: /^IP info$/i, label: 'Sysinfo key: IP info' },
+      { pattern: /^Installed applications$/i, label: 'Sysinfo key: Installed applications' },
+    ],
+    sysinfoContent: [
+      { pattern: /^System Information:\s*$/m, label: 'Sysinfo section: System Information' },
+    ],
+    folders: [],
+    files: [],
+    structures: [],
+  },
+
+  MarsStealer: {
     selfId: [
       { pattern: /mars\s+stealer/i, label: 'Self-ID: Mars Stealer' },
     ],
@@ -480,11 +542,16 @@ export const SIGNATURES = {
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^Build$/i, label: 'Sysinfo key: Build' },
+      { pattern: /^Version$/i, label: 'Sysinfo key: Version' },
+      { pattern: /^MachineID$/i, label: 'Sysinfo key: MachineID' },
+      { pattern: /^GUID$/i, label: 'Sysinfo key: GUID' },
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
       { pattern: /^IP$/i, label: 'Sysinfo key: IP' },
     ],
     sysinfoContent: [
       { pattern: /RisePro/i, label: 'Sysinfo content: RisePro branding' },
+      { pattern: /^\[Hardware\]$/m, label: 'Sysinfo section: [Hardware]' },
+      { pattern: /^\[Processes\]$/m, label: 'Sysinfo section: [Processes]' },
     ],
     folders: [
       { pattern: /^Browser$/i, label: 'Folder: Browser/' },
@@ -570,13 +637,19 @@ export const SIGNATURES = {
     ],
   },
 
-  AtomicStealer: {
+  Atomic: {
     selfId: [
       { pattern: /atomic\s*stealer/i, label: 'Self-ID: Atomic Stealer' },
       { pattern: /\bamos\b/i, label: 'Self-ID: AMOS (Atomic macOS Stealer)' },
     ],
-    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
+      { pattern: /^Userinfo$/i, label: 'Sysinfo key: Userinfo' },
+      { pattern: /^MetaMask Info$/i, label: 'Sysinfo key: MetaMask Info' },
+      { pattern: /^Private Keys$/i, label: 'Sysinfo key: Private Keys' },
+      { pattern: /^Debanks$/i, label: 'Sysinfo key: Debanks' },
+      { pattern: /^ProductName$/i, label: 'Sysinfo key: ProductName' },
+      { pattern: /^BuildVersion$/i, label: 'Sysinfo key: BuildVersion' },
       { pattern: /^Mac\s*OS\s*Version$/i, label: 'Sysinfo key: MacOS Version' },
       { pattern: /^Hardware\s*UUID$/i, label: 'Sysinfo key: Hardware UUID' },
     ],
@@ -689,6 +762,7 @@ export const SIGNATURES = {
     sysinfoKeys: [
       { pattern: /^UserName \(ComputerName\)$/i, label: 'Sysinfo key: UserName (ComputerName)' },
       { pattern: /^Local Date and Time$/i, label: 'Sysinfo key: Local Date and Time' },
+      { pattern: /^OS$/i, label: 'Sysinfo key: OS' },
       { pattern: /^Display Resolution$/i, label: 'Sysinfo key: Display Resolution' },
       { pattern: /^GPU$/i, label: 'Sysinfo key: GPU' },
       { pattern: /^RAM$/i, label: 'Sysinfo key: RAM' },
@@ -730,15 +804,19 @@ export const SIGNATURES = {
     structures: [],
   },
 
-  DarkCrystalRAT: {
+  'DarkCrystal RAT': {
     selfId: [
       { pattern: /darkcrystal/i, label: 'Self-ID: DarkCrystal' },
       { pattern: /\bDCRAT\b/i, label: 'Self-ID: DCRAT' },
     ],
-    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoFile: { pattern: /^Information(?:\s*\[[^\]]+\])?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^PC Name$/i, label: 'Sysinfo key: PC Name' },
       { pattern: /^User Name$/i, label: 'Sysinfo key: User Name' },
+      { pattern: /^Monitors$/i, label: 'Sysinfo key: Monitors' },
+      { pattern: /^Save Time$/i, label: 'Sysinfo key: Save Time' },
+      { pattern: /^LANIP$/i, label: 'Sysinfo key: LANIP' },
+      { pattern: /^\.NET Framework Version$/i, label: 'Sysinfo key: .NET Framework Version' },
     ],
     sysinfoContent: [
       { pattern: /DarkCrystal/i, label: 'Sysinfo content: DarkCrystal branding' },
@@ -767,6 +845,7 @@ export const SIGNATURES = {
       { pattern: /^Build Name$/i, label: 'Sysinfo key: Build Name' },
       { pattern: /^Computer Name$/i, label: 'Sysinfo key: Computer Name' },
       { pattern: /^Operation System$/i, label: 'Sysinfo key: Operation System' },
+      { pattern: /^Screen Resolution$/i, label: 'Sysinfo key: Screen Resolution' },
       { pattern: /^Execute Path$/i, label: 'Sysinfo key: Execute Path' },
       { pattern: /^Country Code$/i, label: 'Sysinfo key: Country Code' },
     ],
@@ -895,8 +974,10 @@ export const SIGNATURES = {
     sysinfoKeys: [
       { pattern: /^User$/i, label: 'Sysinfo key: User' },
       { pattern: /^Operating System$/i, label: 'Sysinfo key: Operating System' },
+      { pattern: /^Process Executable Path$/i, label: 'Sysinfo key: Process Executable Path' },
       { pattern: /^Uptime$/i, label: 'Sysinfo key: Uptime' },
       { pattern: /^ScreenResolution$/i, label: 'Sysinfo key: ScreenResolution' },
+      { pattern: /^Disk Devices$/i, label: 'Sysinfo key: Disk Devices' },
     ],
     sysinfoContent: [],
     folders: [],
@@ -915,6 +996,9 @@ export const SIGNATURES = {
     sysinfoKeys: [
       { pattern: /^Operation System$/i, label: 'Sysinfo key: Operation System' },
       { pattern: /^Current JarFile Path$/i, label: 'Sysinfo key: Current JarFile Path (Java-based)' },
+      { pattern: /^Width$/i, label: 'Sysinfo key: Width' },
+      { pattern: /^UserName$/i, label: 'Sysinfo key: UserName' },
+      { pattern: /^Language & Country$/i, label: 'Sysinfo key: Language & Country' },
     ],
     sysinfoContent: [
       { pattern: /Skalka/i, label: 'Sysinfo content: Skalka branding' },
@@ -932,6 +1016,10 @@ export const SIGNATURES = {
     sysinfoKeys: [
       { pattern: /^Operating system\s*$/i, label: 'Sysinfo key: Operating system (trailing space)' },
       { pattern: /^PC user\s*$/i, label: 'Sysinfo key: PC user (trailing space)' },
+      { pattern: /^ClipBoard\s*$/i, label: 'Sysinfo key: ClipBoard' },
+      { pattern: /^Current time\s*$/i, label: 'Sysinfo key: Current time' },
+      { pattern: /^HWID\s*$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^BSSID\s*$/i, label: 'Sysinfo key: BSSID' },
     ],
     sysinfoContent: [
       { pattern: /RL\s*Stealer/i, label: 'Sysinfo content: RL Stealer branding' },
@@ -1006,13 +1094,17 @@ export const SIGNATURES = {
     structures: [],
   },
 
-  PredatorTheThief: {
+  'PredatorTheThief v3': {
     sysinfoFile: { pattern: /^Information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
-      { pattern: /^MachineID$/i, label: 'Sysinfo key: MachineID' },
-      { pattern: /^GUID$/i, label: 'Sysinfo key: GUID' },
+      { pattern: /^Launch time$/i, label: 'Sysinfo key: Launch time' },
+      { pattern: /^Startup folder$/i, label: 'Sysinfo key: Startup folder' },
+      { pattern: /^Amount of kernels$/i, label: 'Sysinfo key: Amount of kernels' },
+      { pattern: /^GPU info$/i, label: 'Sysinfo key: GPU info' },
+      { pattern: /^Amount of RAM$/i, label: 'Sysinfo key: Amount of RAM' },
     ],
     sysinfoContent: [
+      { pattern: /Predator The Thief\s*:\s*v3/i, label: 'Sysinfo content: PredatorTheThief v3 header' },
       { pattern: /Predator\s*The\s*Thief/i, label: 'Sysinfo content: Predator The Thief branding' },
       { pattern: /PredatorTheThief/i, label: 'Sysinfo content: PredatorTheThief branding' },
     ],
@@ -1025,9 +1117,17 @@ export const SIGNATURES = {
   },
 
   LucaStealer: {
-    sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
-    sysinfoKeys: [],
+    sysinfoFile: { pattern: /^user_info\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Antivirus$/i, label: 'Sysinfo key: Antivirus' },
+      { pattern: /^FileLocation$/i, label: 'Sysinfo key: FileLocation' },
+      { pattern: /^Is Elevated$/i, label: 'Sysinfo key: Is Elevated' },
+    ],
     sysinfoContent: [
+      { pattern: /^-\s*IP Info\s*-$/m, label: 'Sysinfo section: - IP Info -' },
+      { pattern: /^-\s*PC Info\s*-$/m, label: 'Sysinfo section: - PC Info -' },
+      { pattern: /^-\s*Other Info\s*-$/m, label: 'Sysinfo section: - Other Info -' },
+      { pattern: /^-\s*Log Info\s*-$/m, label: 'Sysinfo section: - Log Info -' },
       { pattern: /Luca\s*Stealer/i, label: 'Sysinfo content: Luca Stealer branding' },
       { pattern: /LucaStealer/i, label: 'Sysinfo content: LucaStealer branding' },
     ],
@@ -1174,20 +1274,20 @@ export const TEXT_EXTENSIONS = /\.(txt|tsv|csv|json)$/i;
 export const FILE_TYPE_PATTERNS = {
   password: {
     patterns: [
-      /^(?:all|unique|icloud)[\s_-]*passwords?\.(txt|tsv|csv)$/i,
       /^passwords?\.(txt|tsv|csv)$/i,
       /^pass(?:words?)?[_-]?(?:list|dump|log)?\.(txt|tsv|csv)$/i,
       /^passwords?[_\s](?:google\s?chrome|microsoft\s?edge|firefox|opera|brave|vivaldi|chromium)[^/]*\.(txt|tsv|csv)$/i,
       /^logins?\.(txt|tsv|csv)$/i,
       /^credentials?\.(txt|tsv|csv)$/i,
       /^keychain(?:\s*data)?\.(txt|tsv|csv)$/i,
-      /^brute\.txt$/i,
     ],
     exclusions: [
       /bruteforce/i,
       /wordlist/i,
+      /^(?:all|unique|icloud)[\s_-]*passwords?\.(txt|tsv|csv)$/i,
+      /^brute\.txt$/i,
     ],
-    parentDirMatch: /^(?:passwords?|logins?)$/i,
+    parentDirMatch: /^(?:passwords?|logins)$/i,
   },
 
   cookie: {
@@ -1213,6 +1313,9 @@ export const FILE_TYPE_PATTERNS = {
       /^system[\s_-]*info(?:rmation)?\.txt$/i,
       /^system\.txt$/i,
       /^info(?:rmation)?\.txt$/i,
+      /^_Information\.txt$/i,
+      /^information\s*\[[^\]]+\]\.txt$/i,
+      /^identification\.txt$/i,
       /^pc[\s_-]*info(?:rmation)?\.(?:txt|json)$/i,
       /^build[\s_-]*info\.txt$/i,
       /^environment\.txt$/i,
@@ -1240,6 +1343,30 @@ export const FILE_TYPE_PATTERNS = {
     folderPattern: /^history$/i,
   },
 
+  bookmark: {
+    filePatterns: [
+      /^bookmarks?\.(txt|json|html)$/i,
+    ],
+    folderPattern: /^bookmarks?$/i,
+  },
+
+  browserMetadata: {
+    filePatterns: [
+      /^debug\.txt$/i,
+      /^user[\s_-]*agents?(?:\s*\[\d+\])?\.(txt|json)$/i,
+      /^(?:user[\s_-]*agent|ua|version|path)\.(txt|json)$/i,
+    ],
+    folderPatterns: [
+      /^path$/i,
+      /^ua$/i,
+      /^version$/i,
+    ],
+    pathPatterns: [
+      /(^|\/)(?:browser\/)?(?:path|ua|version)\//i,
+      /(^|\/)(?:chrome|edge|firefox|opera|brave|vivaldi|chromium)\/debug\.txt$/i,
+    ],
+  },
+
   screenshot: {
     namePattern: /(?:^|[\s_-])(?:screenshots?|screen)\b/i,
     extensions: /\.(jpg|jpeg|png|bmp|gif|webp)$/i,
@@ -1265,6 +1392,49 @@ export const FILE_TYPE_PATTERNS = {
       /^metamask/i,
       /^token\.json$/i,
       /^seed\.txt$/i,
+    ],
+  },
+
+  accountToken: {
+    filePatterns: [
+      /^restore_[^/]+\.txt$/i,
+      /^discordtokens?\.txt$/i,
+      /^discord\.txt$/i,
+      /^token_eaab\.txt$/i,
+      /^ids?\.txt$/i,
+      /^tokens?\.txt$/i,
+      /^steam[\s_-]*tokens?\.txt$/i,
+      /^(?:chrome|edge|firefox|opera|brave|vivaldi|chromium|google chrome|microsoft edge)[^/]*\.(txt|json)$/i,
+    ],
+    folderPatterns: [
+      /^googleaccounts$/i,
+      /^fbfastcheck$/i,
+      /^discord$/i,
+      /^steam$/i,
+    ],
+    pathPatterns: [
+      /(^|\/)(?:browser\/)?googleaccounts\//i,
+      /(^|\/)accounttokens?\//i,
+      /(^|\/)fbfastcheck\/(?:token_eaab|ids?)\.txt$/i,
+      /(^|\/)(?:applications|messenger)\/discord\/.*(?:discordtokens?|tokens?|discord)\.txt$/i,
+      /(^|\/)(?:applications|messenger)\/steam\/.*tokens?\.txt$/i,
+    ],
+  },
+
+  serviceArtifact: {
+    filePatterns: [
+      /^(?:system|service|user)\.conf$/i,
+      /^accounts\.txt$/i,
+      /^token\.txt$/i,
+      /^usersettings\.json$/i,
+      /^\d+\.(?:log|ldb)$/i,
+    ],
+    pathPatterns: [
+      /(^|\/)desktop\/telegram\/token\.txt$/i,
+      /(^|\/)(?:applications|soft|messenger)\/anydesk/i,
+      /(^|\/)(?:soft|email clients?)\/outlook/i,
+      /(^|\/)outlook - windows app \(new\)\//i,
+      /(^|\/)messenger\/discord\/.*leveldb\/.*\.(?:log|ldb)$/i,
     ],
   },
 

@@ -1288,6 +1288,53 @@ body {
   color: var(--warning);
   border-style: solid;
 }
+.preview-type-bookmarks {
+  background: rgba(14, 116, 144, 0.08);
+  border-color: #0e7490;
+  color: #0e7490;
+  border-style: solid;
+}
+.preview-type-browsermeta,
+.preview-type-services {
+  background: rgba(100, 116, 139, 0.08);
+  border-color: #64748b;
+  color: #64748b;
+  border-style: solid;
+}
+.preview-type-downloads,
+.preview-type-detections {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: #2563eb;
+  color: #2563eb;
+  border-style: solid;
+}
+.preview-type-tokens {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: #dc2626;
+  color: #dc2626;
+  border-style: solid;
+}
+.preview-type-cards {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: #dc2626;
+  color: #dc2626;
+  border-style: solid;
+}
+.preview-type-clipboard {
+  background: rgba(13, 148, 136, 0.08);
+  border-color: #0d9488;
+  color: #0d9488;
+  border-style: solid;
+}
+.preview-type-software,
+.preview-type-processes,
+.preview-type-sysinfo,
+.preview-type-screenshot {
+  background: rgba(100, 116, 139, 0.08);
+  border-color: #64748b;
+  color: #64748b;
+  border-style: solid;
+}
 
 .preview-btn {
   padding: 0.4rem 0.65rem;
@@ -2455,6 +2502,63 @@ body {
   border-radius: var(--radius-md);
 }
 
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.screenshot-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.screenshot-card-thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+}
+
+.screenshot-card-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.screenshot-card-meta {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.screenshot-card-name {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.screenshot-card-info,
+.screenshot-card-path {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.screenshot-card-path {
+  word-break: break-word;
+}
+
 /* Data table styles */
 .data-table-container {
   overflow-x: auto;
@@ -2890,7 +2994,7 @@ body {
 /* ------------------------------------------------------------------ */
 
 .modal-filetype {
-  max-width: 450px;
+  max-width: 560px;
 }
 
 .filetype-options {
@@ -2898,6 +3002,8 @@ body {
   flex-direction: column;
   gap: 0.5rem;
   margin-bottom: 1rem;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .filetype-option {

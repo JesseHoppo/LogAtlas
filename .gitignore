@@ -15,3 +15,5 @@ Example Logs/
 *.test.zip
 test_*.zip
 example_*.zip
+reports/
+scripts/

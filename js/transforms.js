@@ -6,12 +6,38 @@ const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]*?)\s*:\s+(.*)/;
 const AUTOFILL_KV_PATTERN = /^([A-Za-z_][A-Za-z0-9_.$\-[\]]*)\s*:\s*(.+)$/;
 const HISTORY_URL_PATTERN = /^(?:(?:[a-z][a-z0-9+.-]*):\/\/\/?|about:)/i;
 const GOOGLE_RESTORE_TOKEN_PATTERN = /^(?!https?:\/\/)(?!file:\/\/)([^:\s]{20,}):(\d{6,})$/;
+const DOMAIN_DETECT_LABELED_ENTRY = /\[([^\]]+)\]\s*([^,\n]+?)(?:\s*\((\d+)\))(?=\s*(?:,|\[|$))/g;
+const DOMAIN_DETECT_UNLABELED_ENTRY = /(^|,\s*)([^,\[]+?)(?:\s*\((\d+)\))(?=\s*(?:,|$))/g;
+const CLIPBOARD_URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
+const CREDIT_CARD_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _/-]*?)\s*:\s*(.*)$/;
+const BOOKMARK_HTML_PATTERN = /<a\b[^>]*href=(?:"([^"]+)"|'([^']+)')[^>]*>(.*?)<\/a>/ig;
+const JWT_TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const DISCORD_TOKEN_PATTERN = /^(?:mfa\.)?[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{10,}$/;
+const WINDOWS_PATH_PATTERN = /[A-Z]:\\[^"\r\n\t]+/g;
+const URL_INDICATOR_PATTERN = /https?:\/\/[^\s"'<>]+/g;
+const SYSINFO_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()%-]*?)\s*(?:=\s*|:\s*)(.*)$/;
+const SYSINFO_CAPTURE_SECTION_PATTERN = /^(?:Network Info|System Summary|System Info(?:rmation)?|User Info(?:rmation)?|Hardware Info|PC Info|Environment|Computer Info|User Agents|Installed (?:Apps|Software|Programs)|Process(?: List|es)?|Browsers?)\s*:$/i;
+const SYSINFO_STRUCTURED_KEY_PATTERN = /^(?:ip(?: address)?|country|region|city|postal code|zip|location|hwid|guid|machine guid|machine id|machine name|build(?: id)?|os(?: name)?|os version|platform|architecture|arch|username|user name|computer name|pc name|host(?:name)?|local time|utc|timezone|time zone|language|languages|keyboard(?:s)?|laptop|running path|cpu|processor|cores?|threads?|ram|memory|display(?: resolution)?|screen(?: resolution)?|gpu|video card|mac(?: address)?|bios|antivirus|defender|domain|monitor|board|motherboard|drives?)$/i;
+const SYSINFO_MULTILINE_KEY_PATTERN = /^(?:gpu|video card|display adapters?|dns servers?|installed (?:apps|software|programs)|process(?: list|es)|user agents?)$/i;
 
 // Separator lines (e.g. ===============) are normalised to blank lines
 const SEPARATOR_LINE = /^[=\-*~_]{3,}\s*$/gm;
 
 function normalizeSeparators(text) {
   return text.replace(SEPARATOR_LINE, '');
+}
+
+function normalizeText(text) {
+  return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function decodeHtmlEntities(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 function stripLeadingNoiseLines(text) {
@@ -53,6 +79,188 @@ function mostCommon(arr) {
     }
   }
   return maxVal;
+}
+
+function flattenObjectEntries(value, prefix = '', out = []) {
+  if (value == null) return out;
+
+  if (Array.isArray(value)) {
+    if (value.every(item => item == null || typeof item !== 'object')) {
+      out.push([prefix || 'Value', value.map(item => item == null ? '' : String(item)).join(', ')]);
+      return out;
+    }
+    value.forEach((item, index) => flattenObjectEntries(item, prefix ? `${prefix}[${index}]` : `[${index}]`, out));
+    return out;
+  }
+
+  if (typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      const nextPrefix = prefix ? `${prefix}.${key}` : key;
+      flattenObjectEntries(child, nextPrefix, out);
+    }
+    return out;
+  }
+
+  out.push([prefix || 'Value', String(value)]);
+  return out;
+}
+
+function inferTokenKind(value, accountId = '', hint = '') {
+  const token = String(value || '').trim();
+  const lowerHint = String(hint || '').toLowerCase();
+
+  if (!token && accountId) return 'Account ID';
+  if (token && /restore/.test(lowerHint)) return 'Restore Token';
+  if (/^1\/\//.test(token)) return /restore/i.test(lowerHint) ? 'Restore Token' : 'Google OAuth Token';
+  if (/^EAAB/i.test(token)) return 'Facebook Token';
+  if (DISCORD_TOKEN_PATTERN.test(token)) return 'Discord Token';
+  if (JWT_TOKEN_PATTERN.test(token)) return /steam/i.test(lowerHint) || accountId ? 'Steam JWT' : 'JWT';
+  if (accountId) return 'Token + Account ID';
+  return 'Token';
+}
+
+function sanitizeStructuredValue(value, maxLength = 500) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength - 1) + '\u2026';
+}
+
+function normalizeSysinfoLine(rawLine) {
+  return String(rawLine || '')
+    .trim()
+    .replace(/^[\p{So}\p{Sk}\u200d\ufe0f]+\s*/u, '')
+    .replace(/^[-*•]\s*/, '');
+}
+
+function isStructuredSysinfoSection(line) {
+  return SYSINFO_CAPTURE_SECTION_PATTERN.test(line)
+    || /^\[(?:Network|System|User|Hardware|Software|Process(?:es)?|Browser(?:es)?|Environment)\]$/i.test(line);
+}
+
+function isStructuredSysinfoKey(key) {
+  return SYSINFO_STRUCTURED_KEY_PATTERN.test(String(key || '').trim());
+}
+
+function parseSystemInfoTextEntries(text, requireStructuredStart = true) {
+  const entries = {};
+  let collecting = !requireStructuredStart;
+  let lastKey = null;
+  let pendingKey = null;
+  let pendingValues = [];
+
+  const commitPending = () => {
+    if (!pendingKey || pendingValues.length === 0) {
+      pendingKey = null;
+      pendingValues = [];
+      return;
+    }
+    const value = pendingValues.join(', ');
+    if (value && !entries[pendingKey]) {
+      entries[pendingKey] = value;
+    }
+    pendingKey = null;
+    pendingValues = [];
+  };
+
+  for (const rawLine of normalizeText(text).split('\n')) {
+    const trimmed = rawLine.trim();
+    const clean = normalizeSysinfoLine(rawLine);
+    const isIndented = /^[\t ]+/.test(rawLine);
+
+    if (!trimmed) {
+      commitPending();
+      lastKey = null;
+      continue;
+    }
+
+    if (isStructuredSysinfoSection(clean)) {
+      commitPending();
+      collecting = true;
+      lastKey = null;
+      continue;
+    }
+
+    const kvMatch = clean.match(SYSINFO_KV_PATTERN);
+    if (kvMatch) {
+      const key = kvMatch[1].trim();
+      const value = kvMatch[2].trim();
+      const structuredKey = isStructuredSysinfoKey(key);
+
+      if (!collecting && requireStructuredStart && !structuredKey) {
+        continue;
+      }
+
+      if (structuredKey) collecting = true;
+      commitPending();
+
+      if (value) {
+        if (!entries[key]) entries[key] = value;
+        lastKey = key;
+      } else if (collecting && (structuredKey || SYSINFO_MULTILINE_KEY_PATTERN.test(key))) {
+        pendingKey = key;
+        pendingValues = [];
+        lastKey = null;
+      } else {
+        lastKey = null;
+      }
+      continue;
+    }
+
+    if (!collecting) continue;
+
+    if (pendingKey) {
+      if (clean && !SYSINFO_KV_PATTERN.test(clean) && !isStructuredSysinfoSection(clean) && (isIndented || /^[-*•]/.test(trimmed))) {
+        pendingValues.push(clean);
+        continue;
+      }
+      commitPending();
+    }
+
+    if (lastKey && isIndented && clean && !SYSINFO_KV_PATTERN.test(clean) && !isStructuredSysinfoSection(clean)) {
+      entries[lastKey] += ', ' + clean;
+    }
+  }
+
+  commitPending();
+  return entries;
+}
+
+function parseSystemInfoFile(text, fileName = '') {
+  const clean = normalizeText(text);
+
+  if (/\.json$/i.test(fileName)) {
+    try {
+      const entries = {};
+      for (const [key, value] of flattenObjectEntries(JSON.parse(clean))) {
+        const normalizedKey = String(key || '').trim();
+        const normalizedValue = String(value || '').trim();
+        if (!normalizedKey || !normalizedValue || normalizedValue === 'null' || normalizedValue === '[]') continue;
+        if (!entries[normalizedKey]) entries[normalizedKey] = normalizedValue;
+      }
+      if (Object.keys(entries).length > 0) {
+        return {
+          headers: ['Key', 'Value'],
+          rows: Object.entries(entries),
+          entries,
+        };
+      }
+    } catch {
+      // fall back to text parsing
+    }
+  }
+
+  let entries = parseSystemInfoTextEntries(clean, true);
+  if (Object.keys(entries).length === 0) {
+    entries = parseSystemInfoTextEntries(clean, false);
+  }
+
+  if (Object.keys(entries).length === 0) return null;
+
+  return {
+    headers: ['Key', 'Value'],
+    rows: Object.entries(entries),
+    entries,
+  };
 }
 
 // RFC 4180-aware CSV line splitter. Handles quoted fields with embedded commas/quotes.
@@ -179,13 +387,25 @@ function inferColumnRoles(lines, delimiter, hasHeaderRow) {
     }
   }
 
+  // Two-column fallback: common username/password exports without a header row
+  if (colCount === 2 && userCol < 0 && urlCol < 0) {
+    const populatedCols = stats
+      .map((entry, index) => ({ ...entry, index }))
+      .filter(entry => entry.total > 0);
+    if (populatedCols.length === 2) {
+      columnMap[populatedCols[0].index] = 'username';
+      columnMap[populatedCols[1].index] = 'password';
+      userCol = populatedCols[0].index;
+    }
+  }
+
   // Password: if exactly one remaining non-empty column, assign it
   const assigned = new Set(Object.keys(columnMap).map(Number));
   const unassigned = [];
   for (let i = 0; i < colCount; i++) {
     if (!assigned.has(i) && stats[i].total > 0) unassigned.push(i);
   }
-  if (unassigned.length === 1 && urlCol >= 0 && userCol >= 0) {
+  if (unassigned.length === 1 && (userCol >= 0 || urlCol >= 0)) {
     columnMap[unassigned[0]] = 'password';
   }
 
@@ -363,35 +583,78 @@ function parseWithConfig(text, config) {
   return { headers, rows };
 }
 
+function finalizeCredentialDataset(parsed) {
+  if (!parsed || !parsed.rows || parsed.rows.length === 0) return null;
+
+  const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+  const userIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
+  const passIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+
+  if (passIdx < 0 || (urlIdx < 0 && userIdx < 0)) return null;
+
+  const rows = parsed.rows.filter((row) => {
+    const password = (row[passIdx] || '').trim();
+    const username = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
+    const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
+    return Boolean(password && (username || url));
+  });
+
+  if (rows.length === 0) return null;
+  return { headers: parsed.headers, rows };
+}
+
+function parseLoosePasswordBlocks(text) {
+  const blocks = text.split(/\n\s*\n/).filter(block => block.trim());
+  if (blocks.length === 0) return null;
+
+  const headers = [];
+  const rows = [];
+
+  for (const block of blocks) {
+    const record = {};
+    let kvCount = 0;
+
+    for (const line of block.split('\n')) {
+      const match = line.trim().match(KV_PATTERN);
+      if (!match) continue;
+      const key = match[1].trim();
+      record[key] = match[2].trim();
+      kvCount++;
+      if (!headers.includes(key)) headers.push(key);
+    }
+
+    if (kvCount >= 2) {
+      rows.push(record);
+    }
+  }
+
+  if (rows.length === 0 || headers.length < 2) return null;
+  return { headers, rows: rows.map(record => headers.map(header => record[header] || '')) };
+}
+
 function parsePasswordFile(text, config) {
-  const clean = normalizeSeparators(text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+  const clean = normalizeSeparators(normalizeText(text));
 
   // If explicit config from column mapper, use it directly
-  if (config) return parseWithConfig(clean, config);
+  if (config) return finalizeCredentialDataset(parseWithConfig(clean, config));
 
   const format = detectFormat(clean);
-  if (!format) {
-    // Flat list fallback: one value per line (e.g. unique_passwords.txt)
-    const lines = clean.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length > 0) {
-      return { headers: ['Password'], rows: lines.map(l => [l]) };
-    }
-    return null;
-  }
+  if (!format) return finalizeCredentialDataset(parseLoosePasswordBlocks(clean));
 
   if (format.type === 'block') {
-    return parseBlocks(clean, format.headers);
+    return finalizeCredentialDataset(parseBlocks(clean, format.headers));
   }
   if (format.type === 'delimited') {
-    return parseDelimited(clean, format);
+    return finalizeCredentialDataset(parseDelimited(clean, format));
   }
-  return null;
+
+  return finalizeCredentialDataset(parseLoosePasswordBlocks(clean));
 }
 
 // History parser
 
 function parseHistoryFile(text, config) {
-  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const clean = normalizeText(text);
 
   // If explicit config from column mapper, use it directly
   if (config) return parseWithConfig(clean, config);
@@ -446,7 +709,7 @@ function parseHistoryFile(text, config) {
 // Download history parser (paired filepath + URL lines)
 
 function parseDownloadFile(text) {
-  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const clean = normalizeText(text);
   const normalized = normalizeSeparators(clean);
 
   // Try structured delimited detection first
@@ -625,7 +888,7 @@ function findCookieArrayInObject(text) {
 }
 
 function parseCookieFile(text, config) {
-  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const clean = normalizeText(text);
 
   // If explicit config from column mapper, use it directly
   if (config) return parseWithConfig(clean, config);
@@ -692,7 +955,7 @@ function parseCookieFile(text, config) {
 }
 
 function parseAutofillFile(text, config) {
-  const clean = normalizeSeparators(text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+  const clean = normalizeSeparators(normalizeText(text));
 
   if (config) {
     const parsed = parseWithConfig(clean, config);
@@ -737,6 +1000,537 @@ function parseAutofillFile(text, config) {
   return rows.length > 0 ? { headers: ['Field', 'Value'], rows } : null;
 }
 
+function normalizeDomainDetectTarget(target) {
+  return target
+    .replace(/^[-*•]\s+/, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[,;]+|[,;]+$/g, '')
+    .trim();
+}
+
+function extractDomainDetectEntries(segment, section) {
+  const rows = [];
+  const clean = segment.trim();
+  if (!clean) return rows;
+
+  let matched = false;
+  DOMAIN_DETECT_LABELED_ENTRY.lastIndex = 0;
+  let match;
+  while ((match = DOMAIN_DETECT_LABELED_ENTRY.exec(clean)) !== null) {
+    const label = match[1].trim();
+    const target = normalizeDomainDetectTarget(match[2]);
+    const count = match[3] || '1';
+    if (!target) continue;
+    rows.push([section || 'General', label, target, count]);
+    matched = true;
+  }
+  if (matched) return rows;
+
+  DOMAIN_DETECT_UNLABELED_ENTRY.lastIndex = 0;
+  while ((match = DOMAIN_DETECT_UNLABELED_ENTRY.exec(clean)) !== null) {
+    const target = normalizeDomainDetectTarget(match[2]);
+    const count = match[3] || '1';
+    if (!target) continue;
+    rows.push([section || 'General', '', target, count]);
+    matched = true;
+  }
+  if (matched) return rows;
+
+  const plainTargets = clean.split(/\s*,\s*/).map(normalizeDomainDetectTarget).filter(Boolean);
+  for (const target of plainTargets) {
+    rows.push([section || 'General', '', target, '1']);
+  }
+  return rows;
+}
+
+function parseDomainDetectFile(text) {
+  const clean = normalizeSeparators(normalizeText(text));
+  const rows = [];
+  let currentSection = 'General';
+
+  for (const rawLine of clean.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const colonIdx = line.indexOf(':');
+    if (colonIdx >= 0) {
+      const header = line.slice(0, colonIdx).trim();
+      const rest = line.slice(colonIdx + 1).trim();
+      if (!rest) {
+        currentSection = header || currentSection;
+        continue;
+      }
+      currentSection = header || currentSection;
+      rows.push(...extractDomainDetectEntries(rest, currentSection));
+      continue;
+    }
+
+    rows.push(...extractDomainDetectEntries(line, currentSection));
+  }
+
+  return rows.length > 0 ? {
+    headers: ['Section', 'Label', 'Target', 'Count'],
+    rows,
+  } : null;
+}
+
+function classifyClipboardEntry(text, urls) {
+  const compact = text.trim();
+  const lower = compact.toLowerCase();
+
+  if (/^(?:[a-z]+(?:\s+[a-z]+){11,23})$/i.test(compact) && compact.split(/\s+/).length >= 12) {
+    return 'Seed Phrase';
+  }
+  if (/^(?:0x[a-f0-9]{40}|bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|T[1-9A-HJ-NP-Za-km-z]{33})$/i.test(compact)) {
+    return 'Wallet';
+  }
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(compact)) {
+    return 'Email';
+  }
+  if (/^(?:[A-Z]:\\|\\\\|\/)/i.test(compact)) {
+    return 'Path';
+  }
+  if (/\b(?:powershell|pwsh|cmd(?:\.exe)?|mshta|rundll32|regsvr32|wscript|cscript|bitsadmin|curl|start|certutil)\b/i.test(lower)) {
+    return 'Command';
+  }
+  if (urls.length > 0) {
+    return 'URL';
+  }
+  return 'Text';
+}
+
+function splitClipboardEntries(clean) {
+  const blocks = clean.split(/\n\s*\n/).map(block => block.trim()).filter(Boolean);
+  if (blocks.length > 1) return blocks;
+
+  const lines = clean.split('\n').map(line => line.trim()).filter(Boolean);
+  if (lines.length > 1 && lines.every(line =>
+    /^(?:https?:\/\/|[A-Z]:\\|\\\\|\/|[^@\s]+@[^@\s]+\.[^@\s]+)$/i.test(line)
+  )) {
+    return lines;
+  }
+
+  return blocks.length > 0 ? blocks : lines;
+}
+
+function parseClipboardFile(text) {
+  const clean = normalizeText(text).trim();
+  if (!clean) return null;
+
+  const rows = [];
+  for (const entryText of splitClipboardEntries(clean)) {
+    const trimmed = entryText.trim();
+    if (!trimmed) continue;
+    const urls = trimmed.match(CLIPBOARD_URL_PATTERN) || [];
+    const lines = trimmed.split('\n').map(line => line.trim()).filter(Boolean);
+    rows.push([
+      classifyClipboardEntry(trimmed, urls),
+      trimmed,
+      urls.join(' '),
+      String(lines.length),
+      String(trimmed.length),
+    ]);
+  }
+
+  return rows.length > 0 ? {
+    headers: ['Type', 'Text', 'URLs', 'Line Count', 'Length'],
+    rows,
+  } : null;
+}
+
+function parseBookmarkJson(value, folder = '', rows = []) {
+  if (!value || typeof value !== 'object') return rows;
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => parseBookmarkJson(item, folder, rows));
+    return rows;
+  }
+
+  const nextFolder = value.folder || value.name || folder;
+  const url = value.url || value.href || '';
+  const title = value.title || value.name || value.label || '';
+  if (url) {
+    rows.push([url, title, folder || nextFolder || '']);
+  }
+
+  const childKeys = ['children', 'roots', 'bookmarks', 'items'];
+  for (const key of childKeys) {
+    if (value[key]) parseBookmarkJson(value[key], nextFolder || folder, rows);
+  }
+
+  return rows;
+}
+
+function parseBookmarkFile(text) {
+  const clean = normalizeSeparators(normalizeText(text)).trim();
+  if (!clean) return null;
+
+  if (clean.startsWith('{') || clean.startsWith('[')) {
+    try {
+      const obj = JSON.parse(clean);
+      const rows = parseBookmarkJson(obj);
+      if (rows.length > 0) {
+        return { headers: ['URL', 'Title', 'Folder'], rows };
+      }
+    } catch {
+      // try text fallbacks
+    }
+  }
+
+  const htmlRows = [];
+  let match;
+  BOOKMARK_HTML_PATTERN.lastIndex = 0;
+  while ((match = BOOKMARK_HTML_PATTERN.exec(clean)) !== null) {
+    const url = decodeHtmlEntities(match[1] || match[2] || '').trim();
+    const title = decodeHtmlEntities(match[3] || '').replace(/<[^>]+>/g, '').trim();
+    if (url) htmlRows.push([url, title, '']);
+  }
+  if (htmlRows.length > 0) {
+    return { headers: ['URL', 'Title', 'Folder'], rows: htmlRows };
+  }
+
+  const blockRows = [];
+  for (const block of clean.split(/\n\s*\n/).filter(Boolean)) {
+    let url = '';
+    let title = '';
+    let folder = '';
+    for (const rawLine of block.split('\n')) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const kv = line.match(KV_PATTERN);
+      if (!kv) continue;
+      const key = kv[1].trim().toLowerCase();
+      const value = kv[2].trim();
+      if (key === 'url') url = value;
+      else if (key === 'title' || key === 'name') title = value;
+      else if (key === 'folder' || key === 'path') folder = value;
+    }
+    if (url) blockRows.push([url, title, folder]);
+  }
+  if (blockRows.length > 0) {
+    return { headers: ['URL', 'Title', 'Folder'], rows: blockRows };
+  }
+
+  const fallbackRows = clean.split('\n')
+    .map(line => line.trim())
+    .filter(line => /^https?:\/\//i.test(line) || /^chrome:\/\//i.test(line))
+    .map(url => [url, '', '']);
+  return fallbackRows.length > 0 ? { headers: ['URL', 'Title', 'Folder'], rows: fallbackRows } : null;
+}
+
+function parseBrowserMetadataFile(text) {
+  const clean = normalizeText(text).trim();
+  if (!clean) return null;
+
+  if (clean.startsWith('{') || clean.startsWith('[')) {
+    try {
+      const obj = JSON.parse(clean);
+      const rows = flattenObjectEntries(obj)
+        .map(([key, value]) => [key, sanitizeStructuredValue(value)])
+        .filter(([, value]) => value);
+      if (rows.length > 0) return { headers: ['Key', 'Value'], rows };
+    } catch {
+      // fall through
+    }
+  }
+
+  const rows = [];
+  const lines = clean.split('\n').map(line => line.trim()).filter(Boolean);
+  for (const line of lines) {
+    const match = line.match(/^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*(?:=\s*|:\s+)(.*)$/);
+    if (match) {
+      rows.push([match[1].trim(), sanitizeStructuredValue(match[2])]);
+    } else {
+      rows.push([rows.length === 0 && lines.length === 1 ? 'Value' : `Entry ${rows.length + 1}`, sanitizeStructuredValue(line)]);
+    }
+  }
+
+  return rows.length > 0 ? { headers: ['Key', 'Value'], rows } : null;
+}
+
+function parseAccountTokenFile(text, hint = '') {
+  const clean = normalizeText(text).trim();
+  if (!clean) return null;
+
+  const rows = [];
+  const lines = clean.split('\n').map(line => line.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    let accountId = '';
+    let token = '';
+    let note = /restore/i.test(hint) ? 'Restore file'
+      : /fbfastcheck/i.test(hint) ? 'FBFastCheck'
+      : /googleaccounts/i.test(hint) ? 'GoogleAccounts'
+      : '';
+
+    let match = line.match(/^([^:\s]{20,})\s*:\s*(\d{6,})$/);
+    if (match) {
+      token = match[1].trim();
+      accountId = match[2].trim();
+    } else {
+      match = line.match(/^(\d{6,})\s*:\s*(.+)$/);
+      if (match) {
+        accountId = match[1].trim();
+        token = match[2].trim();
+      } else {
+        match = line.match(/^(?:id|user(?:\s*id)?|account(?:\s*id)?)\s*[:=]\s*(\d{6,})$/i);
+        if (match) {
+          accountId = match[1].trim();
+        } else if (/^\d{6,}$/.test(line)) {
+          accountId = line;
+        } else {
+          token = line;
+        }
+      }
+    }
+
+    token = sanitizeStructuredValue(token, 1200);
+
+    if (!token && !accountId) continue;
+    rows.push([
+      inferTokenKind(token, accountId, hint),
+      token,
+      accountId,
+      note,
+    ]);
+  }
+
+  return rows.length > 0 ? {
+    headers: ['Type', 'Value', 'Account ID', 'Note'],
+    rows,
+  } : null;
+}
+
+function parseStructuredServiceBlocks(clean) {
+  const rows = [];
+  const blocks = clean.split(/\n\s*\n/).filter(block => block.trim());
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const record = {};
+    for (const rawLine of block.split('\n')) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const match = line.match(/^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*(?:=\s*|:\s+)(.*)$/);
+      if (!match) continue;
+      record[match[1].trim()] = sanitizeStructuredValue(match[2]);
+    }
+    const section = record['Account Name'] || record['Display Name'] || record['Email'] || record.clsid || `Record ${i + 1}`;
+    for (const [key, value] of Object.entries(record)) {
+      if (!value) continue;
+      rows.push([section, key, value]);
+    }
+  }
+  return rows;
+}
+
+function parseServiceArtifactFile(text) {
+  const clean = normalizeText(text).trim();
+  if (!clean) return null;
+
+  if (clean.startsWith('{') || clean.startsWith('[')) {
+    try {
+      const obj = JSON.parse(clean);
+      const rows = flattenObjectEntries(obj)
+        .map(([key, value]) => ['JSON', key, sanitizeStructuredValue(value)])
+        .filter(([, , value]) => value);
+      if (rows.length > 0) return { headers: ['Section', 'Key', 'Value'], rows };
+    } catch {
+      // fall through
+    }
+  }
+
+  const blockRows = parseStructuredServiceBlocks(clean);
+  if (blockRows.length > 0) {
+    return { headers: ['Section', 'Key', 'Value'], rows: blockRows };
+  }
+
+  const kvRows = [];
+  for (const rawLine of clean.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const match = line.match(/^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*(?:=\s*|:\s+)(.*)$/);
+    if (match) {
+      kvRows.push(['Config', match[1].trim(), sanitizeStructuredValue(match[2])]);
+    }
+  }
+  if (kvRows.length > 0) {
+    return { headers: ['Section', 'Key', 'Value'], rows: kvRows };
+  }
+
+  const indicatorRows = [];
+  const seen = new Set();
+
+  for (const matchText of clean.match(URL_INDICATOR_PATTERN) || []) {
+    const value = sanitizeStructuredValue(matchText);
+    if (!seen.has(`url:${value}`)) {
+      seen.add(`url:${value}`);
+      indicatorRows.push(['Indicator', 'URL', value]);
+    }
+  }
+
+  for (const matchText of clean.match(WINDOWS_PATH_PATTERN) || []) {
+    const value = sanitizeStructuredValue(matchText);
+    if (!seen.has(`path:${value}`)) {
+      seen.add(`path:${value}`);
+      indicatorRows.push(['Indicator', 'Path', value]);
+    }
+  }
+
+  const tokenCandidates = clean.match(/[A-Za-z0-9._-]{20,}\.[A-Za-z0-9._-]{4,}\.[A-Za-z0-9._-]{10,}/g) || [];
+  for (const candidate of tokenCandidates.slice(0, 10)) {
+    const value = sanitizeStructuredValue(candidate, 300);
+    if (!seen.has(`token:${value}`)) {
+      seen.add(`token:${value}`);
+      indicatorRows.push(['Indicator', inferTokenKind(value), value]);
+    }
+  }
+
+  return indicatorRows.length > 0 ? {
+    headers: ['Section', 'Key', 'Value'],
+    rows: indicatorRows,
+  } : null;
+}
+
+function buildCreditCardRowsFromBlocks(clean) {
+  const blocks = clean.split(/\n\s*\n/).filter(block => block.trim());
+  const rows = [];
+
+  for (const block of blocks) {
+    const record = {};
+    for (const rawLine of block.split('\n')) {
+      const match = rawLine.trim().match(CREDIT_CARD_KV_PATTERN);
+      if (!match) continue;
+      record[match[1].trim().toLowerCase()] = match[2].trim();
+    }
+
+    const cardNumber = record.cardnumber || record['card number'] || record.number || record.card || record.cn || record.pan || '';
+    const month = record.month || record['exp month'] || record['expiry month'] || '';
+    const year = record.year || record['exp year'] || record['expiry year'] || '';
+    const nameOnCard = record.nameoncard || record['name on card'] || record.cardholder || record['card holder'] || record.name || record.holder || '';
+    const cvc = record.cvc || record.cvv || record.securitycode || record['security code'] || '';
+    const expiration = record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || (month || year ? `${month}/${year}`.replace(/^\/|\/$/g, '') : '');
+    const filePath = record.filepath || record['file path'] || record.path || record.target || '';
+
+    if (!cardNumber && !expiration && !nameOnCard && !cvc && !filePath) continue;
+    rows.push([cardNumber, nameOnCard, cvc, expiration, filePath]);
+  }
+
+  return rows;
+}
+
+function mapCreditCardHeaders(parsed) {
+  if (!parsed || !parsed.rows || parsed.rows.length === 0) return null;
+
+  const headerMap = {};
+  for (let i = 0; i < parsed.headers.length; i++) {
+    const header = parsed.headers[i].toLowerCase();
+    if (/^(?:card\s*number|cardnumber|number|pan)$/i.test(header)) headerMap.number = i;
+    else if (/^(?:name\s*on\s*card|nameoncard|cardholder|card\s*holder|holder|name)$/i.test(header)) headerMap.name = i;
+    else if (/^(?:cvc|cvv|security\s*code)$/i.test(header)) headerMap.cvc = i;
+    else if (/^(?:expiration(?:\s*date)?|expiry|expires?|expire|date|month|year)$/i.test(header)) headerMap.expiration = i;
+    else if (/^(?:file\s*path|filepath|path|source|target)$/i.test(header)) headerMap.path = i;
+  }
+
+  const rows = parsed.rows
+    .map(row => [
+      row[headerMap.number ?? -1] || '',
+      row[headerMap.name ?? -1] || '',
+      row[headerMap.cvc ?? -1] || '',
+      row[headerMap.expiration ?? -1] || '',
+      row[headerMap.path ?? -1] || '',
+    ])
+    .filter(row => row.some(cell => (cell || '').trim()));
+
+  return rows.length > 0 ? { headers: ['Card Number', 'Name On Card', 'CVC', 'Expiration', 'File Path'], rows } : null;
+}
+
+function mapCreditCardRowsByContent(parsed) {
+  if (!parsed || !parsed.rows || parsed.rows.length === 0) return null;
+
+  const rows = [];
+  for (const row of parsed.rows) {
+    const cells = row.map(cell => (cell || '').trim());
+    if (cells.every(cell => !cell)) continue;
+
+    let cardNumber = '';
+    let nameOnCard = '';
+    let cvc = '';
+    let expiration = '';
+    let filePath = '';
+
+    for (const cell of cells) {
+      const digits = cell.replace(/\D/g, '');
+      if (!cardNumber && digits.length >= 12 && digits.length <= 19) {
+        cardNumber = cell;
+        continue;
+      }
+      if (!expiration && /^\d{1,2}[/-]\d{2,4}$/.test(cell)) {
+        expiration = cell;
+        continue;
+      }
+      if (!cvc && /^\d{3,4}$/.test(cell)) {
+        cvc = cell;
+        continue;
+      }
+      if (!filePath && /[\\/]/.test(cell)) {
+        filePath = cell;
+        continue;
+      }
+      if (!nameOnCard && /[A-Za-z]/.test(cell)) {
+        nameOnCard = cell;
+      }
+    }
+
+    if (!cardNumber && !nameOnCard && !expiration && !cvc && !filePath) continue;
+    rows.push([cardNumber, nameOnCard, cvc, expiration, filePath]);
+  }
+
+  return rows.length > 0 ? { headers: ['Card Number', 'Name On Card', 'CVC', 'Expiration', 'File Path'], rows } : null;
+}
+
+function parseCreditCardFile(text, config) {
+  const clean = normalizeSeparators(normalizeText(text));
+
+  if (config) {
+    const parsed = parseWithConfig(clean, config);
+    return mapCreditCardHeaders(parsed) || mapCreditCardRowsByContent(parsed) || parsed;
+  }
+
+  const blockRows = buildCreditCardRowsFromBlocks(clean);
+  if (blockRows.length > 0) {
+    return { headers: ['Card Number', 'Name On Card', 'CVC', 'Expiration', 'File Path'], rows: blockRows };
+  }
+
+  const format = detectFormat(clean);
+  if (format && format.type === 'delimited') {
+    const parsed = parseDelimited(clean, format);
+    const mapped = mapCreditCardHeaders(parsed) || mapCreditCardRowsByContent(parsed);
+    if (mapped) return mapped;
+  }
+
+  const rows = [];
+  for (const rawLine of clean.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    let match = line.match(/^(\d{1,2}[/-]\d{2,4})\s+([0-9][0-9 -]{8,})$/);
+    if (!match) {
+      match = line.match(/^([0-9][0-9 -]{8,})\s+(\d{1,2}[/-]\d{2,4})$/);
+      if (match) {
+        rows.push([match[1].trim(), '', '', match[2].trim(), '']);
+      }
+      continue;
+    }
+
+    rows.push([match[2].trim(), '', '', match[1].trim(), '']);
+  }
+
+  return rows.length > 0 ? {
+    headers: ['Card Number', 'Name On Card', 'CVC', 'Expiration', 'File Path'],
+    rows,
+  } : null;
+}
+
 // CSV generation (RFC 4180)
 
 function toCSV(parsed) {
@@ -754,6 +1548,14 @@ export {
   parseCookieFile,
   parseHistoryFile,
   parseDownloadFile,
+  parseDomainDetectFile,
+  parseClipboardFile,
+  parseSystemInfoFile,
+  parseBookmarkFile,
+  parseBrowserMetadataFile,
+  parseAccountTokenFile,
+  parseServiceArtifactFile,
+  parseCreditCardFile,
   toCSV,
   splitCSVLine,
   inferColumnRoles,

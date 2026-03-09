@@ -10,7 +10,22 @@ import {
 } from './utils.js';
 import { downloadBlob, copyToClipboard } from './shared.js';
 import { escapeCSV } from './dataPages.js';
-import { parsePasswordFile, parseCookieFile, parseAutofillFile, parseHistoryFile, toCSV } from './transforms.js';
+import {
+  parsePasswordFile,
+  parseCookieFile,
+  parseAutofillFile,
+  parseSystemInfoFile,
+  parseHistoryFile,
+  parseBookmarkFile,
+  parseBrowserMetadataFile,
+  parseAccountTokenFile,
+  parseServiceArtifactFile,
+  parseDownloadFile,
+  parseDomainDetectFile,
+  parseClipboardFile,
+  parseCreditCardFile,
+  toCSV
+} from './transforms.js';
 
 let elBreadcrumb;
 let elFileGrid;
@@ -298,10 +313,43 @@ function showTypeMenu() {
         <button class="filetype-option" data-type="history" data-key="4">
           <span class="filetype-icon">History</span>
         </button>
+        <button class="filetype-option" data-type="bookmarks" data-key="14">
+          <span class="filetype-icon">Bookmarks</span>
+        </button>
+        <button class="filetype-option" data-type="browsermeta" data-key="15">
+          <span class="filetype-icon">Browser Metadata</span>
+        </button>
         <button class="filetype-option" data-type="sysinfo" data-key="5">
           <span class="filetype-icon">System Info</span>
         </button>
-        <button class="filetype-option filetype-option-remove" data-type="none" data-key="6">
+        <button class="filetype-option" data-type="downloads" data-key="6">
+          <span class="filetype-icon">Downloads</span>
+        </button>
+        <button class="filetype-option" data-type="cards" data-key="7">
+          <span class="filetype-icon">Credit Cards</span>
+        </button>
+        <button class="filetype-option" data-type="clipboard" data-key="8">
+          <span class="filetype-icon">Clipboard</span>
+        </button>
+        <button class="filetype-option" data-type="detections" data-key="9">
+          <span class="filetype-icon">Detections</span>
+        </button>
+        <button class="filetype-option" data-type="tokens" data-key="16">
+          <span class="filetype-icon">Account Tokens</span>
+        </button>
+        <button class="filetype-option" data-type="services" data-key="17">
+          <span class="filetype-icon">Services</span>
+        </button>
+        <button class="filetype-option" data-type="software" data-key="10">
+          <span class="filetype-icon">Software</span>
+        </button>
+        <button class="filetype-option" data-type="processes" data-key="11">
+          <span class="filetype-icon">Processes</span>
+        </button>
+        <button class="filetype-option" data-type="screenshot" data-key="12">
+          <span class="filetype-icon">Screenshot</span>
+        </button>
+        <button class="filetype-option filetype-option-remove" data-type="none" data-key="13">
           <span class="filetype-icon">Remove Label</span>
         </button>
       </div>
@@ -339,7 +387,11 @@ async function exportSelectedZip() {
   const nodes = getSelectedNodes();
   if (nodes.length === 0) return;
 
-  const hasTransformable = nodes.some(n => n._passwordFileHint || n._cookieFileHint);
+  const hasTransformable = nodes.some(n =>
+    n._passwordFileHint || n._cookieFileHint || n._autofillHint || n._sysInfoHint || n._historyHint ||
+    n._bookmarkHint || n._browserMetadataHint || n._downloadHint || n._creditCardHint ||
+    n._clipboardHint || n._domainDetectHint || n._accountTokenHint || n._serviceArtifactHint
+  );
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay visible';
@@ -437,7 +489,7 @@ async function exportSelectedZip() {
         const content = await loadFileContent(node);
         if (!content) continue;
 
-        if (result.applyTransforms && (node._passwordFileHint || node._cookieFileHint || node._autofillHint || node._historyHint)) {
+        if (result.applyTransforms && (node._passwordFileHint || node._cookieFileHint || node._autofillHint || node._sysInfoHint || node._historyHint || node._bookmarkHint || node._browserMetadataHint || node._downloadHint || node._creditCardHint || node._clipboardHint || node._domainDetectHint || node._accountTokenHint || node._serviceArtifactHint)) {
           const decoder = new TextDecoder('utf-8');
           const text = decoder.decode(content);
           let parsed = null;
@@ -445,8 +497,26 @@ async function exportSelectedZip() {
             parsed = parseCookieFile(text, node._parseConfig || null);
           } else if (node._autofillHint) {
             parsed = parseAutofillFile(text, node._parseConfig || null);
+          } else if (node._sysInfoHint) {
+            parsed = parseSystemInfoFile(text, node.name || '');
           } else if (node._historyHint) {
             parsed = parseHistoryFile(text, node._parseConfig || null);
+          } else if (node._bookmarkHint) {
+            parsed = parseBookmarkFile(text);
+          } else if (node._browserMetadataHint) {
+            parsed = parseBrowserMetadataFile(text);
+          } else if (node._downloadHint) {
+            parsed = parseDownloadFile(text);
+          } else if (node._creditCardHint) {
+            parsed = parseCreditCardFile(text, node._parseConfig || null);
+          } else if (node._clipboardHint) {
+            parsed = parseClipboardFile(text);
+          } else if (node._domainDetectHint) {
+            parsed = parseDomainDetectFile(text);
+          } else if (node._accountTokenHint) {
+            parsed = parseAccountTokenFile(text, node.name);
+          } else if (node._serviceArtifactHint) {
+            parsed = parseServiceArtifactFile(text);
           } else {
             parsed = parsePasswordFile(text, node._parseConfig || null);
           }

@@ -113,7 +113,7 @@ function collectContext(node, basePath, ctx) {
     } else {
       ctx.files.push(relPath);
 
-      if (child._sysInfoHint || /^(?:information|UserInformation|system_info|Info|user_info|system|pc_info|build_info|UserInfo|_Information|identification|environment)\.(?:txt|json)$/i.test(child.name)) {
+      if (child._sysInfoHint || /^(?:information(?:\s*\[[^\]]+\])?|UserInformation|system_info|Info|user_info|system|pc_info|build_info|UserInfo|_Information|identification|environment)\.(?:txt|json)$/i.test(child.name)) {
         if (!ctx.sysinfoFilename) {
           ctx.sysinfoFilename = child.name;
           ctx.sysinfoNode = child;

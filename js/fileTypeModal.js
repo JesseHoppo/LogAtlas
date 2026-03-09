@@ -61,12 +61,13 @@ function initFileTypeModal() {
       return;
     }
 
-    // Number shortcuts 1-6
+    // Number shortcuts 1-9 map to the visible option keys.
     const num = parseInt(e.key);
-    if (num >= 1 && num <= 6) {
+    if (num >= 1 && num <= 9) {
       e.preventDefault();
-      const types = ['credentials', 'cookies', 'autofill', 'history', 'sysinfo', 'other'];
-      closeFileTypeModal(types[num - 1]);
+      const button = [...elOptions.querySelectorAll('.filetype-option')]
+        .find((option) => option.dataset.key === String(num));
+      if (button) closeFileTypeModal(button.dataset.type);
     }
   });
 }

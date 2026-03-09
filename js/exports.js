@@ -4,11 +4,26 @@ import { state, on } from './state.js';
 import { loadFileContent } from './extractor.js';
 import { escapeHtml } from './utils.js';
 import { downloadBlob, copyToClipboard, extractDomain, extractBaseDomain, collectHintedNodes, showNotification } from './shared.js';
-import { getPasswordsData, getCookiesData, getAutofillsData, getHistoryData, escapeCSV } from './dataPages.js';
+import {
+  getPasswordsData,
+  getCookiesData,
+  getAutofillsData,
+  getHistoryData,
+  getBookmarksData,
+  getBrowserMetadataData,
+  getAccountTokensData,
+  getServiceArtifactsData,
+  getDownloadsData,
+  getDomainDetectionsData,
+  getClipboardData,
+  getCreditCardsData,
+  getScreenshotsData,
+  escapeCSV
+} from './dataPages.js';
 import { FIELD_PATTERNS } from './definitions.js';
 
 let sysinfoEntries = null;
-let screenshotNode = null;
+let screenshotEntries = [];
 let fingerprintResult = null;
 let identityResult = null;
 
@@ -67,6 +82,15 @@ function gatherReportData() {
   const cookies = getCookiesData();
   const autofills = getAutofillsData();
   const history = getHistoryData();
+  const bookmarks = getBookmarksData();
+  const browserMetadata = getBrowserMetadataData();
+  const accountTokens = getAccountTokensData();
+  const serviceArtifacts = getServiceArtifactsData();
+  const downloads = getDownloadsData();
+  const detections = getDomainDetectionsData();
+  const clipboard = getClipboardData();
+  const cards = getCreditCardsData();
+  const screenshots = getScreenshotsData();
 
   let credStats = null;
   if (passwords.rows.length > 0) {
@@ -151,6 +175,15 @@ function gatherReportData() {
     sysinfoEntries,
     fingerprintResult,
     identityResult,
+    bookmarks,
+    browserMetadata,
+    accountTokens,
+    serviceArtifacts,
+    downloads,
+    detections,
+    clipboard,
+    cards,
+    screenshots,
     credStats, cookStats, autoStats, histStats,
   };
 }
@@ -295,6 +328,27 @@ function buildLogSummaryHtml(data) {
     </section>`;
   }
 
+  const artifactSummary = [
+    ['Bookmarks', data.bookmarks?.entries.length || 0],
+    ['Browser Metadata', data.browserMetadata?.entries.length || 0],
+    ['Account Tokens', data.accountTokens?.entries.length || 0],
+    ['Service Artifacts', data.serviceArtifacts?.entries.length || 0],
+    ['Downloads', data.downloads?.entries.length || 0],
+    ['Domain Detections', data.detections?.entries.length || 0],
+    ['Clipboard', data.clipboard?.entries.length || 0],
+    ['Credit Cards', data.cards?.entries.length || 0],
+    ['Screenshots', data.screenshots?.entries.length || 0],
+  ].filter(([, count]) => count > 0);
+
+  if (artifactSummary.length > 0) {
+    sections += `<section>
+      <h2>Additional Artifacts</h2>
+      <table><thead><tr><th>Artifact</th><th>Entries</th></tr></thead><tbody>${
+        artifactSummary.map(([label, count]) => `<tr><td>${e(label)}</td><td>${count.toLocaleString()}</td></tr>`).join('')
+      }</tbody></table>
+    </section>`;
+  }
+
   if (!sections) {
     sections = '<section><p>No structured data was found in this archive.</p></section>';
   }
@@ -402,9 +456,23 @@ async function exportParsedDataZip() {
   const cookies = getCookiesData();
   const autofills = getAutofillsData();
   const history = getHistoryData();
+  const bookmarks = getBookmarksData();
+  const browserMetadata = getBrowserMetadataData();
+  const accountTokens = getAccountTokensData();
+  const serviceArtifacts = getServiceArtifactsData();
+  const downloads = getDownloadsData();
+  const detections = getDomainDetectionsData();
+  const clipboard = getClipboardData();
+  const cards = getCreditCardsData();
+  const screenshots = getScreenshotsData();
 
   const hasData = passwords.rows.length > 0 || cookies.rows.length > 0 ||
-                  autofills.entries.length > 0 || history.entries.length > 0;
+                  autofills.entries.length > 0 || history.entries.length > 0 ||
+                  bookmarks.entries.length > 0 || browserMetadata.entries.length > 0 ||
+                  accountTokens.entries.length > 0 || serviceArtifacts.entries.length > 0 ||
+                  downloads.entries.length > 0 || detections.entries.length > 0 ||
+                  clipboard.entries.length > 0 || cards.entries.length > 0 ||
+                  screenshots.entries.length > 0 || screenshotEntries.length > 0;
   if (!hasData) {
     notify('No parsed data available to package.', 'error');
     return;
@@ -463,15 +531,89 @@ async function exportParsedDataZip() {
       await addTextFile('history.csv', csv);
     }
 
-    if (screenshotNode) {
+    if (bookmarks.entries.length > 0) {
+      let csv = 'URL,Title,Folder,Browser,Profile,Domain,Source\n';
+      for (const { url, title, folder, browser, profile, domain, source } of bookmarks.entries) {
+        csv += [url, title, folder, browser, profile, domain, source].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('bookmarks.csv', csv);
+    }
+
+    if (browserMetadata.entries.length > 0) {
+      let csv = 'Browser,Profile,Category,Key,Value,Source\n';
+      for (const { browser, profile, category, key, value, source } of browserMetadata.entries) {
+        csv += [browser, profile, category, key, value, source].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('browser_metadata.csv', csv);
+    }
+
+    if (accountTokens.entries.length > 0) {
+      let csv = 'Service,Type,Value,Account ID,Browser,Profile,Note,Source\n';
+      for (const { service, type, value, accountId, browser, profile, note, source } of accountTokens.entries) {
+        csv += [service, type, value, accountId, browser, profile, note, source].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('account_tokens.csv', csv);
+    }
+
+    if (serviceArtifacts.entries.length > 0) {
+      let csv = 'Service,Artifact Type,Section,Key,Value,Source\n';
+      for (const { service, artifactType, section, key, value, source } of serviceArtifacts.entries) {
+        csv += [service, artifactType, section, key, value, source].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('service_artifacts.csv', csv);
+    }
+
+    if (downloads.entries.length > 0) {
+      let csv = 'File Path,Source URL,File Size,Extension,Domain\n';
+      for (const { filePath, sourceUrl, fileSizeRaw, fileSizeDisplay, extension, domain } of downloads.entries) {
+        csv += [filePath, sourceUrl, fileSizeRaw || fileSizeDisplay, extension, domain].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('downloads.csv', csv);
+    }
+
+    if (detections.entries.length > 0) {
+      let csv = 'Section,Label,Target,Count,Source\n';
+      for (const { section, label, target, count, source } of detections.entries) {
+        csv += [section, label, target, count, source].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('domain_detections.csv', csv);
+    }
+
+    if (clipboard.entries.length > 0) {
+      let csv = 'Type,Text,URLs,Line Count,Length,Source\n';
+      for (const { type, text, urls, lineCount, length, source } of clipboard.entries) {
+        csv += [type, text, urls, lineCount, length, source].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('clipboard.csv', csv);
+    }
+
+    if (cards.entries.length > 0) {
+      let csv = 'Card Number,Last4,Name On Card,Expiration,CVC,Browser,Recovered From,Source\n';
+      for (const { cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source } of cards.entries) {
+        csv += [cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('credit_cards.csv', csv);
+    }
+
+    if (screenshots.entries.length > 0) {
+      let csv = 'Name,Path,Width,Height,Size Bytes\n';
+      for (const { name, path, width, height, sizeBytes } of screenshots.entries) {
+        csv += [name, path, width || '', height || '', sizeBytes].map(escapeCSV).join(',') + '\n';
+      }
+      await addTextFile('screenshots.csv', csv);
+    }
+
+    for (let i = 0; i < screenshotEntries.length; i++) {
       try {
-        const content = await loadFileContent(screenshotNode);
+        const entry = screenshotEntries[i];
+        const content = await loadFileContent(entry.node);
         if (content) {
-          const ext = screenshotNode.name.split('.').pop().toLowerCase();
+          const ext = entry.node.name.split('.').pop().toLowerCase();
           const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', bmp: 'image/bmp', gif: 'image/gif', webp: 'image/webp' };
           const mime = mimeMap[ext] || 'image/png';
           const blob = new Blob([content], { type: mime });
-          await writer.add('screenshot.' + ext, new zip.BlobReader(blob));
+          const safeName = `${String(i + 1).padStart(2, '0')}_${entry.node.name}`;
+          await writer.add('screenshots/' + safeName, new zip.BlobReader(blob));
         }
       } catch {
         // skip
@@ -492,7 +634,7 @@ async function exportParsedDataZip() {
 
 function initExports() {
   on('analysis:sysinfo', (data) => { if (data) sysinfoEntries = data.entries; });
-  on('analysis:screenshot', (data) => { if (data && data.node) screenshotNode = data.node; });
+  on('analysis:screenshot', (data) => { screenshotEntries = data && data.entries ? data.entries : []; });
   on('analysis:fingerprint', (data) => { fingerprintResult = data; });
   on('analysis:identity', (data) => { identityResult = data; });
 
@@ -508,12 +650,30 @@ function initExports() {
     const cookies = getCookiesData();
     const autofills = getAutofillsData();
     const history = getHistoryData();
+    const bookmarks = getBookmarksData();
+    const browserMetadata = getBrowserMetadataData();
+    const accountTokens = getAccountTokensData();
+    const serviceArtifacts = getServiceArtifactsData();
+    const downloads = getDownloadsData();
+    const detections = getDomainDetectionsData();
+    const clipboard = getClipboardData();
+    const cards = getCreditCardsData();
+    const screenshots = getScreenshotsData();
 
     const parts = [];
     if (passwords.rows.length > 0) parts.push(`${passwords.rows.length} credentials`);
     if (cookies.rows.length > 0) parts.push(`${cookies.rows.length} cookies`);
     if (autofills.entries.length > 0) parts.push(`${autofills.entries.length} autofills`);
     if (history.entries.length > 0) parts.push(`${history.entries.length} history entries`);
+    if (bookmarks.entries.length > 0) parts.push(`${bookmarks.entries.length} bookmarks`);
+    if (browserMetadata.entries.length > 0) parts.push(`${browserMetadata.entries.length} browser metadata`);
+    if (accountTokens.entries.length > 0) parts.push(`${accountTokens.entries.length} tokens`);
+    if (serviceArtifacts.entries.length > 0) parts.push(`${serviceArtifacts.entries.length} services`);
+    if (downloads.entries.length > 0) parts.push(`${downloads.entries.length} downloads`);
+    if (cards.entries.length > 0) parts.push(`${cards.entries.length} cards`);
+    if (clipboard.entries.length > 0) parts.push(`${clipboard.entries.length} clipboard`);
+    if (detections.entries.length > 0) parts.push(`${detections.entries.length} detections`);
+    if (screenshots.entries.length > 0) parts.push(`${screenshots.entries.length} screenshots`);
     const countsText = parts.length > 0 ? parts.join(' \u00B7 ') : '';
 
     const summaryCounts = document.getElementById('exportSummaryCounts');
@@ -527,7 +687,7 @@ function initExports() {
 
   on('reset', () => {
     sysinfoEntries = null;
-    screenshotNode = null;
+    screenshotEntries = [];
     fingerprintResult = null;
     identityResult = null;
     document.getElementById('navExports').disabled = true;

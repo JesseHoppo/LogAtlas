@@ -126,7 +126,7 @@ async function extractIntoTree(root, zipData, basePath, depth) {
 
       const fileNode = insertPath(root, segments, nodeData);
       const parentDir = segments.length >= 2 ? segments[segments.length - 2] : '';
-      applyDetectionHints(fileNode, leafName, parentDir);
+      applyDetectionHints(fileNode, leafName, parentDir, entry.filename);
 
       const fullPath = basePath + '/' + entry.filename;
 
@@ -227,7 +227,7 @@ function walkExtractedFiles(obj, basePath, depth, root, parentPath) {
 
       const fileNode = insertPath(root, segments, nodeData);
       const parentDir = segments.length >= 2 ? segments[segments.length - 2] : '';
-      applyDetectionHints(fileNode, key, parentDir);
+      applyDetectionHints(fileNode, key, parentDir, segments.join('/'));
     } else if (value && typeof value === 'object') {
       insertPath(root, segments, { type: 'directory', depth });
       walkExtractedFiles(value, fullPath, depth + 1, root, segments);
@@ -369,7 +369,7 @@ async function extractFile(file) {
       blobContent: file,
     });
     root.children[file.name] = fileNode;
-    applyDetectionHints(fileNode, file.name, '');
+    applyDetectionHints(fileNode, file.name, '', file.name);
   }
 
   state.fileTree = root;
@@ -423,7 +423,20 @@ function flattenTree(root, basePath = '') {
       _sysInfoHint: child._sysInfoHint || false,
       _autofillHint: child._autofillHint || false,
       _historyHint: child._historyHint || false,
+      _bookmarkHint: child._bookmarkHint || false,
+      _browserMetadataHint: child._browserMetadataHint || false,
       _screenshotHint: child._screenshotHint || false,
+      _creditCardHint: child._creditCardHint || false,
+      _downloadHint: child._downloadHint || false,
+      _domainDetectHint: child._domainDetectHint || false,
+      _browserPluginHint: child._browserPluginHint || false,
+      _cryptoWalletHint: child._cryptoWalletHint || false,
+      _accountTokenHint: child._accountTokenHint || false,
+      _serviceArtifactHint: child._serviceArtifactHint || false,
+      _messengerHint: child._messengerHint || false,
+      _softwareFileHint: child._softwareFileHint || false,
+      _processListHint: child._processListHint || false,
+      _clipboardHint: child._clipboardHint || false,
     });
     if (child.type === 'directory' && child.children) {
       result.push(...flattenTree(child, path));
@@ -437,12 +450,16 @@ function applyManualType(node, fileType) {
   delete node._cookieFileHint;
   delete node._autofillHint;
   delete node._historyHint;
+  delete node._bookmarkHint;
+  delete node._browserMetadataHint;
   delete node._sysInfoHint;
   delete node._creditCardHint;
   delete node._downloadHint;
   delete node._domainDetectHint;
   delete node._browserPluginHint;
   delete node._cryptoWalletHint;
+  delete node._accountTokenHint;
+  delete node._serviceArtifactHint;
   delete node._messengerHint;
   delete node._screenshotHint;
   delete node._creditsFileHint;
@@ -464,8 +481,41 @@ function applyManualType(node, fileType) {
     case 'history':
       node._historyHint = true;
       break;
+    case 'bookmarks':
+      node._bookmarkHint = true;
+      break;
+    case 'browsermeta':
+      node._browserMetadataHint = true;
+      break;
     case 'sysinfo':
       node._sysInfoHint = true;
+      break;
+    case 'downloads':
+      node._downloadHint = true;
+      break;
+    case 'cards':
+      node._creditCardHint = true;
+      break;
+    case 'clipboard':
+      node._clipboardHint = true;
+      break;
+    case 'detections':
+      node._domainDetectHint = true;
+      break;
+    case 'software':
+      node._softwareFileHint = true;
+      break;
+    case 'processes':
+      node._processListHint = true;
+      break;
+    case 'tokens':
+      node._accountTokenHint = true;
+      break;
+    case 'services':
+      node._serviceArtifactHint = true;
+      break;
+    case 'screenshot':
+      node._screenshotHint = true;
       break;
   }
 }
@@ -505,7 +555,7 @@ async function addFilesToTree(files) {
       });
       root.children[file.name] = fileNode;
 
-      const detected = applyDetectionHints(fileNode, file.name, '');
+      const detected = applyDetectionHints(fileNode, file.name, '', file.name);
       if (!detected) {
         needsTypeSelection.push({ file, node: fileNode });
       }
