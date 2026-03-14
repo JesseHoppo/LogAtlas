@@ -3,46 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob: https:; frame-src 'self' blob:;">
   <title>Log Atlas</title>
   <link rel="stylesheet" href="css/styles.css">
   <script src="lib/zip.min.js"></script>
 </head>
 <body>
   <div class="app-layout">
-
-    <!-- Mobile sidebar toggle -->
-    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">&#9776;</button>
-
-    <!-- Sidebar -->
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-controls="sidebar" aria-expanded="false">&#9776;</button>
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">Log Atlas <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">Dark</button></div>
+      <div class="sidebar-brand">Log Atlas <button class="theme-toggle" id="themeToggle" type="button" title="Switch to dark mode" aria-label="Switch to dark mode" aria-pressed="false">Dark</button></div>
       <nav class="sidebar-nav" id="sidebarNav">
-        <button class="sidebar-nav-item active" data-page="overview">Overview</button>
-        <button class="sidebar-nav-item" data-page="sysinfo" id="navSysInfo" disabled>System Info</button>
-        <button class="sidebar-nav-item" data-page="browser" id="navBrowser" disabled>File Browser</button>
-        <button class="sidebar-nav-item" data-page="search" id="navSearch" disabled>Search</button>
-        <div class="sidebar-divider"></div>
-        <button class="sidebar-nav-item" data-page="passwords" id="navPasswords" disabled>Passwords</button>
-        <button class="sidebar-nav-item" data-page="cookies" id="navCookies" disabled>Cookies</button>
-        <button class="sidebar-nav-item" data-page="autofills" id="navAutofills" disabled>Autofills</button>
-        <button class="sidebar-nav-item" data-page="history" id="navHistory" disabled>History</button>
-        <button class="sidebar-nav-item" data-page="bookmarks" id="navBookmarks" disabled>Bookmarks</button>
-        <button class="sidebar-nav-item" data-page="browsermeta" id="navBrowserMeta" disabled>Browser Metadata</button>
-        <button class="sidebar-nav-item" data-page="tokens" id="navTokens" disabled>Tokens</button>
-        <button class="sidebar-nav-item" data-page="services" id="navServices" disabled>Services</button>
-        <button class="sidebar-nav-item" data-page="downloads" id="navDownloads" disabled>Downloads</button>
-        <button class="sidebar-nav-item" data-page="cards" id="navCards" disabled>Cards</button>
-        <button class="sidebar-nav-item" data-page="clipboard" id="navClipboard" disabled>Clipboard</button>
-        <button class="sidebar-nav-item" data-page="detections" id="navDetections" disabled>Detections</button>
-        <button class="sidebar-nav-item" data-page="screenshots" id="navScreenshots" disabled>Screenshots</button>
-        <button class="sidebar-nav-item" data-page="domains" id="navDomains" disabled>Domains</button>
-        <button class="sidebar-nav-item" data-page="software" id="navSoftware" disabled>Software</button>
-        <button class="sidebar-nav-item" data-page="processes" id="navProcesses" disabled>Processes</button>
-        <button class="sidebar-nav-item" data-page="timeline" id="navTimeline" disabled>Timeline</button>
-        <button class="sidebar-nav-item" data-page="identity" id="navIdentity" disabled>Identity</button>
-        <div class="sidebar-divider"></div>
-        <button class="sidebar-nav-item" data-page="exports" id="navExports" disabled>Exports</button>
+        <label class="sidebar-availability hidden" id="sidebarAvailableToggleWrap">
+          <input type="checkbox" id="sidebarAvailableToggle" checked>
+          <span>Available Only</span>
+        </label>
+
+        <div class="sidebar-section" data-section="core">
+          <div class="sidebar-section-label">Core</div>
+          <button class="sidebar-nav-item active" data-page="overview">Overview</button>
+          <button class="sidebar-nav-item" data-page="sysinfo" id="navSysInfo" disabled>System Info</button>
+          <button class="sidebar-nav-item" data-page="browser" id="navBrowser" disabled>File Browser</button>
+          <button class="sidebar-nav-item" data-page="search" id="navSearch" disabled>Search</button>
+          <div class="sidebar-divider"></div>
+        </div>
+
+        <div class="sidebar-section" data-section="artifacts">
+          <div class="sidebar-section-label">Artifacts</div>
+          <div id="generatedArtifactNav"></div>
+          <div class="sidebar-divider"></div>
+        </div>
+
+        <div class="sidebar-section" data-section="analysis">
+          <div class="sidebar-section-label">Analysis</div>
+          <div id="generatedAnalysisNav"></div>
+          <div class="sidebar-divider"></div>
+        </div>
+
+        <div class="sidebar-section" data-section="export">
+          <div class="sidebar-section-label">Export</div>
+          <button class="sidebar-nav-item" data-page="exports" id="navExports" disabled>Exports</button>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <a href="https://github.com/JesseHoppo/LogAtlas" target="_blank" rel="noopener" class="sidebar-footer-btn" title="View on GitHub">
@@ -53,11 +54,7 @@
         </a>
       </div>
     </aside>
-
-    <!-- Main content -->
     <main class="main-content">
-
-      <!-- Drop zone -->
       <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Drop a file here or click to browse">
         <h2>Drop file here or click to browse</h2>
         <p>Archives and individual files supported</p>
@@ -70,8 +67,6 @@
         <p>Detection and parsing may not be perfect. You should conduct further analysis and verification for incident response.</p>
         <p>Browser sandboxing should provide some protection from malicious files, but caution should still be taken.</p>
       </div>
-
-      <!-- Current-file bar (visible after loading) -->
       <div class="reset-zone" id="resetZone">
         <div class="current-file">
           <div class="current-file-info">
@@ -87,41 +82,36 @@
           </div>
         </div>
       </div>
-      <!-- Hidden file input for adding more files -->
-      <input type="file" id="addMoreInput" multiple aria-hidden="true" class="hidden" style="display:none">
-
-      <!-- Loading spinner -->
+      <input type="file" id="addMoreInput" multiple aria-hidden="true" class="hidden">
       <div class="loading" id="loading" aria-live="polite">
         <div class="spinner" aria-hidden="true"></div>
         <div class="loading-text" id="loadingText">Extracting files...</div>
       </div>
-
-      <!-- Results -->
       <div class="results" id="results">
-
-        <!-- Page: Overview -->
         <div class="page active" id="pageOverview">
           <h2 class="page-title">Overview</h2>
-
-          <!-- Stealer fingerprint (hidden until identified) -->
           <div class="dash-section dash-fingerprint hidden" id="dashFingerprint">
             <div class="dash-section-title">Stealer Identification</div>
             <div class="dash-fingerprint-body" id="dashFingerprintBody"></div>
           </div>
 
-          <!-- Screenshot (hidden until found) -->
+          <div class="dash-section hidden" id="dashTriageSummary">
+            <div class="dash-section-title">Case Summary</div>
+            <div class="dash-triage-grid" id="dashTriageSummaryBody"></div>
+          </div>
+
+          <div class="dash-section hidden" id="dashRiskSignals">
+            <div class="dash-section-title">Insights</div>
+            <div class="dash-list" id="dashRiskSignalsBody"></div>
+          </div>
           <div class="dash-section hidden" id="dashScreenshot">
             <div class="dash-section-title">Screenshot</div>
             <div class="dash-screenshot-body" id="dashScreenshotBody"></div>
           </div>
-
-          <!-- IOCs (hidden until sysinfo parsed) -->
           <div class="dash-section hidden" id="dashIOCs">
             <div class="dash-section-title">Identifiers</div>
             <div class="dash-ioc-grid" id="dashIOCBody"></div>
           </div>
-
-          <!-- Credential intelligence (hidden until data arrives) -->
           <div class="dash-section hidden" id="dashCredIntel">
             <div class="dash-section-title">Credential Intelligence</div>
             <div class="dash-section-subtitle dash-loading" id="dashCredSummary">Analyzing credential files...</div>
@@ -136,8 +126,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Cookie intelligence (hidden until data arrives) -->
           <div class="dash-section hidden" id="dashCookieIntel">
             <div class="dash-section-title">Cookie Intelligence</div>
             <div class="dash-section-subtitle dash-loading" id="dashCookieSummary">Analyzing cookie files...</div>
@@ -148,8 +136,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Autofill intelligence (hidden until data arrives) -->
           <div class="dash-section hidden" id="dashAutofillIntel">
             <div class="dash-section-title">Autofill Data</div>
             <div class="dash-section-subtitle dash-loading" id="dashAutofillSummary">Analyzing autofill files...</div>
@@ -161,32 +147,22 @@
             <div class="dash-section-subtitle" id="dashDownloadSummary">Analyzing download files...</div>
             <div class="dash-bar-list" id="dashDownloadBody"></div>
           </div>
-
-          <!-- Domain detect (hidden until data arrives) -->
           <div class="dash-section hidden" id="dashDomainDetect">
             <div class="dash-section-title">Domain Detections</div>
             <div id="dashDomainDetectBody"></div>
           </div>
-
-          <!-- Additional data type indicators -->
           <div class="dash-section hidden" id="dashExtraIntel">
             <div class="dash-section-title">Additional Data Detected</div>
             <div class="dash-extra-body" id="dashExtraBody"></div>
           </div>
-
-          <!-- No data message (shown when nothing detected) -->
           <div class="no-data hidden" id="overviewNoData">
             No recognised data detected.
           </div>
-
-          <!-- Error list -->
           <div class="error-list" id="errorList" aria-live="polite">
             <h4>Extraction Errors</h4>
             <ul id="errorListItems"></ul>
           </div>
         </div>
-
-        <!-- Page: System Info -->
         <div class="page" id="pageSysInfo">
           <h2 class="page-title">System Information</h2>
           <div class="dash-section" id="dashSysInfo">
@@ -202,8 +178,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Page: Search -->
         <div class="page" id="pageSearch">
           <h2 class="page-title">Search</h2>
           <div class="search-page-bar">
@@ -213,8 +187,6 @@
           <div class="search-page-status" id="searchStatus"></div>
           <div class="search-page-results" id="searchResults"></div>
         </div>
-
-        <!-- Page: File Browser -->
         <div class="page" id="pageBrowser">
           <div class="panel">
             <div class="panel-header">
@@ -235,8 +207,6 @@
               <div class="file-list active" id="fileList" role="list"></div>
             </div>
           </div>
-
-          <!-- Selection toolbar (hidden until files selected) -->
           <div class="selection-toolbar" id="selectionToolbar">
             <span class="selection-count" id="selectionCount">0 selected</span>
             <button class="selection-btn" id="selectionSelectAll">Select All</button>
@@ -251,311 +221,7 @@
             <button class="export-btn" id="exportJson">Export File List (JSON)</button>
           </div>
         </div>
-
-        <!-- Page: Passwords -->
-        <div class="page" id="pagePasswords">
-          <h2 class="page-title">Passwords</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="passwordsSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="passwordsSearch" placeholder="Search passwords..." autocomplete="off" aria-label="Search passwords">
-              <label class="data-page-filter">
-                <input type="checkbox" id="passwordsHidePasswords" checked> Hide passwords
-              </label>
-              <button class="export-btn export-btn-primary" id="exportPasswordsCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-content" id="passwordsContent">
-            <div class="no-data">No password data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Cookies -->
-        <div class="page" id="pageCookies">
-          <h2 class="page-title">Cookies</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="cookiesSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="cookiesSearch" placeholder="Search cookies..." autocomplete="off" aria-label="Search cookies">
-              <label class="data-page-filter">
-                <input type="checkbox" id="cookiesValidOnly"> Valid only
-              </label>
-              <label class="data-page-filter">
-                <input type="checkbox" id="cookiesSessionOnly"> Session tokens
-              </label>
-              <button class="export-btn export-btn-primary" id="exportCookiesCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="cookiesStats"></div>
-          <div class="data-page-content" id="cookiesContent">
-            <div class="no-data">No cookie data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Autofills -->
-        <div class="page" id="pageAutofills">
-          <h2 class="page-title">Autofills</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="autofillsSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="autofillsSearch" placeholder="Search autofills..." autocomplete="off" aria-label="Search autofills">
-              <button class="export-btn export-btn-primary" id="exportAutofillsCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-content" id="autofillsContent">
-            <div class="no-data">No autofill data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: History -->
-        <div class="page" id="pageHistory">
-          <h2 class="page-title">History</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="historySummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="historySearch" placeholder="Search history..." autocomplete="off" aria-label="Search history">
-              <button class="export-btn export-btn-primary" id="exportHistoryCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="historyStats"></div>
-          <div class="data-page-content" id="historyContent">
-            <div class="no-data">No history data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Bookmarks -->
-        <div class="page" id="pageBookmarks">
-          <h2 class="page-title">Bookmarks</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="bookmarksSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="bookmarksSearch" placeholder="Search bookmarks..." autocomplete="off" aria-label="Search bookmarks">
-              <button class="export-btn export-btn-primary" id="exportBookmarksCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="bookmarksStats"></div>
-          <div class="data-page-content" id="bookmarksContent">
-            <div class="no-data">No bookmark data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Browser Metadata -->
-        <div class="page" id="pageBrowserMeta">
-          <h2 class="page-title">Browser Metadata</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="browserMetaSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="browserMetaSearch" placeholder="Search browser metadata..." autocomplete="off" aria-label="Search browser metadata">
-              <button class="export-btn export-btn-primary" id="exportBrowserMetaCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="browserMetaStats"></div>
-          <div class="data-page-content" id="browserMetaContent">
-            <div class="no-data">No browser metadata available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Account Tokens -->
-        <div class="page" id="pageTokens">
-          <h2 class="page-title">Account Tokens</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="tokensSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="tokensSearch" placeholder="Search account tokens..." autocomplete="off" aria-label="Search account tokens">
-              <label class="data-page-filter">
-                <input type="checkbox" id="tokensHideSensitive" checked> Hide token values
-              </label>
-              <button class="export-btn export-btn-primary" id="exportTokensCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="tokensStats"></div>
-          <div class="data-page-content" id="tokensContent">
-            <div class="no-data">No account-token data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Services -->
-        <div class="page" id="pageServices">
-          <h2 class="page-title">Services</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="servicesSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="servicesSearch" placeholder="Search service artifacts..." autocomplete="off" aria-label="Search service artifacts">
-              <button class="export-btn export-btn-primary" id="exportServicesCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="servicesStats"></div>
-          <div class="data-page-content" id="servicesContent">
-            <div class="no-data">No service artifact data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Downloads -->
-        <div class="page" id="pageDownloads">
-          <h2 class="page-title">Downloads</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="downloadsSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="downloadsSearch" placeholder="Search downloads..." autocomplete="off" aria-label="Search downloads">
-              <button class="export-btn export-btn-primary" id="exportDownloadsCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="downloadsStats"></div>
-          <div class="data-page-content" id="downloadsContent">
-            <div class="no-data">No download data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Credit Cards -->
-        <div class="page" id="pageCards">
-          <h2 class="page-title">Credit Cards</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="cardsSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="cardsSearch" placeholder="Search cards..." autocomplete="off" aria-label="Search credit cards">
-              <label class="data-page-filter">
-                <input type="checkbox" id="cardsHideSensitive" checked> Hide sensitive data
-              </label>
-              <button class="export-btn export-btn-primary" id="exportCardsCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="cardsStats"></div>
-          <div class="data-page-content" id="cardsContent">
-            <div class="no-data">No credit-card data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Clipboard -->
-        <div class="page" id="pageClipboard">
-          <h2 class="page-title">Clipboard</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="clipboardSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="clipboardSearch" placeholder="Search clipboard..." autocomplete="off" aria-label="Search clipboard">
-              <button class="export-btn export-btn-primary" id="exportClipboardCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="clipboardStats"></div>
-          <div class="data-page-content" id="clipboardContent">
-            <div class="no-data">No clipboard data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Detections -->
-        <div class="page" id="pageDetections">
-          <h2 class="page-title">Detections</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="detectionsSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="detectionsSearch" placeholder="Search detections..." autocomplete="off" aria-label="Search detections">
-              <button class="export-btn export-btn-primary" id="exportDetectionsCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="detectionsStats"></div>
-          <div class="data-page-content" id="detectionsContent">
-            <div class="no-data">No domain-detection data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Screenshots -->
-        <div class="page" id="pageScreenshots">
-          <h2 class="page-title">Screenshots</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="screenshotsSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="screenshotsSearch" placeholder="Search screenshots..." autocomplete="off" aria-label="Search screenshots">
-              <button class="export-btn export-btn-primary" id="exportScreenshotsCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="screenshotsStats"></div>
-          <div class="data-page-content" id="screenshotsContent">
-            <div class="no-data">No screenshots available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Domains -->
-        <div class="page" id="pageDomains">
-          <h2 class="page-title">Domain Explorer</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="domainsSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="domainsSearch" placeholder="Search domains..." autocomplete="off" aria-label="Search domains">
-              <button class="export-btn export-btn-primary" id="exportDomainsCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="domainsStats"></div>
-          <div class="data-page-content" id="domainsContent">
-            <div class="no-data">No domain data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Software -->
-        <div class="page" id="pageSoftware">
-          <h2 class="page-title">Installed Software</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="softwareSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="softwareSearch" placeholder="Search software..." autocomplete="off" aria-label="Search software">
-              <button class="export-btn export-btn-primary" id="exportSoftwareCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-content" id="softwareContent">
-            <div class="no-data">No software data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Processes -->
-        <div class="page" id="pageProcesses">
-          <h2 class="page-title">Running Processes</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="processesSummary">Loading...</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="processesSearch" placeholder="Search processes..." autocomplete="off" aria-label="Search processes">
-              <button class="export-btn export-btn-primary" id="exportProcessesCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-content" id="processesContent">
-            <div class="no-data">No process data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Timeline -->
-        <div class="page" id="pageTimeline">
-          <h2 class="page-title">Timeline</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="timelineSummary">No timeline data.</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="timelineSearch" placeholder="Search timeline..." autocomplete="off" aria-label="Search timeline">
-              <button class="export-btn export-btn-primary" id="exportTimelineCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="timelineStats"></div>
-          <div id="timelineFilters"></div>
-          <div id="timelineVisual"></div>
-          <div class="data-page-content" id="timelineContent">
-            <div class="no-data">No timeline data available.</div>
-          </div>
-        </div>
-
-        <!-- Page: Identity Profile -->
-        <div class="page" id="pageIdentity">
-          <h2 class="page-title">Identity Profile</h2>
-          <div class="data-page-header">
-            <div class="data-page-summary" id="identitySummary">No identity data.</div>
-            <div class="data-page-actions">
-              <input type="text" class="data-page-search" id="identitySearch" placeholder="Search accounts..." autocomplete="off" aria-label="Search accounts">
-              <button class="export-btn export-btn-primary" id="exportIdentityCsv">Download CSV</button>
-            </div>
-          </div>
-          <div class="data-page-stats" id="identityStats"></div>
-          <div id="identityPrimary"></div>
-          <div class="data-page-content" id="identityContent">
-            <div class="no-data">No identity data available.</div>
-          </div>
-          <div id="identityEmailMap"></div>
-        </div>
-
-        <!-- Page: Exports -->
+        <div id="generatedDataPages"></div>
         <div class="page" id="pageExports">
           <h2 class="page-title">Exports</h2>
           <div class="export-cards">
@@ -582,7 +248,7 @@
             <div class="export-card">
               <div class="export-card-body">
                 <div class="export-card-title">Parsed Data</div>
-                <div class="export-card-desc">Password-protected ZIP containing parsed credentials, cookies, autofills, history, bookmarks, browser metadata, tokens, services, downloads, cards, clipboard, detections, and screenshot files.</div>
+                <div class="export-card-desc">Password-protected ZIP containing parsed credentials, cookies, autofills, notes, history, bookmarks, browser metadata, tokens, wallet/store artifacts, services, downloads, cards, clipboard, grabbed-file metadata, detections, and screenshot files.</div>
                 <div class="export-card-counts" id="exportZipCounts"></div>
               </div>
               <div class="export-card-actions">
@@ -593,8 +259,6 @@
         </div>
 
       </div>
-
-      <!-- File preview overlay -->
       <div class="preview-overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-label="File preview">
         <div class="preview-container">
           <div class="preview-header">
@@ -619,8 +283,6 @@
           <div class="preview-body" id="previewBody"></div>
         </div>
       </div>
-
-      <!-- Password modal -->
       <div class="modal-overlay" id="passwordModal" role="dialog" aria-modal="true" aria-label="Password required">
         <div class="modal">
           <h3>Password Required</h3>
@@ -640,75 +302,18 @@
           </div>
         </div>
       </div>
-
-      <!-- File type selection modal -->
       <div class="modal-overlay" id="fileTypeModal" role="dialog" aria-modal="true" aria-label="Select file type">
         <div class="modal modal-filetype">
           <h3>Select File Type</h3>
           <p>Unable to auto-detect file type for:<br>
             <span class="modal-file" id="fileTypeFileName">&mdash;</span>
           </p>
-          <div class="filetype-options" id="fileTypeOptions">
-            <button class="filetype-option" data-type="credentials" data-key="1">
-              <span class="filetype-icon">Credentials</span>
-            </button>
-            <button class="filetype-option" data-type="cookies" data-key="2">
-              <span class="filetype-icon">Cookies</span>
-            </button>
-            <button class="filetype-option" data-type="autofill" data-key="3">
-              <span class="filetype-icon">Autofill</span>
-            </button>
-            <button class="filetype-option" data-type="history" data-key="4">
-              <span class="filetype-icon">History</span>
-            </button>
-            <button class="filetype-option" data-type="bookmarks" data-key="14">
-              <span class="filetype-icon">Bookmarks</span>
-            </button>
-            <button class="filetype-option" data-type="browsermeta" data-key="15">
-              <span class="filetype-icon">Browser Metadata</span>
-            </button>
-            <button class="filetype-option" data-type="sysinfo" data-key="5">
-              <span class="filetype-icon">System Info</span>
-            </button>
-            <button class="filetype-option" data-type="downloads" data-key="6">
-              <span class="filetype-icon">Downloads</span>
-            </button>
-            <button class="filetype-option" data-type="cards" data-key="7">
-              <span class="filetype-icon">Credit Cards</span>
-            </button>
-            <button class="filetype-option" data-type="clipboard" data-key="8">
-              <span class="filetype-icon">Clipboard</span>
-            </button>
-            <button class="filetype-option" data-type="detections" data-key="9">
-              <span class="filetype-icon">Detections</span>
-            </button>
-            <button class="filetype-option" data-type="tokens" data-key="16">
-              <span class="filetype-icon">Account Tokens</span>
-            </button>
-            <button class="filetype-option" data-type="services" data-key="17">
-              <span class="filetype-icon">Services</span>
-            </button>
-            <button class="filetype-option" data-type="software" data-key="10">
-              <span class="filetype-icon">Software</span>
-            </button>
-            <button class="filetype-option" data-type="processes" data-key="11">
-              <span class="filetype-icon">Processes</span>
-            </button>
-            <button class="filetype-option" data-type="screenshot" data-key="12">
-              <span class="filetype-icon">Screenshot</span>
-            </button>
-            <button class="filetype-option" data-type="other" data-key="13">
-              <span class="filetype-icon">Other</span>
-              <span class="filetype-desc">View file content only</span>
-            </button>
-          </div>
+          <div class="filetype-options" id="fileTypeOptions"></div>
           <div class="filetype-pending hidden" id="fileTypePending">
             <span id="fileTypePendingCount">0</span> more file(s) pending
           </div>
         </div>
       </div>
-
-      <!-- Paste text modal -->
       <div class="modal-overlay" id="pasteTextModal" role="dialog" aria-modal="true" aria-label="Paste text">
         <div class="modal modal-paste-text">
           <h3>Paste Text</h3>
@@ -718,64 +323,13 @@
             <input type="text" id="pasteTextName" class="paste-text-name" placeholder="Pasted Text" autocomplete="off">
           </div>
           <textarea id="pasteTextArea" class="paste-text-area" rows="10" placeholder="Paste text here..."></textarea>
-          <div class="paste-type-options" id="pasteTypeOptions">
-            <button class="filetype-option active" data-type="credentials">
-              <span class="filetype-icon">Credentials</span>
-            </button>
-            <button class="filetype-option" data-type="cookies">
-              <span class="filetype-icon">Cookies</span>
-            </button>
-            <button class="filetype-option" data-type="autofill">
-              <span class="filetype-icon">Autofill</span>
-            </button>
-            <button class="filetype-option" data-type="history">
-              <span class="filetype-icon">History</span>
-            </button>
-            <button class="filetype-option" data-type="bookmarks">
-              <span class="filetype-icon">Bookmarks</span>
-            </button>
-            <button class="filetype-option" data-type="browsermeta">
-              <span class="filetype-icon">Browser Metadata</span>
-            </button>
-            <button class="filetype-option" data-type="sysinfo">
-              <span class="filetype-icon">System Info</span>
-            </button>
-            <button class="filetype-option" data-type="downloads">
-              <span class="filetype-icon">Downloads</span>
-            </button>
-            <button class="filetype-option" data-type="cards">
-              <span class="filetype-icon">Credit Cards</span>
-            </button>
-            <button class="filetype-option" data-type="clipboard">
-              <span class="filetype-icon">Clipboard</span>
-            </button>
-            <button class="filetype-option" data-type="detections">
-              <span class="filetype-icon">Detections</span>
-            </button>
-            <button class="filetype-option" data-type="tokens">
-              <span class="filetype-icon">Account Tokens</span>
-            </button>
-            <button class="filetype-option" data-type="services">
-              <span class="filetype-icon">Services</span>
-            </button>
-            <button class="filetype-option" data-type="software">
-              <span class="filetype-icon">Software</span>
-            </button>
-            <button class="filetype-option" data-type="processes">
-              <span class="filetype-icon">Processes</span>
-            </button>
-            <button class="filetype-option" data-type="other">
-              <span class="filetype-icon">Other</span>
-            </button>
-          </div>
+          <div class="paste-type-options" id="pasteTypeOptions"></div>
           <div class="modal-actions">
             <button class="modal-btn modal-btn-cancel" id="pasteTextCancel">Cancel</button>
             <button class="modal-btn modal-btn-submit" id="pasteTextSubmit">Load</button>
           </div>
         </div>
       </div>
-
-      <!-- Column mapper modal -->
       <div class="modal-overlay" id="columnMapperModal" role="dialog" aria-modal="true" aria-label="Column mapper">
         <div class="modal modal-column-mapper">
           <h3>Map Columns</h3>
@@ -808,8 +362,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Keyboard shortcuts help overlay -->
       <div class="modal-overlay" id="shortcutsModal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
         <div class="modal modal-shortcuts">
           <h3>Keyboard Shortcuts</h3>
@@ -830,6 +382,6 @@
     </main>
   </div>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app/init.js"></script>
 </body>
 </html>

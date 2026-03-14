@@ -1,0 +1,497 @@
+// Domain explorer page.
+
+import { on } from '../core/state.js';
+import { escapeHtml } from '../core/utils.js';
+import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
+import { getPasswordsData, getCookiesData, getNotesData } from '../pages/credentials.js';
+import { getHistoryData, getBookmarksData } from '../pages/browser.js';
+import { getDownloadsData, getDomainDetectionsData } from '../pages/activity.js';
+import { extractDomain, extractBaseDomain } from '../core/shared.js';
+import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
+
+const PAGE_SIZE = 100;
+
+let domainList = [];
+let domainFiltered = [];
+let domainShown = 0;
+let expandedDomain = null;
+const DOMAIN_PAGE_INPUTS = {
+  passwords: 'passwordsSearch',
+  cookies: 'cookiesSearch',
+  history: 'historySearch',
+  bookmarks: 'bookmarksSearch',
+  downloads: 'downloadsSearch',
+  detections: 'detectionsSearch',
+  notes: 'notesSearch',
+};
+
+function getCookieField({ row, headers }, pattern) {
+  const index = headers.findIndex(h => pattern.test(h));
+  return index >= 0 ? (row[index] || '') : '';
+}
+
+function buildDomainIndex() {
+  const index = new Map();
+
+  function getEntry(baseDomain) {
+    if (!index.has(baseDomain)) {
+      index.set(baseDomain, {
+        credentials: [],
+        cookies: [],
+        history: [],
+        bookmarks: [],
+        downloads: [],
+        detections: [],
+        notes: [],
+        subdomains: new Set(),
+      });
+    }
+    return index.get(baseDomain);
+  }
+
+  const pw = getPasswordsData();
+  if (pw && pw.rows.length > 0) {
+    const urlIdx = pw.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+    const userIdx = pw.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
+    const passIdx = pw.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+
+    for (const { row } of pw.rows) {
+      const url = urlIdx >= 0 ? row[urlIdx] : '';
+      if (!url) continue;
+      const domain = extractDomain(url);
+      if (!domain) continue;
+      const base = extractBaseDomain(domain);
+      const entry = getEntry(base);
+      entry.credentials.push({
+        url,
+        username: userIdx >= 0 ? row[userIdx] : '',
+        password: passIdx >= 0 ? row[passIdx] : '',
+      });
+      if (domain !== base) entry.subdomains.add(domain);
+    }
+  }
+
+  const ck = getCookiesData();
+  if (ck && ck.rows.length > 0) {
+    for (const rowData of ck.rows) {
+      const { validity, sessionType } = rowData;
+      const host = getCookieField(rowData, FIELD_PATTERNS.cookieDomain);
+      if (!host) continue;
+      const cleanHost = host.replace(/^\./, '');
+      const base = extractBaseDomain(cleanHost) || cleanHost;
+      const entry = getEntry(base);
+      entry.cookies.push({
+        host: cleanHost,
+        name: getCookieField(rowData, FIELD_PATTERNS.cookieName),
+        validity,
+        sessionType,
+      });
+      if (cleanHost !== base) entry.subdomains.add(cleanHost);
+    }
+  }
+
+  const hist = getHistoryData();
+  if (hist && hist.entries.length > 0) {
+    for (const { url, title, visitCount } of hist.entries) {
+      const domain = extractDomain(url);
+      if (!domain) continue;
+      const base = extractBaseDomain(domain);
+      const entry = getEntry(base);
+      entry.history.push({ url, title, visitCount });
+      if (domain !== base) entry.subdomains.add(domain);
+    }
+  }
+
+  const bookmarks = getBookmarksData();
+  if (bookmarks && bookmarks.entries.length > 0) {
+    for (const { url, title, folder } of bookmarks.entries) {
+      const domain = extractDomain(url);
+      if (!domain) continue;
+      const base = extractBaseDomain(domain);
+      const entry = getEntry(base);
+      entry.bookmarks.push({ url, title, folder });
+      if (domain !== base) entry.subdomains.add(domain);
+    }
+  }
+
+  const downloads = getDownloadsData();
+  if (downloads && downloads.entries.length > 0) {
+    for (const { filePath, sourceUrl, domain } of downloads.entries) {
+      const resolved = domain || extractDomain(sourceUrl);
+      if (!resolved) continue;
+      const base = extractBaseDomain(resolved);
+      const entry = getEntry(base);
+      entry.downloads.push({ filePath, sourceUrl });
+      if (resolved !== base) entry.subdomains.add(resolved);
+    }
+  }
+
+  const detections = getDomainDetectionsData();
+  if (detections && detections.entries.length > 0) {
+    for (const { section, label, target, count } of detections.entries) {
+      const resolved = extractDomain(target) || target.toLowerCase();
+      if (!resolved) continue;
+      const base = extractBaseDomain(resolved);
+      const entry = getEntry(base);
+      entry.detections.push({ section, label, target, count });
+      if (resolved !== base) entry.subdomains.add(resolved);
+    }
+  }
+
+  const notes = getNotesData();
+  if (notes && notes.entries.length > 0) {
+    for (const note of notes.entries) {
+      for (const domain of note.domains || []) {
+        const base = extractBaseDomain(domain);
+        const entry = getEntry(base);
+        entry.notes.push({ title: note.title, indicators: note.indicators });
+        if (domain !== base) entry.subdomains.add(domain);
+      }
+    }
+  }
+
+  domainList = [];
+  for (const [domain, data] of index) {
+    const total = data.credentials.length + data.cookies.length + data.history.length +
+      data.bookmarks.length + data.downloads.length + data.detections.length + data.notes.length;
+    domainList.push({
+      domain,
+      credentials: data.credentials.length,
+      cookies: data.cookies.length,
+      history: data.history.length,
+      bookmarks: data.bookmarks.length,
+      downloads: data.downloads.length,
+      detections: data.detections.length,
+      notes: data.notes.length,
+      subdomains: data.subdomains.size,
+      total,
+      _data: data,
+    });
+  }
+  domainList.sort((a, b) => b.total - a.total);
+}
+
+function domainRowBuilder(item) {
+  return `<tr class="domain-row" data-domain="${escapeHtml(item.domain)}">
+    <td class="domain-name-cell"><span class="domain-expand-icon">&#9656;</span> ${escapeHtml(item.domain)}</td>
+    <td>${item.credentials}</td>
+    <td>${item.cookies}</td>
+    <td>${item.history}</td>
+    <td>${item.bookmarks}</td>
+    <td>${item.downloads}</td>
+    <td>${item.detections + item.notes}</td>
+    <td>${item.subdomains}</td>
+  </tr>`;
+}
+
+function buildDomainSectionFooter(pageName, baseDomain, totalCount, visibleCount, label) {
+  const remaining = Math.max(totalCount - visibleCount, 0);
+  const moreText = remaining > 0
+    ? `<div class="domain-detail-more">Showing ${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()} ${escapeHtml(label)}.</div>`
+    : '';
+  return `<div class="domain-detail-footer">
+    ${moreText}
+    <button class="table-action-btn domain-detail-open-btn" data-domain-open-page="${escapeHtml(pageName)}" data-domain-open-query="${escapeHtml(baseDomain)}">Open full ${escapeHtml(label)} page</button>
+  </div>`;
+}
+
+function renderDomainDetail(data, baseDomain) {
+  let html = '<div class="domain-detail">';
+
+  if (data.subdomains.size > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Subdomains</div>';
+    html += '<div class="domain-subdomain-list">';
+    for (const sub of [...data.subdomains].sort()) {
+      html += `<span class="domain-subdomain-tag">${escapeHtml(sub)}</span>`;
+    }
+    html += '</div></div>';
+  }
+
+  if (data.credentials.length > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Credentials (' + data.credentials.length + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Username</th><th>Password</th></tr></thead><tbody>';
+    const showCreds = data.credentials.slice(0, 20);
+    for (const c of showCreds) {
+      const masked = c.password ? c.password[0] + '\u2022'.repeat(Math.min(c.password.length - 1, 6)) : '';
+      html += `<tr><td title="${escapeHtml(c.url)}">${escapeHtml(c.url)}</td><td>${escapeHtml(c.username)}</td><td class="password-cell masked">${escapeHtml(masked)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += buildDomainSectionFooter('passwords', baseDomain, data.credentials.length, showCreds.length, 'credentials');
+    html += '</div>';
+  }
+
+  if (data.cookies.length > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Cookies (' + data.cookies.length + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th>Host</th><th>Name</th><th>Status</th><th>Type</th></tr></thead><tbody>';
+    const showCookies = data.cookies.slice(0, 20);
+    for (const c of showCookies) {
+      const typeLabel = c.sessionType === 'auth' ? 'Auth' : c.sessionType === 'session' ? 'Session' : '';
+      html += `<tr><td>${escapeHtml(c.host)}</td><td>${escapeHtml(c.name)}</td>`;
+      html += `<td><span class="validity-badge validity-badge-${c.validity.status}">${escapeHtml(c.validity.label)}</span></td>`;
+      html += `<td>${typeLabel ? `<span class="session-badge session-badge-${c.sessionType}">${typeLabel}</span>` : ''}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += buildDomainSectionFooter('cookies', baseDomain, data.cookies.length, showCookies.length, 'cookies');
+    html += '</div>';
+  }
+
+  if (data.history.length > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">History (' + data.history.length + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Title</th><th>Visits</th></tr></thead><tbody>';
+    const showHistory = data.history.slice(0, 20);
+    for (const h of showHistory) {
+      html += `<tr><td title="${escapeHtml(h.url)}">${escapeHtml(h.url)}</td><td>${escapeHtml(h.title)}</td><td>${h.visitCount}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += buildDomainSectionFooter('history', baseDomain, data.history.length, showHistory.length, 'history');
+    html += '</div>';
+  }
+
+  if (data.bookmarks.length > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Bookmarks (' + data.bookmarks.length + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Title</th><th>Folder</th></tr></thead><tbody>';
+    const showBookmarks = data.bookmarks.slice(0, 20);
+    for (const bookmark of showBookmarks) {
+      html += `<tr><td title="${escapeHtml(bookmark.url)}">${escapeHtml(bookmark.url)}</td><td>${escapeHtml(bookmark.title)}</td><td>${escapeHtml(bookmark.folder)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += buildDomainSectionFooter('bookmarks', baseDomain, data.bookmarks.length, showBookmarks.length, 'bookmarks');
+    html += '</div>';
+  }
+
+  if (data.downloads.length > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Downloads (' + data.downloads.length + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th>File Path</th><th>Source URL</th></tr></thead><tbody>';
+    const showDownloads = data.downloads.slice(0, 20);
+    for (const download of showDownloads) {
+      html += `<tr><td title="${escapeHtml(download.filePath)}">${escapeHtml(download.filePath)}</td><td title="${escapeHtml(download.sourceUrl)}">${escapeHtml(download.sourceUrl)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += buildDomainSectionFooter('downloads', baseDomain, data.downloads.length, showDownloads.length, 'downloads');
+    html += '</div>';
+  }
+
+  if (data.detections.length > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Detections (' + data.detections.length + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th>Section</th><th>Label</th><th>Count</th></tr></thead><tbody>';
+    const showDetections = data.detections.slice(0, 20);
+    for (const detection of showDetections) {
+      html += `<tr><td>${escapeHtml(detection.section)}</td><td>${escapeHtml(detection.label || detection.target)}</td><td>${detection.count}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += buildDomainSectionFooter('detections', baseDomain, data.detections.length, showDetections.length, 'detections');
+    html += '</div>';
+  }
+
+  if (data.notes.length > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Notes (' + data.notes.length + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th>Title</th><th>Indicators</th></tr></thead><tbody>';
+    const showNotes = data.notes.slice(0, 20);
+    for (const note of showNotes) {
+      html += `<tr><td>${escapeHtml(note.title)}</td><td>${escapeHtml(note.indicators)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += buildDomainSectionFooter('notes', baseDomain, data.notes.length, showNotes.length, 'notes');
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderDomainsPage(searchQuery = '') {
+  const summary = document.getElementById('domainsSummary');
+  const stats = document.getElementById('domainsStats');
+  const content = document.getElementById('domainsContent');
+
+  if (domainList.length === 0) {
+    summary.textContent = 'No domain data found';
+    stats.innerHTML = '';
+    content.innerHTML = '<div class="no-data">No domain data available.</div>';
+    return;
+  }
+
+  let filtered = domainList;
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = domainList.filter(d => d.domain.toLowerCase().includes(q));
+  }
+
+  domainFiltered = filtered;
+  domainShown = Math.min(PAGE_SIZE, filtered.length);
+  expandedDomain = null;
+
+  summary.textContent = filtered.length !== domainList.length
+    ? `Showing ${filtered.length.toLocaleString()} of ${domainList.length.toLocaleString()} unique domains across credentials, cookies, history, bookmarks, downloads, detections, and notes`
+    : `${domainList.length.toLocaleString()} unique domains across credentials, cookies, history, bookmarks, downloads, detections, and notes`;
+
+  const top10 = domainList.slice(0, 10);
+  if (top10.length > 0) {
+    const maxCount = top10[0].total;
+    stats.innerHTML = top10.map(d => {
+      const pct = Math.round((d.total / maxCount) * 100);
+      return `<div class="domain-bar-row">
+        <span class="domain-bar-label">${escapeHtml(d.domain)}</span>
+        <div class="domain-bar-track"><div class="domain-bar-fill" style="width:${pct}%"></div></div>
+        <span class="domain-bar-count">${d.total}</span>
+      </div>`;
+    }).join('');
+  } else {
+    stats.innerHTML = '';
+  }
+
+  let html = '<div class="data-table-container"><table class="data-table domain-table">';
+  html += '<thead><tr><th>Domain</th><th>Credentials</th><th>Cookies</th><th>History</th><th>Bookmarks</th><th>Downloads</th><th>Other</th><th>Subdomains</th></tr></thead><tbody>';
+  for (let i = 0; i < domainShown; i++) {
+    html += domainRowBuilder(domainFiltered[i]);
+  }
+  html += '</tbody></table></div>';
+
+  const remaining = domainFiltered.length - domainShown;
+  if (remaining > 0) {
+    html += `<button class="data-show-more" data-page="domains">Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)</button>`;
+  }
+
+  content.innerHTML = html;
+}
+
+function handleDomainShowMore() {
+  const content = document.getElementById('domainsContent');
+  const nextEnd = Math.min(domainShown + PAGE_SIZE, domainFiltered.length);
+  let newHtml = '';
+  for (let i = domainShown; i < nextEnd; i++) {
+    newHtml += domainRowBuilder(domainFiltered[i]);
+  }
+
+  const tbody = content.querySelector('tbody');
+  if (tbody) tbody.insertAdjacentHTML('beforeend', newHtml);
+
+  domainShown = nextEnd;
+
+  const btn = content.querySelector('.data-show-more');
+  const remaining = domainFiltered.length - domainShown;
+  if (remaining > 0 && btn) {
+    btn.textContent = `Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)`;
+  } else if (btn) {
+    btn.remove();
+  }
+}
+
+function openDomainArtifactPage(pageName, searchQuery) {
+  const inputId = DOMAIN_PAGE_INPUTS[pageName];
+  const searchInput = inputId ? document.getElementById(inputId) : null;
+  if (searchInput) {
+    searchInput.value = searchQuery;
+  }
+
+  if (pageName === 'cookies') {
+    const validOnly = document.getElementById('cookiesValidOnly');
+    const sessionOnly = document.getElementById('cookiesSessionOnly');
+    if (validOnly) validOnly.checked = false;
+    if (sessionOnly) sessionOnly.checked = false;
+  }
+
+  const navButton = document.querySelector(`.sidebar-nav-item[data-page="${pageName}"]`);
+  if (navButton && !navButton.disabled) {
+    navButton.click();
+  }
+}
+
+function exportDomainsCSV() {
+  if (!domainList || domainList.length === 0) return;
+  downloadCsvRows('domains.csv', ['Domain', 'Credentials', 'Cookies', 'History', 'Bookmarks', 'Downloads', 'Detections', 'Notes', 'Subdomains'], domainList.map((entry) => [
+    entry.domain,
+    entry.credentials,
+    entry.cookies,
+    entry.history,
+    entry.bookmarks,
+    entry.downloads,
+    entry.detections,
+    entry.notes,
+    entry._data.subdomains.size > 0 ? [...entry._data.subdomains].join('; ') : '',
+  ]));
+}
+
+function initDomainExplorer() {
+  const searchInput = document.getElementById('domainsSearch');
+  bindDebouncedInput(searchInput, (value) => renderDomainsPage(value));
+
+  document.getElementById('exportDomainsCsv')?.addEventListener('click', exportDomainsCSV);
+
+  document.getElementById('domainsContent')?.addEventListener('click', (e) => {
+    const openBtn = e.target.closest('[data-domain-open-page]');
+    if (openBtn) {
+      e.stopPropagation();
+      openDomainArtifactPage(openBtn.dataset.domainOpenPage, openBtn.dataset.domainOpenQuery || '');
+      return;
+    }
+
+    const showMoreBtn = e.target.closest('.data-show-more');
+    if (showMoreBtn && showMoreBtn.dataset.page === 'domains') {
+      handleDomainShowMore();
+      return;
+    }
+
+    const row = e.target.closest('.domain-row');
+    if (!row) return;
+    const domain = row.dataset.domain;
+    if (!domain) return;
+
+    const wasExpanded = expandedDomain === domain;
+
+    // Collapse previous
+    if (expandedDomain) {
+      const prevRow = document.querySelector(`.domain-row[data-domain="${CSS.escape(expandedDomain)}"]`);
+      if (prevRow) {
+        prevRow.classList.remove('domain-row-expanded');
+        const icon = prevRow.querySelector('.domain-expand-icon');
+        if (icon) icon.innerHTML = '&#9656;';
+        const detailRow = prevRow.nextElementSibling;
+        if (detailRow && detailRow.classList.contains('domain-detail-row')) {
+          detailRow.remove();
+        }
+      }
+      expandedDomain = null;
+    }
+
+    if (!wasExpanded) {
+      expandedDomain = domain;
+      row.classList.add('domain-row-expanded');
+      const icon = row.querySelector('.domain-expand-icon');
+      if (icon) icon.innerHTML = '&#9662;';
+
+      const item = domainFiltered.find(d => d.domain === domain);
+      if (item && item._data) {
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'domain-detail-row';
+        const td = document.createElement('td');
+        td.setAttribute('colspan', '8');
+        td.innerHTML = renderDomainDetail(item._data, domain);
+        detailTr.appendChild(td);
+        row.after(detailTr);
+      }
+    }
+  });
+
+  on('data:loaded', () => {
+    buildDomainIndex();
+    if (domainList.length > 0) {
+      document.getElementById('navDomains').disabled = false;
+    }
+  });
+
+  on('page:domains', () => {
+    renderDomainsPage(searchInput?.value || '');
+  });
+
+  on('reset', () => {
+    domainList = [];
+    domainFiltered = [];
+    domainShown = 0;
+    expandedDomain = null;
+    document.getElementById('navDomains').disabled = true;
+    if (searchInput) searchInput.value = '';
+  });
+}
+
+export { initDomainExplorer };
