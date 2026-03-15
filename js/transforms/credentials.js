@@ -3,6 +3,7 @@
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 import {
   KV_PATTERN,
+  AUTOFILL_KV_PATTERN,
   GOOGLE_RESTORE_TOKEN_PATTERN,
   PASSWORD_KV_PATTERN,
   normalizeText,
@@ -246,6 +247,10 @@ const AUTOFILL_BLOCK_MAX_LINES = 6;
 const AUTOFILL_BLOCK_MAX_VALUE_LENGTH = 500;
 const AUTOFILL_SPACED_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _.$\-[\]]{0,80}?)\s*:\s+(.+)$/;
 const AUTOFILL_TOKEN_VALUE_PATTERN = /^([A-Za-z_$][A-Za-z0-9_.$:[\]-]*(?:\[[^\]\n]+\])*)\s+(.+)$/;
+const AUTOFILL_RECORD_LABEL_KEYS = new Set(['browser', 'profile', 'name', 'field', 'key', 'label', 'value']);
+const AUTOFILL_RECORD_NAME_KEYS = new Set(['name', 'field', 'key', 'label']);
+const AUTOFILL_RECORD_VALUE_KEYS = new Set(['value']);
+const AUTOFILL_INLINE_EXCLUDED_KEYS = new Set(['browser', 'profile', 'value']);
 
 function normalizeAutofillFieldName(name) {
   return String(name || '').replace(/:+$/, '').replace(/\s+/g, ' ').trim();
@@ -267,6 +272,55 @@ function isLikelyAutofillFieldValue(value) {
   if (!normalized || normalized.length > AUTOFILL_BLOCK_MAX_VALUE_LENGTH) return false;
   if (/^[*=_~#-]{6,}$/.test(normalized)) return false;
   return true;
+}
+
+function normalizeAutofillRecordLabel(key) {
+  return String(key || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function parseAutofillLabelledRecords(clean) {
+  const rows = [];
+  let currentName = '';
+  let currentValue = '';
+
+  function flush() {
+    const name = normalizeAutofillFieldName(currentName);
+    const value = String(currentValue || '').trim();
+    if (isLikelyAutofillFieldName(name) && isLikelyAutofillFieldValue(value)) {
+      rows.push([name, value]);
+    }
+    currentName = '';
+    currentValue = '';
+  }
+
+  for (const rawLine of stripLeadingNoiseLines(clean).split('\n')) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      flush();
+      continue;
+    }
+
+    const match = trimmed.match(AUTOFILL_SPACED_KV_PATTERN) || trimmed.match(AUTOFILL_KV_PATTERN);
+    if (!match) continue;
+
+    const label = normalizeAutofillRecordLabel(match[1]);
+    const value = match[2].trim();
+    if (!AUTOFILL_RECORD_LABEL_KEYS.has(label) || !value) continue;
+
+    if (AUTOFILL_RECORD_NAME_KEYS.has(label)) {
+      if (currentName && currentValue) flush();
+      currentName = value;
+      continue;
+    }
+
+    if (AUTOFILL_RECORD_VALUE_KEYS.has(label)) {
+      currentValue = value;
+      if (currentName && currentValue) flush();
+    }
+  }
+
+  flush();
+  return rows.length > 0 ? { headers: ['Field', 'Value'], rows } : null;
 }
 
 function parseAutofillBlocks(clean) {
@@ -315,23 +369,30 @@ function parseLooseAutofillLine(line) {
 
   const tokenMatch = trimmed.match(AUTOFILL_TOKEN_VALUE_PATTERN);
   const spacedKvMatch = trimmed.match(AUTOFILL_SPACED_KV_PATTERN);
+  const genericKvMatch = trimmed.match(AUTOFILL_KV_PATTERN);
+
+  const buildRow = (rawName, rawValue) => {
+    const name = normalizeAutofillFieldName(rawName);
+    const value = String(rawValue || '').trim();
+    if (!name || !value) return null;
+    if (AUTOFILL_INLINE_EXCLUDED_KEYS.has(normalizeAutofillRecordLabel(name))) return null;
+    return [name, value];
+  };
 
   if (spacedKvMatch && spacedKvMatch[1].includes(' ')) {
-    const name = normalizeAutofillFieldName(spacedKvMatch[1]);
-    const value = spacedKvMatch[2].trim();
-    return name && value ? [name, value] : null;
+    return buildRow(spacedKvMatch[1], spacedKvMatch[2]);
   }
 
   if (tokenMatch) {
-    const name = normalizeAutofillFieldName(tokenMatch[1]);
-    const value = tokenMatch[2].trim();
-    return name && value ? [name, value] : null;
+    return buildRow(tokenMatch[1], tokenMatch[2]);
   }
 
   if (spacedKvMatch && !/^(?:https?|file)$/i.test(spacedKvMatch[1])) {
-    const name = normalizeAutofillFieldName(spacedKvMatch[1]);
-    const value = spacedKvMatch[2].trim();
-    return name && value ? [name, value] : null;
+    return buildRow(spacedKvMatch[1], spacedKvMatch[2]);
+  }
+
+  if (genericKvMatch && !/^(?:https?|file)$/i.test(genericKvMatch[1])) {
+    return buildRow(genericKvMatch[1], genericKvMatch[2]);
   }
 
   return null;
@@ -515,6 +576,9 @@ export function parseAutofillFile(text, config) {
     const parsed = finalizeAutofillDataset(parseDelimited(clean, format));
     if (parsed) return parsed;
   }
+
+  const labelledRecordParsed = parseAutofillLabelledRecords(clean);
+  if (labelledRecordParsed) return labelledRecordParsed;
 
   // Some logs store autofills as repeated short "field-id" + "value" blocks.
   const blockParsed = parseAutofillBlocks(clean);

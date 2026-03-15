@@ -8,6 +8,8 @@ const GENERAL_SERVICE_DEFINITIONS = Object.freeze([
   { label: 'Telegram', patterns: [/telegram/i] },
   { label: 'AnyDesk', patterns: [/anydesk/i] },
   { label: 'Outlook', patterns: [/outlook/i] },
+  { label: 'FileZilla', patterns: [/filezilla/i, /ftp/i] },
+  { label: 'Thunderbird', patterns: [/thunderbird/i] },
 ]);
 
 const STORE_SERVICE_DEFINITIONS = Object.freeze([

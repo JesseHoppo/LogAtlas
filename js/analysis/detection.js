@@ -23,8 +23,11 @@ function isLikelyProcessListFile(name) {
 
 // Password files
 
-function isLikelyPasswordFilename(name, parentDir) {
+function isLikelyPasswordFilename(name, parentDir, fullPath = '') {
+  const normalizedPath = normalizePath(fullPath);
   if (FILE_TYPE_PATTERNS.password.exclusions.some(rx => rx.test(name))) return false;
+  if (/(^|\/)(?:mails?|email clients?)\/outlook\/credentials\.txt$/i.test(normalizedPath)) return false;
+  if (/(^|\/)(?:ftps?|ftp)\/filezilla\/credentials\.txt$/i.test(normalizedPath)) return false;
   if (parentDir && FILE_TYPE_PATTERNS.password.parentDirMatch.test(parentDir)) return true;
   return FILE_TYPE_PATTERNS.password.patterns.some(rx => rx.test(name));
 }
@@ -53,9 +56,6 @@ function isLikelySystemInfoFile(name, parentDir) {
 
 function isLikelyAutofillFile(name, parentDir) {
   const a = FILE_TYPE_PATTERNS.autofill;
-  if (/^(?:important)[\s_-]*autofills?\.(txt|tsv|csv)$/i.test(name)) {
-    return Boolean(parentDir && a.folderPattern.test(parentDir) && TEXT_EXTENSIONS.test(name));
-  }
   if (parentDir && a.folderPattern.test(parentDir) && TEXT_EXTENSIONS.test(name)) return true;
   return a.filePatterns.some(rx => rx.test(name));
 }
@@ -207,7 +207,7 @@ function isLikelyGrabbedFile(name, parentDir, fullPath) {
 // Apply all hints to a node. Returns true if anything was detected.
 function applyDetectionHints(node, name, parentDir, fullPath = '') {
   let detected = false;
-  if (isLikelyPasswordFilename(name, parentDir)) { node._passwordFileHint = true; detected = true; }
+  if (isLikelyPasswordFilename(name, parentDir, fullPath)) { node._passwordFileHint = true; detected = true; }
   if (isLikelyCookieFile(name, parentDir))        { node._cookieFileHint = true;   detected = true; }
   if (isLikelySystemInfoFile(name, parentDir))     { node._sysInfoHint = true;      detected = true; }
   if (isLikelyAutofillFile(name, parentDir))       { node._autofillHint = true;     detected = true; }

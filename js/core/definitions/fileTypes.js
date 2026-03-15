@@ -59,6 +59,9 @@ export const FILE_TYPE_PATTERNS = {
   autofill: {
     filePatterns: [
       /^autofills?\.(txt|tsv|csv)$/i,
+      /^autofills?_[^/]+\.(txt|tsv|csv)$/i,
+      /^browser[\s_-]*autofills?\.(txt|tsv|csv)$/i,
+      /^important[\s_-]*autofills?\.(txt|tsv|csv)$/i,
     ],
     folderPattern: /^auto[\s_-]*fills?$/i,
   },
@@ -154,9 +157,11 @@ export const FILE_TYPE_PATTERNS = {
     pathPatterns: [
       /(^|\/)(?:browser\/)?googleaccounts\//i,
       /(^|\/)accounttokens?\//i,
+      /(^|\/)restore\/.*token\.txt$/i,
+      /(^|\/)browsers?\/token_[^/]+\.txt$/i,
       /(^|\/)fbfastcheck\/(?:token_eaab|ids?)\.txt$/i,
-      /(^|\/)(?:applications|messenger)\/discord\/.*(?:discordtokens?|tokens?|discord)\.txt$/i,
-      /(^|\/)(?:applications|messenger)\/steam\/.*tokens?\.txt$/i,
+      /(^|\/)(?:applications|games|messengers?|soft)\/discord\/.*(?:discordtokens?|tokens?|discord)\.txt$/i,
+      /(^|\/)(?:applications|games|messengers?|soft)\/steam\/.*tokens?\.txt$/i,
     ],
   },
 
@@ -171,9 +176,11 @@ export const FILE_TYPE_PATTERNS = {
     pathPatterns: [
       /(^|\/)desktop\/telegram\/token\.txt$/i,
       /(^|\/)(?:applications|soft|messenger)\/anydesk/i,
-      /(^|\/)(?:soft|email clients?)\/outlook/i,
+      /(^|\/)(?:mails?|soft|email clients?)\/outlook/i,
       /(^|\/)outlook - windows app \(new\)\//i,
       /(^|\/)messenger\/discord\/.*leveldb\/.*\.(?:log|ldb)$/i,
+      /(^|\/)(?:ftps?|ftp)\/filezilla\/credentials\.txt$/i,
+      /(^|\/)mails?\/thunderbird\.txt$/i,
     ],
   },
 
@@ -271,4 +278,3 @@ export const FILE_TYPE_PATTERNS = {
     ],
   },
 };
-

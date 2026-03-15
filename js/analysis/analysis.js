@@ -9,6 +9,7 @@ import {
 } from '../transforms/credentials.js';
 import {
   parseSystemInfoFile,
+  parseHistoryFile,
   parseBookmarkFile,
   parseBrowserMetadataFile,
   parseAccountTokenFile,
@@ -18,14 +19,17 @@ import {
   parseClipboardFile,
 } from '../transforms/structured.js';
 import { parseCreditCardFile } from '../transforms/cards.js';
+import { isPromotionalNoiseLine, stripLeadingNoiseLines } from '../transforms/shared.js';
 import { parseWalletArtifact } from './walletArtifacts.js';
 import { parseNoteArtifact, summarizeNotes, classifyGrabbedFile, summarizeGrabbedFiles } from './contextArtifacts.js';
 import {
   classifyAutofillEntries,
   collectHintedNodes,
   extractDomain,
+  extractBaseDomain,
   inferBrowserFromPath,
   inferServiceFromPath,
+  parseTimestampValue,
   checkCookieValidity,
   topN,
 } from '../core/shared.js';
@@ -204,6 +208,73 @@ async function analyzeCookies(fileTree, rootName) {
   });
 }
 
+// History
+
+async function analyzeHistory(fileTree, rootName) {
+  const nodes = [];
+  collectHintedNodes(fileTree, '_historyHint', rootName, nodes);
+
+  if (nodes.length === 0) {
+    emit('analysis:history', null);
+    return;
+  }
+
+  const entries = [];
+  const domains = [];
+  let fileCount = 0;
+
+  for (const { node } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const text = new TextDecoder('utf-8').decode(content);
+      const parsed = parseHistoryFile(text, node._parseConfig || null);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+
+      const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+      const titleIdx = parsed.headers.findIndex(h => /^(title|page.?title)$/i.test(h));
+      const visitsIdx = parsed.headers.findIndex(h => /^(visit.?count|visits?|count)$/i.test(h));
+      const lastIdx = parsed.headers.findIndex(h => /^(last.?visit|date|time|timestamp)$/i.test(h));
+
+      for (const row of parsed.rows) {
+        const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
+        if (!url) continue;
+        const title = titleIdx >= 0 ? (row[titleIdx] || '').trim() : '';
+        const visitCount = visitsIdx >= 0 ? (parseInt(row[visitsIdx], 10) || 1) : 1;
+        const lastVisit = lastIdx >= 0 ? (row[lastIdx] || '').trim() : '';
+        const lastVisitDate = parseTimestampValue(lastVisit);
+        const domain = extractBaseDomain(extractDomain(url)) || '';
+        if (domain) domains.push(domain);
+        entries.push({ url, title, visitCount, lastVisit, lastVisitDate });
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (entries.length === 0) {
+    emit('analysis:history', null);
+    return;
+  }
+
+  const datedEntries = entries.filter(entry => entry.lastVisitDate);
+  const mostRecent = datedEntries.length > 0
+    ? datedEntries.reduce((latest, entry) => (!latest || entry.lastVisitDate > latest.lastVisitDate ? entry : latest), null)
+    : null;
+
+  emit('analysis:history', {
+    fileCount,
+    totalEntries: entries.length,
+    uniqueDomains: new Set(domains).size,
+    topDomains: topN(domains, LIMITS.topDomains),
+    mostRecent: mostRecent
+      ? { url: mostRecent.url, title: mostRecent.title, lastVisit: mostRecent.lastVisit }
+      : null,
+  });
+}
+
 // System info
 
 async function analyzeSystemInfo(fileTree, rootName) {
@@ -315,7 +386,7 @@ function extractInlineSections(text) {
     // Skip sub-headers
     if (currentTarget && SUB_HEADER.test(trimmed)) continue;
 
-    if (currentTarget && trimmed) {
+    if (currentTarget && trimmed && !isPromotionalNoiseLine(trimmed)) {
       currentTarget.push(trimmed);
     }
   }
@@ -352,6 +423,7 @@ function extractInlineSections(text) {
     const entries = [];
     const seen = new Set();
     for (const line of processLines) {
+      if (isPromotionalNoiseLine(line) || /^===\s*running processes\s*===$/i.test(line)) continue;
       const name = line.replace(/^[-*•]\s+/, '').trim();
       if (!name || name.length > 200) continue;
       const key = name.toLowerCase();
@@ -466,9 +538,10 @@ async function analyzeAutofills(fileTree, rootName) {
   }
 
   const entries = [];
+  const files = [];
   let parsedCount = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
@@ -476,11 +549,30 @@ async function analyzeAutofills(fileTree, rootName) {
       const parsed = parseAutofillFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
-      parsedCount++;
+      const fileEntries = [];
       for (const row of parsed.rows) {
         const name = (row[0] || '').trim();
         const value = (row[1] || '').trim();
-        if (name && value) entries.push({ name, value });
+        if (!name || !value) continue;
+        const entry = {
+          name,
+          value,
+          sourceFile: path || node.name || '',
+        };
+        entries.push(entry);
+        fileEntries.push(entry);
+      }
+
+      if (fileEntries.length > 0) {
+        parsedCount++;
+        files.push({
+          path: path || node.name || '',
+          entryCount: fileEntries.length,
+          sampleEntries: fileEntries.slice(0, 10).map((entry) => ({
+            name: entry.name,
+            value: entry.value,
+          })),
+        });
       }
     } catch {
       // skip
@@ -497,11 +589,23 @@ async function analyzeAutofills(fileTree, rootName) {
   emit('analysis:autofill', {
     fileCount: parsedCount,
     totalEntries: entries.length,
+    entries,
+    files,
     emails: highlights.emails,
     phones: highlights.phones,
     names: highlights.names,
     addresses: highlights.addresses,
     other: highlights.other,
+    otherAll: highlights.otherAll,
+    otherTotal: highlights.otherTotal,
+    otherTruncated: highlights.otherTruncated,
+    categoryCounts: {
+      emails: highlights.emails.length,
+      phones: highlights.phones.length,
+      names: highlights.names.length,
+      addresses: highlights.addresses.length,
+      other: highlights.otherTotal,
+    },
   });
 }
 
@@ -1150,14 +1254,16 @@ async function analyzeProcessList(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = stripLeadingNoiseLines(new TextDecoder('utf-8').decode(content));
       const lines = text.split('\n');
       let found = false;
 
       for (const rawLine of lines) {
         const line = rawLine.trim();
         if (!line) continue;
+        if (isPromotionalNoiseLine(line)) continue;
         if (/^[-=*#]{3,}$/.test(line)) continue;  // separators
+        if (/^===\s*running processes\s*===$/i.test(line)) continue;
         if (/^(Process|Name|PID|Image)/i.test(line) && /\t/.test(line)) continue;  // header row
 
         let name = line;
@@ -1172,18 +1278,24 @@ async function analyzeProcessList(fileTree, rootName) {
           name = labelled[3].trim();
           commandLine = (labelled[4] || '').trim();
         } else {
-          const bracketMatch = line.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
-          if (bracketMatch) {
-            name = bracketMatch[1].trim();
-            pid = bracketMatch[2];
+          const pidDashMatch = line.match(/^PID:\s*(\d+)\s*-\s*(.+)$/i);
+          if (pidDashMatch) {
+            pid = pidDashMatch[1];
+            name = pidDashMatch[2].trim();
           } else {
-            const parts = line.split('\t').map(p => p.trim()).filter(Boolean);
-            if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
-              name = parts[0];
-              pid = parts[1];
-              if (parts.length >= 3) commandLine = parts.slice(2).join(' ');
-            } else if (parts.length === 1) {
-              name = parts[0];
+          const bracketMatch = line.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
+            if (bracketMatch) {
+              name = bracketMatch[1].trim();
+              pid = bracketMatch[2];
+            } else {
+              const parts = line.split('\t').map(p => p.trim()).filter(Boolean);
+              if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+                name = parts[0];
+                pid = parts[1];
+                if (parts.length >= 3) commandLine = parts.slice(2).join(' ');
+              } else if (parts.length === 1) {
+                name = parts[0];
+              }
             }
           }
         }
@@ -1223,6 +1335,7 @@ async function analyzeProcessList(fileTree, rootName) {
 function runAnalysis(fileTree, rootName) {
   analyzeCredentials(fileTree, rootName);
   analyzeCookies(fileTree, rootName);
+  analyzeHistory(fileTree, rootName);
   analyzeSystemInfo(fileTree, rootName);
   analyzeAutofills(fileTree, rootName);
   analyzeNotes(fileTree, rootName);

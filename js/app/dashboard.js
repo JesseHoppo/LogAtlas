@@ -14,6 +14,7 @@ let clipboardIocs = [];
 const overviewState = {
   credentials: null,
   cookies: null,
+  history: null,
   sysinfo: null,
   downloads: null,
   domainDetect: null,
@@ -129,6 +130,7 @@ function buildCaseBriefing({
   user,
   credentials,
   cookies,
+  history,
   tokens,
   wallets,
   cards,
@@ -156,6 +158,7 @@ function buildCaseBriefing({
   if (totalFiles > 0) scopeParts.push(pluralize(totalFiles, 'file'));
   if (credentials?.uniqueCredentials > 0) scopeParts.push(pluralize(credentials.uniqueCredentials, 'unique credential'));
   if (cookies?.validSessionTokens > 0) scopeParts.push(pluralize(cookies.validSessionTokens, 'valid browser session'));
+  if (history?.totalEntries > 0) scopeParts.push(pluralize(history.totalEntries, 'history entry', 'history entries'));
   if (tokens?.totalEntries > 0) scopeParts.push(pluralize(tokens.totalEntries, 'token entry', 'token entries'));
   if (wallets?.totalEntries > 0) scopeParts.push(pluralize(wallets.totalEntries, 'wallet/store artifact'));
   if (cards?.totalCards > 0) scopeParts.push(pluralize(cards.totalCards, 'card entry', 'card entries'));
@@ -272,6 +275,7 @@ function renderTriageOverview() {
   const fingerprint = overviewState.fingerprint;
   const credentials = overviewState.credentials;
   const cookies = overviewState.cookies;
+  const history = overviewState.history;
   const tokens = overviewState.accountTokens;
   const wallets = overviewState.wallets;
   const cards = overviewState.creditCards;
@@ -298,6 +302,7 @@ function renderTriageOverview() {
   if (credentials?.uniqueCredentials > 0) summaryItems.push({ label: 'Credentials', value: credentials.uniqueCredentials.toLocaleString() });
   if (credentials?.failedFiles?.length > 0) summaryItems.push({ label: 'Skipped Password Files', value: credentials.failedFiles.length.toLocaleString() });
   if (cookies?.validSessionTokens > 0) summaryItems.push({ label: 'Active Sessions', value: cookies.validSessionTokens.toLocaleString() });
+  if (history?.totalEntries > 0) summaryItems.push({ label: 'History', value: history.totalEntries.toLocaleString() });
   if (tokens?.totalEntries > 0) summaryItems.push({ label: 'Tokens', value: tokens.totalEntries.toLocaleString() });
   if (wallets?.totalEntries > 0) summaryItems.push({ label: 'Wallet Stores', value: wallets.totalEntries.toLocaleString() });
   if (cards?.totalCards > 0) summaryItems.push({ label: 'Cards', value: cards.totalCards.toLocaleString() });
@@ -329,6 +334,7 @@ function renderTriageOverview() {
     user: osUser,
     credentials,
     cookies,
+    history,
     tokens,
     wallets,
     cards,
@@ -361,6 +367,15 @@ function renderTriageOverview() {
       domainText
         ? `${pluralize(cookies.validSessionTokens, 'valid browser session')} recovered, most heavily concentrated in cookies for ${domainText}.`
         : `${pluralize(cookies.validSessionTokens, 'valid browser session')} recovered from the cookie data.`
+    );
+  }
+  if (history?.totalEntries > 0) {
+    const domainText = topValuesText(history.topDomains);
+    const recentText = history.mostRecent?.lastVisit ? ` Most recent parsed visit: ${history.mostRecent.lastVisit}.` : '';
+    riskItems.push(
+      domainText
+        ? `${pluralize(history.totalEntries, 'history entry', 'history entries')} parsed across ${pluralize(history.uniqueDomains || 0, 'domain')}, with the most visited domains including ${domainText}.${recentText}`.trim()
+        : `${pluralize(history.totalEntries, 'history entry', 'history entries')} parsed from browser history.${recentText}`.trim()
     );
   }
   if (tokens?.totalEntries > 0) {
@@ -602,6 +617,10 @@ export function initDashboard() {
     } else {
       summaryEl.textContent = 'No structured cookie data could be parsed.';
     }
+  });
+
+  on('analysis:history', (data) => {
+    setOverviewState('history', data);
   });
 
   on('analysis:sysinfo', (data) => {

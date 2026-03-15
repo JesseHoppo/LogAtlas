@@ -22,6 +22,7 @@ import {
   normalizeSeparators,
   stripLeadingNoiseLines,
   decodeHtmlEntities,
+  isPromotionalNoiseLine,
 } from './shared.js';
 import {
   detectFormat,
@@ -29,27 +30,6 @@ import {
   parseBlocks,
   parseWithConfig,
 } from './delimited.js';
-
-function isDecorativeTokenLine(line) {
-  const trimmed = String(line || '').trim();
-  if (!trimmed) return true;
-  if (/^telegram\s*:/i.test(trimmed) || /t\.me\/[^\s]+/i.test(trimmed)) return true;
-  if (/^[*=_~#-]{3,}$/.test(trimmed) || /^\*+\s*$/.test(trimmed)) return true;
-
-  const inner = trimmed
-    .replace(/^\*+\s*/, '')
-    .replace(/\s*\*+$/, '')
-    .trim();
-
-  if (!inner) return true;
-  if (!/[A-Za-z0-9]/.test(inner)) return true;
-  if (/^[_\\/|() -]+$/.test(inner)) return true;
-  if (inner.includes('|') && /^[A-Za-z|()\s]+$/.test(inner) && inner.replace(/[^A-Za-z]/g, '').length >= 4) {
-    return true;
-  }
-
-  return false;
-}
 
 function flattenObjectEntries(value, prefix = '', out = []) {
   if (value == null) return out;
@@ -93,6 +73,88 @@ function sanitizeStructuredValue(value, maxLength = 500) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (text.length <= maxLength) return text;
   return text.slice(0, maxLength - 1) + '\u2026';
+}
+
+function looksLikeHistoryUrl(value) {
+  return HISTORY_URL_PATTERN.test(String(value || '').trim());
+}
+
+function extractHistoryRowsFromRawUrls(lines) {
+  const rows = lines
+    .map(line => line.trim())
+    .filter(line => line && !isPromotionalNoiseLine(line) && looksLikeHistoryUrl(line))
+    .map(url => [url, '', '1', '']);
+
+  return rows.length > 0 ? rows : null;
+}
+
+function hasParsedHistoryUrls(parsed) {
+  if (!parsed?.rows?.length || !parsed?.headers?.length) return false;
+  const urlIdx = parsed.headers.findIndex(header => /^url$/i.test(header));
+  if (urlIdx < 0) return false;
+  return parsed.rows.some(row => looksLikeHistoryUrl(row[urlIdx] || ''));
+}
+
+function isLikelyAccountIdentifier(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(text)) return true;
+  if (/^\d{6,}$/.test(text)) return true;
+  if (/^(?:fake-)?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(text)) return true;
+  return /^fake-[a-z0-9-]{8,}$/i.test(text);
+}
+
+function isLikelyStandaloneToken(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length < 6 || /\s/.test(text)) return false;
+  if (DISCORD_TOKEN_PATTERN.test(text) || JWT_TOKEN_PATTERN.test(text) || /^1\/\//.test(text) || /^EAAB/i.test(text)) return true;
+  if (/^[A-F0-9]{8,}$/i.test(text)) return true;
+  if (/^[A-Za-z0-9._-]{8,}$/.test(text)) return true;
+  return /^[A-Za-z0-9._:-]{8,}$/.test(text);
+}
+
+function splitGenericTokenPair(line) {
+  const trimmed = String(line || '').trim();
+  if (!trimmed || /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(trimmed)) return null;
+
+  const colonIdx = trimmed.indexOf(':');
+  if (colonIdx <= 0 || colonIdx === trimmed.length - 1) return null;
+  if (trimmed.indexOf(':', colonIdx + 1) !== -1) return null;
+
+  const left = trimmed.slice(0, colonIdx).trim();
+  const right = trimmed.slice(colonIdx + 1).trim();
+  if (!left || !right) return null;
+
+  const leftAccount = isLikelyAccountIdentifier(left);
+  const rightAccount = isLikelyAccountIdentifier(right);
+  const leftToken = isLikelyStandaloneToken(left);
+  const rightToken = isLikelyStandaloneToken(right);
+
+  if (left.length <= 4 && !/[A-Za-z0-9]/.test(left) && /^\d{6,}$/.test(right)) {
+    return { token: '', accountId: right };
+  }
+  if (leftAccount && !rightAccount) {
+    return { token: right, accountId: left };
+  }
+  if (rightAccount && !leftAccount) {
+    return { token: left, accountId: right };
+  }
+  if (rightToken && !leftToken) {
+    return { token: right, accountId: left };
+  }
+  if (leftToken && !rightToken) {
+    return { token: left, accountId: right };
+  }
+  return right.length >= left.length
+    ? { token: right, accountId: left }
+    : { token: left, accountId: right };
+}
+
+function removePromotionalNoise(text) {
+  return stripLeadingNoiseLines(text)
+    .split('\n')
+    .filter(line => !line.trim() || !isPromotionalNoiseLine(line))
+    .join('\n');
 }
 
 function normalizeSysinfoLine(rawLine) {
@@ -238,11 +300,50 @@ export function parseHistoryFile(text, config) {
 
   if (config) return parseWithConfig(clean, config);
 
-  const normalized = normalizeSeparators(clean);
+  const normalized = removePromotionalNoise(normalizeSeparators(clean));
+  const nonNoiseLines = normalized
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !isPromotionalNoiseLine(line));
+
+  const rawUrlRows = extractHistoryRowsFromRawUrls(nonNoiseLines);
+  if (rawUrlRows && rawUrlRows.length / nonNoiseLines.length >= 0.6) {
+    return { headers: ['URL', 'Title', 'Visits', 'Last Visit'], rows: rawUrlRows };
+  }
+
+  const blockRows = [];
+  for (const block of normalized.split(/\n\s*\n+/).filter(block => block.trim())) {
+    let url = '';
+    let title = '';
+    let visits = '1';
+    let lastVisit = '';
+
+    for (const rawLine of block.split('\n')) {
+      const line = rawLine.trim();
+      if (!line || isPromotionalNoiseLine(line)) continue;
+      const match = line.match(/^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*:\s*(.*)$/);
+      if (!match) continue;
+
+      const key = match[1].trim().toLowerCase();
+      const value = match[2].trim();
+      if (!value) continue;
+
+      if (key === 'url' && looksLikeHistoryUrl(value)) url = value;
+      else if (key === 'title' || key === 'page title') title = value;
+      else if (/^(?:visit\s*count|visits?|count)$/.test(key)) visits = value;
+      else if (/^(?:visit\s*time|last\s*visit|time|date|timestamp)$/.test(key)) lastVisit = value;
+    }
+
+    if (url) blockRows.push([url, title, visits || '1', lastVisit]);
+  }
+  if (blockRows.length > 0) {
+    return { headers: ['URL', 'Title', 'Visits', 'Last Visit'], rows: blockRows };
+  }
 
   const format = detectFormat(normalized);
   if (format && format.type === 'delimited') {
-    return parseDelimited(normalized, format);
+    const parsed = parseDelimited(normalized, format);
+    if (hasParsedHistoryUrls(parsed)) return parsed;
   }
 
   if (format && format.type === 'block') {
@@ -255,30 +356,34 @@ export function parseHistoryFile(text, config) {
         else if (/^(?:time|last\s*visit|date)$/i.test(result.headers[i])) indices.time = i;
         else if (/^visit\s*count$/i.test(result.headers[i])) indices.visits = i;
       }
-      const headers = ['URL', 'Title', 'Visits', 'Last Visit'];
-      const rows = result.rows.map(row => [
-        row[indices.url ?? -1] || '',
-        row[indices.title ?? -1] || '',
-        row[indices.visits ?? -1] || '1',
-        row[indices.time ?? -1] || '',
-      ]);
-      return { headers, rows };
+      if (typeof indices.url === 'number') {
+        const headers = ['URL', 'Title', 'Visits', 'Last Visit'];
+        const rows = result.rows.map(row => [
+          row[indices.url] || '',
+          row[indices.title ?? -1] || '',
+          row[indices.visits ?? -1] || '1',
+          row[indices.time ?? -1] || '',
+        ]);
+        if (rows.some(row => looksLikeHistoryUrl(row[0]))) {
+          return { headers, rows };
+        }
+      }
     }
   }
 
-  const lines = normalized.split('\n').map(l => l.trim()).filter(l => l);
+  const lines = nonNoiseLines;
   const rows = [];
   for (const line of lines) {
     const separatorIndex = line.indexOf(' - ');
     if (separatorIndex > 0) {
       const prefix = line.slice(0, separatorIndex).trim();
       const remainder = line.slice(separatorIndex + 3).trim();
-      if (/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?$/.test(prefix) && HISTORY_URL_PATTERN.test(remainder)) {
+      if (/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?$/.test(prefix) && looksLikeHistoryUrl(remainder)) {
         rows.push([remainder, '', '1', prefix]);
         continue;
       }
     }
-    if (HISTORY_URL_PATTERN.test(line)) {
+    if (looksLikeHistoryUrl(line)) {
       rows.push([line, '', '1', '']);
     }
   }
@@ -373,7 +478,7 @@ function extractDomainDetectEntries(segment, section) {
     const label = match[1].trim();
     const target = normalizeDomainDetectTarget(match[2]);
     const count = match[3] || '1';
-    if (!target) continue;
+    if (!target || isPromotionalNoiseLine(target)) continue;
     rows.push([section || 'General', label, target, count]);
     matched = true;
   }
@@ -383,13 +488,16 @@ function extractDomainDetectEntries(segment, section) {
   while ((match = DOMAIN_DETECT_UNLABELED_ENTRY.exec(clean)) !== null) {
     const target = normalizeDomainDetectTarget(match[2]);
     const count = match[3] || '1';
-    if (!target) continue;
+    if (!target || isPromotionalNoiseLine(target)) continue;
     rows.push([section || 'General', '', target, count]);
     matched = true;
   }
   if (matched) return rows;
 
-  const plainTargets = clean.split(/\s*,\s*/).map(normalizeDomainDetectTarget).filter(Boolean);
+  const plainTargets = clean
+    .split(/\s*,\s*/)
+    .map(normalizeDomainDetectTarget)
+    .filter(target => target && !isPromotionalNoiseLine(target));
   for (const target of plainTargets) {
     rows.push([section || 'General', '', target, '1']);
   }
@@ -412,13 +520,13 @@ function splitDomainDetectSection(line) {
 }
 
 export function parseDomainDetectFile(text) {
-  const clean = normalizeSeparators(normalizeText(text));
+  const clean = removePromotionalNoise(normalizeSeparators(normalizeText(text)));
   const rows = [];
   let currentSection = 'General';
 
   for (const rawLine of clean.split('\n')) {
     const line = rawLine.trim();
-    if (!line) continue;
+    if (!line || isPromotionalNoiseLine(line)) continue;
 
     const sectionLine = splitDomainDetectSection(line);
     if (sectionLine) {
@@ -617,7 +725,7 @@ export function parseBrowserMetadataFile(text) {
 }
 
 export function parseAccountTokenFile(text, hint = '') {
-  const clean = normalizeSeparators(normalizeText(text));
+  const clean = removePromotionalNoise(normalizeSeparators(normalizeText(text)));
   if (!clean) return null;
 
   const rows = [];
@@ -626,10 +734,85 @@ export function parseAccountTokenFile(text, hint = '') {
     : /googletokens/i.test(hint) ? 'GoogleTokens'
     : /googleaccounts/i.test(hint) ? 'GoogleAccounts'
     : '';
-  const lines = stripLeadingNoiseLines(clean)
+
+  const appendRow = (tokenValue, accountValue = '', extraNote = '', hintText = '') => {
+    const token = sanitizeStructuredValue(tokenValue, 1200);
+    const accountId = sanitizeStructuredValue(accountValue, 300);
+    const rowNote = [note, extraNote].filter(Boolean).join('; ');
+
+    if (token && (/\s/.test(token) || !/[A-Za-z0-9]/.test(token))) return;
+    if (!token && !accountId) return;
+    rows.push([
+      inferTokenKind(token, accountId, `${hint} ${hintText}`.trim()),
+      token,
+      accountId,
+      rowNote,
+    ]);
+  };
+
+  const blocks = clean.split(/\n\s*\n+/).filter(block => block.trim());
+  for (const block of blocks) {
+    let token = '';
+    let accountId = '';
+    let extraNote = '';
+    let headerHint = '';
+    const blockTokens = [];
+
+    for (const rawLine of block.split('\n')) {
+      const line = rawLine.trim();
+      if (!line || isPromotionalNoiseLine(line)) continue;
+
+      const headerMatch = line.match(/^=+\s*(.*?)\s*=+$/);
+      if (headerMatch) {
+        headerHint = sanitizeStructuredValue(headerMatch[1], 240);
+        const userMatch = headerHint.match(/\buser=([^;=\s]+)/i);
+        if (userMatch && !accountId) accountId = userMatch[1].trim();
+        continue;
+      }
+
+      let match = line.match(/^(?:token(?:\s+\d+)?|decrypted)\s*[:=]\s*(\S{6,})$/i);
+      if (match) {
+        blockTokens.push(match[1].trim());
+        token = match[1].trim();
+        continue;
+      }
+
+      match = line.match(/^(?:username|user|email|account)\s*[:=]\s*(.+)$/i);
+      if (match) {
+        accountId = match[1].trim();
+        continue;
+      }
+
+      match = line.match(/^(?:profile|host)\s*[:=]\s*(.+)$/i);
+      if (match) {
+        const label = /^profile/i.test(line) ? 'Profile' : 'Host';
+        extraNote = [extraNote, `${label}: ${sanitizeStructuredValue(match[1], 240)}`].filter(Boolean).join('; ');
+      }
+    }
+
+    if (blockTokens.length > 1) {
+      for (const blockToken of blockTokens) {
+        appendRow(blockToken, accountId, extraNote, headerHint);
+      }
+      continue;
+    }
+
+    if (token || accountId) {
+      appendRow(token, accountId, extraNote, headerHint);
+    }
+  }
+
+  if (rows.length > 0) {
+    return {
+      headers: ['Type', 'Value', 'Account ID', 'Note'],
+      rows,
+    };
+  }
+
+  const lines = clean
     .split('\n')
     .map(line => line.trim())
-    .filter(line => line && !isDecorativeTokenLine(line));
+    .filter(line => line && !isPromotionalNoiseLine(line));
 
   for (const line of lines) {
     let accountId = '';
@@ -645,35 +828,39 @@ export function parseAccountTokenFile(text, hint = '') {
         accountId = match[1].trim();
         token = match[2].trim();
       } else {
-        match = line.match(TOKEN_VALUE_FIELD_PATTERN);
+        match = line.match(/^(?:token(?:\s+\d+)?|decrypted)\s*[:=]\s*(\S{6,})$/i);
         if (match) {
           token = match[1].trim();
         } else {
-          match = line.match(ACCOUNT_ID_FIELD_PATTERN);
+          match = line.match(TOKEN_VALUE_FIELD_PATTERN);
           if (match) {
-            accountId = match[1].trim();
-          } else if (/^\d{6,}$/.test(line)) {
-            accountId = line;
+            token = match[1].trim();
           } else {
-            token = line;
+            match = line.match(ACCOUNT_ID_FIELD_PATTERN);
+            if (match) {
+              accountId = match[1].trim();
+            } else {
+              const genericPair = splitGenericTokenPair(line);
+              if (genericPair) {
+                token = genericPair.token;
+                accountId = genericPair.accountId;
+              } else {
+                match = line.match(/^(?:username|user|email|account)\s*[:=]\s*(.+)$/i);
+                if (match) {
+                  accountId = match[1].trim();
+                } else if (/^\d{6,}$/.test(line)) {
+                  accountId = line;
+                } else if (DISCORD_TOKEN_PATTERN.test(line) || JWT_TOKEN_PATTERN.test(line) || /^1\/\//.test(line) || /^EAAB/i.test(line)) {
+                  token = line;
+                }
+              }
+            }
           }
         }
       }
     }
 
-    token = sanitizeStructuredValue(token, 1200);
-
-    if (token && (/\s/.test(token) || !/[A-Za-z0-9]/.test(token))) {
-      continue;
-    }
-
-    if (!token && !accountId) continue;
-    rows.push([
-      inferTokenKind(token, accountId, hint),
-      token,
-      accountId,
-      note,
-    ]);
+    appendRow(token, accountId, '', '');
   }
 
   return rows.length > 0 ? {
@@ -704,8 +891,32 @@ function parseStructuredServiceBlocks(clean) {
   return rows;
 }
 
+function parseThunderbirdPrefs(clean) {
+  const rows = [];
+
+  for (const rawLine of clean.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || isPromotionalNoiseLine(line)) continue;
+
+    const match = line.match(/^user_pref\("([^"]+)",\s*(.+)\);$/);
+    if (!match) continue;
+
+    const key = match[1].trim();
+    let value = match[2].trim();
+    if (value.startsWith('"') && value.endsWith('"')) {
+      value = value.slice(1, -1).replace(/\\"/g, '"');
+    }
+
+    const parts = key.split('.');
+    const section = parts.slice(0, Math.min(parts.length, 3)).join('.');
+    rows.push([section || 'Preferences', key, sanitizeStructuredValue(value, 1200)]);
+  }
+
+  return rows;
+}
+
 export function parseServiceArtifactFile(text) {
-  const clean = normalizeText(text).trim();
+  const clean = removePromotionalNoise(normalizeText(text)).trim();
   if (!clean) return null;
 
   if (clean.startsWith('{') || clean.startsWith('[')) {
@@ -718,6 +929,11 @@ export function parseServiceArtifactFile(text) {
     } catch {
       // fall through
     }
+  }
+
+  const thunderbirdRows = parseThunderbirdPrefs(clean);
+  if (thunderbirdRows.length > 0) {
+    return { headers: ['Section', 'Key', 'Value'], rows: thunderbirdRows };
   }
 
   const blockRows = parseStructuredServiceBlocks(clean);

@@ -4,7 +4,7 @@ export { JWT_TOKEN_PATTERN } from '../core/definitions/patterns.js';
 
 export const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]*?)\s*:\s+(.*)/;
 export const AUTOFILL_KV_PATTERN = /^([A-Za-z_][A-Za-z0-9_.$\-[\]]*)\s*:\s*(.+)$/;
-export const HISTORY_URL_PATTERN = /^(?:(?:[a-z][a-z0-9+.-]*):\/\/\/?|about:)/i;
+export const HISTORY_URL_PATTERN = /^(?:(?:[a-z][a-z0-9+.-]*):\/\/\/?|(?:about|blob|chrome|chrome-extension|data|devtools|edge|file|javascript|moz-extension|opera|view-source|vivaldi):)/i;
 export const GOOGLE_RESTORE_TOKEN_PATTERN = /^(?!https?:\/\/)(?!file:\/\/)([^:\s]{20,}):(\d{6,})$/;
 export const DOMAIN_DETECT_LABELED_ENTRY = /\[([^\]]+)\]\s*([^,\n]+?)(?:\s*\((\d+)\))(?=\s*(?:,|\[|$))/g;
 export const DOMAIN_DETECT_UNLABELED_ENTRY = /(^|,\s*)([^,\[]+?)(?:\s*\((\d+)\))(?=\s*(?:,|$))/g;
@@ -56,6 +56,34 @@ export function decodeHtmlEntities(text) {
     .replace(/&#39;/g, "'");
 }
 
+export function isPromotionalNoiseLine(line) {
+  const trimmed = String(line || '').trim();
+  if (!trimmed) return true;
+  if (/^telegram\s*:/i.test(trimmed) || /t\.me\/[^\s]+/i.test(trimmed)) return true;
+  if (/^[*=_~#-]{3,}$/.test(trimmed) || /^\*+\s*$/.test(trimmed)) return true;
+  if (/^[\\/()|_ \-]{6,}$/.test(trimmed)) return true;
+  if (/ottoman|cloudbot/i.test(trimmed)) return true;
+  if (/these logs belong to/i.test(trimmed)) return true;
+  if (/buy daily fresh logs/i.test(trimmed)) return true;
+  if (/subscribe today for fresh daily logs/i.test(trimmed)) return true;
+  if (/^\|[_-]{10,}\|?$/.test(trimmed)) return true;
+  if (/^\|\s*[A-Z]\s+.+\s+[A-Z]\s*\|$/.test(trimmed) && /join:/i.test(trimmed)) return true;
+
+  const inner = trimmed
+    .replace(/^\*+\s*/, '')
+    .replace(/\s*\*+$/, '')
+    .trim();
+
+  if (!inner) return true;
+  if (!/[A-Za-z0-9]/.test(inner)) return true;
+  if (/^[_\\/|() -]+$/.test(inner)) return true;
+  if (inner.includes('|') && /^[A-Za-z|()\s]+$/.test(inner) && inner.replace(/[^A-Za-z]/g, '').length >= 4) {
+    return true;
+  }
+
+  return false;
+}
+
 export function stripLeadingNoiseLines(text) {
   const lines = text.split('\n');
   let start = 0;
@@ -67,12 +95,7 @@ export function stripLeadingNoiseLines(text) {
       continue;
     }
 
-    if (
-      /^\*.*\*$/.test(trimmed) ||
-      /^telegram\s*:/i.test(trimmed) ||
-      /^[*=_~#-]{3,}$/.test(trimmed) ||
-      /^[\\/()|_ \-]{6,}$/.test(trimmed)
-    ) {
+    if (isPromotionalNoiseLine(trimmed)) {
       start++;
       continue;
     }

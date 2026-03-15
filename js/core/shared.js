@@ -1,11 +1,12 @@
 // Shared helpers used across modules.
 
-import { EMAIL_REGEX, FIELD_PATTERNS } from './definitions/patterns.js';
+import { EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
 import { inferServiceFromPath } from './serviceRegistry.js';
 
 const MAX_SEARCH_MATCHES_PER_FILE = 5;
 const SEARCH_BATCH_SIZE = 20;
 const CHROME_EPOCH_OFFSET = 11644473600000000n;
+const AUTOFILL_LATIN_VOWEL_PATTERN = /[aeiouy]/i;
 const BROWSER_PATH_PATTERNS = [
   { pattern: /\bgoogle chrome\b/i, label: 'Chrome' },
   { pattern: /\bmicrosoft edge\b/i, label: 'Edge' },
@@ -21,7 +22,58 @@ const BROWSER_PATH_PATTERNS = [
   { pattern: /\bsafari\b/i, label: 'Safari' },
 ];
 const AUTOFILL_PHONE_FALSE_POSITIVE_PATTERN = /phonetic/i;
+const AUTOFILL_PHONE_FIELD_PATTERN = /phone|mobile|landline|tel|cell|contact(?:number)?|whatsapp|fax/i;
 const AUTOFILL_NAME_VALUE_PATTERN = /^[\p{L}][\p{L}' .-]{0,58}[\p{L}.]$/u;
+const AUTOFILL_NAME_STRONG_FIELD_PATTERN = /(?:^|[^a-z])(first[\s._-]*name|last[\s._-]*name|full[\s._-]*name|given[\s._-]*name|family[\s._-]*name|middle[\s._-]*name|surname|lastname|firstname|fullname|middlename|cardholder[\s._-]*name|name[\s._-]*on[\s._-]*card|billing[\s._-]*name|shipping[\s._-]*name|recipient[\s._-]*name|contact[\s._-]*name|customer[\s._-]*name|payer[\s._-]*name)(?:$|[^a-z])/i;
+const AUTOFILL_NAME_WEAK_FIELD_PATTERN = /(?:^|[^a-z])(name)(?:$|[^a-z])/i;
+const AUTOFILL_NAME_FIELD_EXCLUSION_PATTERN = /(?:user(?:name)?|login[\s._-]*name|email[\s._-]*or[\s._-]*username|account[\s._-]*name|screen[\s._-]*name|nick[\s._-]*name|display[\s._-]*name|file[\s._-]*name|domain[\s._-]*name|company[\s._-]*name|business[\s._-]*name|merchant[\s._-]*name|organization[\s._-]*name|organisation[\s._-]*name|device[\s._-]*name|browser[\s._-]*name|service[\s._-]*name|app[\s._-]*name|application[\s._-]*name|page[\s._-]*name|tab[\s._-]*name|client[\s._-]*name|database[\s._-]*name|product[\s._-]*name|project[\s._-]*name|shop[\s._-]*name|store[\s._-]*name|school[\s._-]*name|brand[\s._-]*name|pet[\s._-]*name|pseudonymous[\s._-]*name|pseudo[\s._-]*name|alias[\s._-]*name|api[\s._-]*key[\s._-]*name|key[\s._-]*name)/i;
+const AUTOFILL_ADDRESS_STRONG_FIELD_PATTERN = /(?:address|street|city|state|suburb|province|postcode|postal[\s._-]*code|zip|country|address1|address2|address3|address4|line1|line2|suite|house|apartment|apt|building|unit)/i;
+const AUTOFILL_NAME_ENTITY_FIELD_TOKENS = new Set([
+  'account',
+  'alias',
+  'api',
+  'app',
+  'application',
+  'brand',
+  'browser',
+  'business',
+  'client',
+  'company',
+  'database',
+  'device',
+  'display',
+  'domain',
+  'email',
+  'employer',
+  'file',
+  'host',
+  'key',
+  'login',
+  'merchant',
+  'nickname',
+  'nick',
+  'organization',
+  'organisation',
+  'page',
+  'pet',
+  'product',
+  'project',
+  'pseudo',
+  'pseudonymous',
+  'school',
+  'screen',
+  'server',
+  'service',
+  'shop',
+  'signin',
+  'store',
+  'subject',
+  'tab',
+  'title',
+  'token',
+  'user',
+  'username',
+]);
 
 // Tree walking
 
@@ -97,11 +149,25 @@ function inferProfileFromPath(pathText) {
 }
 
 function normalizeAutofillValue(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .replace(/^value\s*:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeAutofillFieldName(name) {
+  return normalizeAutofillValue(name)
+    .replace(/^(?:name|field|label)\s*:\s*/i, '')
+    .trim();
 }
 
 function isLikelyAutofillEmail(value) {
-  return EMAIL_REGEX.test(normalizeAutofillValue(value));
+  return Boolean(extractAutofillEmail(value));
+}
+
+function canonicalizeAutofillEmail(value) {
+  const normalized = extractAutofillEmail(value) || normalizeAutofillValue(value);
+  return normalized ? normalized.toLowerCase() : '';
 }
 
 function isLikelyAutofillPhone(value) {
@@ -113,12 +179,217 @@ function isLikelyAutofillPhone(value) {
   return digits.length >= 7 && digits.length <= 15;
 }
 
-function isLikelyAutofillName(value) {
+function canonicalizeAutofillPhone(value) {
+  const digits = normalizeAutofillValue(value).replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return '';
+  return digits;
+}
+
+function normalizeAutofillLetters(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+}
+
+function tokenizeAutofillName(value) {
+  return normalizeAutofillValue(value)
+    .split(/\s+/)
+    .map((token) => token.replace(/^[^\p{L}]+|[^\p{L}.']+$/gu, ''))
+    .filter(Boolean);
+}
+
+function tokenizeAutofillFieldName(name) {
+  return normalizeAutofillFieldName(name)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function hasExcludedAutofillNameContext(name) {
+  if (AUTOFILL_NAME_FIELD_EXCLUSION_PATTERN.test(normalizeAutofillFieldName(name))) return true;
+  return tokenizeAutofillFieldName(name).some((token) => AUTOFILL_NAME_ENTITY_FIELD_TOKENS.has(token));
+}
+
+function getAutofillNameFieldRole(name) {
+  if (hasExcludedAutofillNameContext(name)) return 'excluded';
+
+  const normalized = normalizeAutofillFieldName(name);
+  const tokens = tokenizeAutofillFieldName(normalized);
+
+  if (tokens.includes('firstname') || tokens.includes('first') || tokens.includes('given')) return 'given';
+  if (tokens.includes('middlename') || tokens.includes('middle')) return 'middle';
+  if (tokens.includes('lastname') || tokens.includes('last') || tokens.includes('family') || tokens.includes('surname') || tokens.includes('surname')) return 'family';
+  if (tokens.includes('cardholder') || (tokens.includes('name') && tokens.includes('card'))) return 'full';
+  if (tokens.includes('fullname') || (tokens.includes('full') && tokens.includes('name'))) return 'full';
+  if ((tokens.includes('contact') || tokens.includes('customer') || tokens.includes('recipient') || tokens.includes('payer')) && tokens.includes('name')) return 'full';
+  if ((tokens.includes('billing') || tokens.includes('shipping')) && tokens.includes('name')) return 'full';
+  if (AUTOFILL_NAME_STRONG_FIELD_PATTERN.test(normalized)) return 'full';
+  if (AUTOFILL_NAME_WEAK_FIELD_PATTERN.test(normalized)) return 'generic';
+  return 'none';
+}
+
+function isRepeatedCharacterToken(token) {
+  const letters = normalizeAutofillLetters(token).replace(/[^\p{L}]/gu, '').toLowerCase();
+  return letters.length >= 2 && new Set(letters).size === 1;
+}
+
+function isLikelyAutofillNameToken(token, allowInitial = false) {
+  const letters = normalizeAutofillLetters(token).replace(/[^\p{L}]/gu, '');
+  if (!letters) return false;
+  if (letters.length === 1) return allowInitial;
+  if (letters.length < 2 || letters.length > 24) return false;
+  if (isRepeatedCharacterToken(letters)) return false;
+
+  const asciiLetters = letters.replace(/[^\x00-\x7F]/g, '');
+  if (asciiLetters.length >= 3 && /[A-Za-z]/.test(asciiLetters) && !AUTOFILL_LATIN_VOWEL_PATTERN.test(asciiLetters)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isLikelyAutofillName(value, { allowSingleToken = true } = {}) {
   const normalized = normalizeAutofillValue(value);
   if (!normalized || normalized.length < 2 || normalized.length > 60) return false;
   if (/@|[_%:/\\]|^\W+$/.test(normalized)) return false;
+  if (/www|https?/i.test(normalized)) return false;
   if (/\d/.test(normalized)) return false;
+  const tokens = tokenizeAutofillName(normalized);
+  if (tokens.length === 0 || tokens.length > 5) return false;
+  if (!allowSingleToken && tokens.length === 1) return false;
+  const allowInitials = tokens.length > 1;
+  if (tokens.some((token) => !isLikelyAutofillNameToken(token, allowInitials))) return false;
+  if (tokens.length > 1) {
+    const longTokens = tokens.filter((token) => normalizeAutofillLetters(token).replace(/[^\p{L}]/gu, '').length >= 3);
+    if (longTokens.length === 0) return false;
+  }
   return AUTOFILL_NAME_VALUE_PATTERN.test(normalized);
+}
+
+function isStrongAutofillNameField(name) {
+  const normalized = normalizeAutofillFieldName(name);
+  if (hasExcludedAutofillNameContext(normalized)) return false;
+  return AUTOFILL_NAME_STRONG_FIELD_PATTERN.test(normalized);
+}
+
+function isWeakAutofillNameField(name) {
+  const normalized = normalizeAutofillFieldName(name);
+  return AUTOFILL_NAME_WEAK_FIELD_PATTERN.test(normalized)
+    && !hasExcludedAutofillNameContext(normalized);
+}
+
+function isLikelyAutofillAddressField(name) {
+  const normalized = normalizeAutofillFieldName(name);
+  return AUTOFILL_ADDRESS_STRONG_FIELD_PATTERN.test(normalized);
+}
+
+function isLikelyAutofillAddressValue(value) {
+  const normalized = normalizeAutofillValue(value);
+  if (!normalized || normalized.length > 140) return false;
+  if (isLikelyAutofillEmail(normalized)) return false;
+  if (isLikelyAutofillPhone(normalized)) return false;
+  if (/^(?:https?|file):/i.test(normalized)) return false;
+  if (/^[A-F0-9:-]{12,}$/i.test(normalized)) return false;
+  if (normalized.split(/\s+/).length > 16) return false;
+  return true;
+}
+
+function extractAutofillEmail(value) {
+  const normalized = normalizeAutofillValue(value);
+  if (!normalized) return '';
+  if (EMAIL_REGEX.test(normalized)) return normalized;
+
+  const matches = normalized.match(SCAN_EMAIL_REGEX);
+  return matches && matches.length > 0 ? matches[0] : '';
+}
+
+function buildAutofillNameSupport(entries) {
+  const valueCounts = new Map();
+  const singleTokenCounts = new Map();
+  const phraseTokenCounts = new Map();
+
+  for (const entry of entries || []) {
+    const fieldName = normalizeAutofillFieldName(entry?.name || '');
+    const value = normalizeAutofillValue(entry?.value || '');
+    if (!value) continue;
+
+    const role = getAutofillNameFieldRole(fieldName);
+    if (role === 'excluded' || role === 'none') continue;
+    if (!isLikelyAutofillName(value)) continue;
+
+    const normalizedValue = value.toLowerCase();
+    valueCounts.set(normalizedValue, (valueCounts.get(normalizedValue) || 0) + 1);
+
+    const tokens = tokenizeAutofillName(value);
+    if (tokens.length === 1 && role !== 'generic') {
+      const lowered = tokens[0].toLowerCase();
+      singleTokenCounts.set(lowered, (singleTokenCounts.get(lowered) || 0) + 1);
+    }
+    if (tokens.length >= 2 && role !== 'generic') {
+      for (const token of tokens) {
+        const lowered = token.toLowerCase();
+        phraseTokenCounts.set(lowered, (phraseTokenCounts.get(lowered) || 0) + 1);
+      }
+    }
+  }
+
+  return { valueCounts, singleTokenCounts, phraseTokenCounts };
+}
+
+function getAutofillNameTokenSupport(token, support) {
+  const lowered = token.toLowerCase();
+  return Math.max(
+    support?.singleTokenCounts?.get(lowered) || 0,
+    support?.phraseTokenCounts?.get(lowered) || 0,
+  );
+}
+
+function isSupportedAutofillName(value, fieldName, support) {
+  const normalizedField = normalizeAutofillFieldName(fieldName);
+  const role = getAutofillNameFieldRole(normalizedField);
+  if (role === 'excluded' || role === 'none') return false;
+
+  const tokens = tokenizeAutofillName(value);
+  if (tokens.length === 0) return false;
+  if (!isLikelyAutofillName(value, { allowSingleToken: role !== 'generic' })) return false;
+
+  if (tokens.length === 1) {
+    if (role === 'generic') return false;
+    const letterCount = normalizeAutofillLetters(tokens[0]).replace(/[^\p{L}]/gu, '').length;
+    if (letterCount < 3) return false;
+    const tokenSupport = support?.phraseTokenCounts?.get(tokens[0].toLowerCase()) || 0;
+    return tokenSupport > 0;
+  }
+
+  if (role === 'given' && tokens.length > 2) return false;
+  if ((role === 'family' || role === 'middle') && tokens.length > 3) return false;
+  if (role === 'full') {
+    const supportedTokens = tokens.filter((token) => (support?.singleTokenCounts?.get(token.toLowerCase()) || 0) > 0);
+    if ((support?.singleTokenCounts?.size || 0) > 0 && supportedTokens.length === 0) return false;
+  }
+  if (role === 'generic') {
+    const supportedTokens = tokens.filter((token) => getAutofillNameTokenSupport(token, support) > 0);
+    return supportedTokens.length >= Math.min(2, tokens.length);
+  }
+
+  return true;
+}
+
+function dedupeAutofillStrings(values, canonicalize) {
+  const out = [];
+  const seen = new Set();
+
+  for (const raw of values) {
+    const display = normalizeAutofillValue(raw);
+    if (!display) continue;
+    const key = canonicalize ? canonicalize(display) : display.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(canonicalize === canonicalizeAutofillEmail ? key : display);
+  }
+
+  return out;
 }
 
 function classifyAutofillEntries(entries, maxOther = 20) {
@@ -127,37 +398,47 @@ function classifyAutofillEntries(entries, maxOther = 20) {
   const names = [];
   const addresses = [];
   const other = [];
+  const nameSupport = buildAutofillNameSupport(entries);
 
   for (const entry of entries || []) {
-    const name = String(entry?.name || '');
+    const name = normalizeAutofillFieldName(entry?.name || '');
     const value = normalizeAutofillValue(entry?.value || '');
     if (!name || !value) continue;
 
     const lower = name.toLowerCase();
     const isEmailField = FIELD_PATTERNS.email.test(lower);
-    const isPhoneField = FIELD_PATTERNS.phone.test(lower) && !AUTOFILL_PHONE_FALSE_POSITIVE_PATTERN.test(lower);
-    const isNameField = FIELD_PATTERNS.name.test(lower);
-    const isAddressField = FIELD_PATTERNS.address.test(lower);
+    const isPhoneField = AUTOFILL_PHONE_FIELD_PATTERN.test(lower) && !AUTOFILL_PHONE_FALSE_POSITIVE_PATTERN.test(lower);
+    const isStrongNameField = isStrongAutofillNameField(lower);
+    const isWeakNameField = isWeakAutofillNameField(lower);
+    const isAddressField = FIELD_PATTERNS.address.test(lower) || isLikelyAutofillAddressField(lower);
+    const extractedEmail = extractAutofillEmail(value);
+    const isEmailValue = Boolean(extractedEmail);
+    const isPhoneValue = isLikelyAutofillPhone(value);
 
-    if (isLikelyAutofillEmail(value)) {
-      emails.push(value);
-    } else if (isPhoneField && isLikelyAutofillPhone(value)) {
+    if (isEmailValue) {
+      emails.push(extractedEmail);
+    } else if (isPhoneField && isPhoneValue) {
       phones.push(value);
-    } else if (isNameField && isLikelyAutofillName(value)) {
+    } else if ((isStrongNameField || isWeakNameField) && isSupportedAutofillName(value, name, nameSupport)) {
       names.push(value);
-    } else if (isAddressField) {
+    } else if (isAddressField && isLikelyAutofillAddressValue(value)) {
       addresses.push(value);
     } else {
       other.push({ name, value });
     }
   }
 
+  const otherAll = other.map((entry) => ({ ...entry }));
+
   return {
-    emails: [...new Set(emails)],
-    phones: [...new Set(phones)],
-    names: [...new Set(names)],
-    addresses: [...new Set(addresses)],
-    other: other.slice(0, maxOther),
+    emails: dedupeAutofillStrings(emails, canonicalizeAutofillEmail),
+    phones: dedupeAutofillStrings(phones, canonicalizeAutofillPhone),
+    names: dedupeAutofillStrings(names),
+    addresses: dedupeAutofillStrings(addresses),
+    other: otherAll.slice(0, maxOther),
+    otherAll,
+    otherTotal: otherAll.length,
+    otherTruncated: otherAll.length > maxOther,
   };
 }
 

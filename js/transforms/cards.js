@@ -137,6 +137,38 @@ function mapCreditCardRowsByContent(parsed) {
   return rows.length > 0 ? { headers: ['Card Number', 'Name On Card', 'CVC', 'Expiration', 'File Path'], rows } : null;
 }
 
+function parsePipeDelimitedCardLine(line) {
+  const parts = line.split('|').map(part => part.trim()).filter(Boolean);
+  if (parts.length < 4) return null;
+
+  let cardNumber = '';
+  let nameOnCard = '';
+  let cvc = '';
+  let expiration = '';
+
+  for (const part of parts) {
+    const digits = part.replace(/\D/g, '');
+    if (!cardNumber && digits.length >= 12 && digits.length <= 19) {
+      cardNumber = part;
+      continue;
+    }
+    if (!expiration && /^\d{1,2}[/-]\d{2,4}$/.test(part)) {
+      expiration = part;
+      continue;
+    }
+    if (!cvc && /^\d{3,4}$/.test(part)) {
+      cvc = part;
+      continue;
+    }
+    if (!nameOnCard && /[A-Za-z]/.test(part)) {
+      nameOnCard = part;
+    }
+  }
+
+  if (!cardNumber) return null;
+  return [cardNumber, nameOnCard, cvc, expiration, ''];
+}
+
 export function parseCreditCardFile(text, config) {
   const clean = normalizeSeparators(normalizeText(text));
 
@@ -161,6 +193,12 @@ export function parseCreditCardFile(text, config) {
   for (const rawLine of clean.split('\n')) {
     const line = rawLine.trim();
     if (!line) continue;
+
+    const pipeDelimited = parsePipeDelimitedCardLine(line);
+    if (pipeDelimited) {
+      rows.push(pipeDelimited);
+      continue;
+    }
 
     let match = line.match(/^(\d{1,2}[/-]\d{2,4})\s+([0-9][0-9 -]{8,})$/);
     if (!match) {
