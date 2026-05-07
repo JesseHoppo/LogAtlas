@@ -1,4 +1,5 @@
-import { getFileExtension, isTextFile, looksLikeText } from '../core/utils.js';
+import { isTextFile, looksLikeText } from '../core/utils.js';
+import { SHARED_TEXT_DECODER } from '../core/shared.js';
 import { getNodeFileType, isTransformableFileType, supportsColumnMapping } from './fileTypeRegistry.js';
 import {
   parsePasswordFile,
@@ -18,8 +19,7 @@ import {
 } from '../transforms/structured.js';
 import { parseCreditCardFile } from '../transforms/cards.js';
 import { parseWalletArtifact } from '../analysis/walletArtifacts.js';
-
-const TEXT_DECODER = new TextDecoder('utf-8');
+import { detectFormat } from '../transforms/delimited.js';
 
 function walletArtifactToTable(entry) {
   if (!entry) return null;
@@ -66,7 +66,7 @@ function parseStructuredFile({
   const getText = () => {
     if (decodedText != null) return decodedText;
     if (!(content instanceof Uint8Array)) return '';
-    decodedText = TEXT_DECODER.decode(content);
+    decodedText = SHARED_TEXT_DECODER.decode(content);
     return decodedText;
   };
 
@@ -118,11 +118,17 @@ function canTransformStructuredFile(node) {
   return isTransformableFileType(getNodeFileType(node));
 }
 
+// Only offer "Try Transform" when the file has detectable structured data.
 function canOfferTransformAction(node, fileName = '', content = null) {
   if (canTransformStructuredFile(node)) return true;
-  const ext = getFileExtension(fileName);
-  if (ext === 'txt' || ext === 'tsv') return true;
-  return content instanceof Uint8Array && looksLikeText(content);
+  if (!shouldAttemptFallbackTransform(fileName, content)) return false;
+  if (!(content instanceof Uint8Array)) return false;
+  try {
+    const text = SHARED_TEXT_DECODER.decode(content);
+    return detectFormat(text) != null;
+  } catch {
+    return false;
+  }
 }
 
 function getColumnMappingFileType(node) {

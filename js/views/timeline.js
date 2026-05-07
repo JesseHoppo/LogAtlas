@@ -466,23 +466,32 @@ function isTimelinePageActive() {
   return document.querySelector('.sidebar-nav-item.active')?.dataset.page === 'timeline';
 }
 
+function refreshTimelineNav() {
+  const navBtn = document.getElementById('navTimeline');
+  if (!navBtn) return;
+  navBtn.disabled = timelineEvents.length === 0;
+}
+
 function invalidateTimeline() {
   timelineBuilt = false;
+  // Build now so nav gating reflects whether there's anything to show.
+  buildTimeline();
+  refreshTimelineNav();
   if (!isTimelinePageActive()) return;
   const search = document.getElementById('timelineSearch');
   renderTimelinePage(search?.value || '');
 }
 
 function initTimeline() {
+  // analysis:sysinfo keeps sysinfoEntries in sync; data:loaded covers the
+  // cookie/history/notes/screenshot getters. Both fire on extract and on
+  // reanalyze, so we don't need separate listeners for those events.
   on('analysis:sysinfo', (data) => {
     sysinfoEntries = data?.entries || null;
     invalidateTimeline();
   });
 
-  on('extracted', () => {
-    document.getElementById('navTimeline').disabled = false;
-    invalidateTimeline();
-  });
+  on('data:loaded', invalidateTimeline);
 
   on('page:timeline', () => {
     const search = document.getElementById('timelineSearch');

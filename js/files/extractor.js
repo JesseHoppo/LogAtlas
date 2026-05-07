@@ -27,7 +27,8 @@ async function getArchive() {
   return _Archive;
 }
 
-// Tree node factory
+// Tree node factory. `_password` is retained on encrypted-zip-entry nodes so
+// later reads (e.g. preview) don't re-prompt; it's cleared on resetState().
 
 function createNode(name, opts = {}) {
   return {
@@ -262,36 +263,46 @@ async function extractArchiveIntoTree(root, file, basePath, depth) {
     return;
   }
 
-  let archive;
-  try {
-    const Archive = await getArchive();
-    archive = await Archive.open(file);
+  const Archive = await getArchive();
+  let invalidPassword = false;
 
-    const hasEncrypted = await archive.hasEncryptedData();
-    if (hasEncrypted) {
-      let password = state.rememberedPassword;
-      if (!password) {
-        password = await promptForPassword(basePath);
-        if (password === null) {
-          addError(`Skipped encrypted archive: ${basePath}`);
-          return;
+  // Password retry loop: re-open on each iteration since the archive object
+  // isn't reusable after a failed extract.
+  while (true) {
+    let archive = null;
+    try {
+      archive = await Archive.open(file);
+      const hasEncrypted = await archive.hasEncryptedData();
+
+      if (hasEncrypted) {
+        let password = invalidPassword ? null : state.rememberedPassword;
+        if (!password) {
+          password = await promptForPassword(basePath, { invalid: invalidPassword });
+          if (password === null) {
+            addError(`Skipped encrypted archive: ${basePath}`);
+            try { await archive.close?.(); } catch (_) { /* ignore */ }
+            return;
+          }
+          if (isRememberChecked()) setRememberedPassword(password);
         }
-        if (password && isRememberChecked()) {
-          setRememberedPassword(password);
-        }
-      }
-      if (password) {
         await archive.usePassword(password);
       }
+
+      setLoading(`Extracting: ${basePath}`);
+      const extracted = await archive.extractFiles();
+      walkExtractedFiles(extracted, depth, root, []);
+      await extractNestedArchives(root, basePath, depth);
+      return;
+    } catch (err) {
+      try { await archive?.close?.(); } catch (_) { /* ignore */ }
+      if (isInvalidPasswordError(err)) {
+        invalidPassword = true;
+        setRememberedPassword(null);
+        continue;
+      }
+      addError(`Failed to read archive: ${basePath} - ${err.message}`);
+      return;
     }
-
-    setLoading(`Extracting: ${basePath}`);
-
-    const extracted = await archive.extractFiles();
-    walkExtractedFiles(extracted, depth, root, []);
-    await extractNestedArchives(root, basePath, depth);
-  } catch (err) {
-    addError(`Failed to read archive: ${basePath} - ${err.message}`);
   }
 }
 

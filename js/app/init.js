@@ -70,6 +70,7 @@ initLifecycle({
   navigateToPage,
   refreshSidebarAvailability,
   updateDashboardVisibility,
+  resetOverviewState,
 });
 
 initFileExportActions();

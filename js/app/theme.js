@@ -16,6 +16,10 @@ function writeStoredTheme(theme) {
   }
 }
 
+function prefersDark() {
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 function applyTheme(themeToggle, theme, { persist = true } = {}) {
   const isDark = theme === 'dark';
   if (isDark) {
@@ -39,11 +43,25 @@ export function initThemeToggle() {
   const themeToggle = document.getElementById('themeToggle');
   if (!themeToggle) return;
 
-  const savedTheme = readStoredTheme();
-  applyTheme(themeToggle, savedTheme === 'dark' ? 'dark' : 'light', { persist: false });
+  // The inline pre-paint script in index.html sets data-theme before CSS
+  // applies; this just brings the toggle button label into agreement.
+  const stored = readStoredTheme();
+  const initial = stored === 'dark' || stored === 'light'
+    ? stored
+    : (prefersDark() ? 'dark' : 'light');
+  applyTheme(themeToggle, initial, { persist: false });
 
   themeToggle.addEventListener('click', () => {
     const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     applyTheme(themeToggle, nextTheme);
   });
+
+  // Track system preference until the user explicitly picks a theme.
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', (e) => {
+      if (readStoredTheme() != null) return;
+      applyTheme(themeToggle, e.matches ? 'dark' : 'light', { persist: false });
+    });
+  }
 }

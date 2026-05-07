@@ -13,6 +13,7 @@ import {
   extractDomain,
   truncateText,
   parseTimestampValue,
+  SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import {
   PAGE_SIZE,
@@ -170,7 +171,7 @@ async function loadDownloadsData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseDownloadFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -223,7 +224,7 @@ async function loadDomainDetectionsData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseDomainDetectFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -262,7 +263,7 @@ async function loadClipboardData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseClipboardFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 

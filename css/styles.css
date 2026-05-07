@@ -948,6 +948,12 @@ body {
   background: var(--bg-hover);
   border-color: var(--border);
 }
+.file-item:focus-visible,
+.file-list-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: var(--accent-dim);
+}
 .file-item.selected {
   background: var(--accent-dim);
   border-color: var(--accent);
@@ -1176,7 +1182,7 @@ body {
   background: var(--accent-dim);
 }
 
-/* Selection toolbar */
+/* Selection toolbar (sticky so actions remain visible while scrolling) */
 .selection-toolbar {
   display: none;
   align-items: center;
@@ -1186,6 +1192,10 @@ body {
   border: 1px solid var(--accent);
   border-radius: var(--radius-md);
   margin-bottom: 0.75rem;
+  position: sticky;
+  top: 0.5rem;
+  z-index: 50;
+  box-shadow: var(--shadow-float);
 }
 .selection-toolbar.visible {
   display: flex;
@@ -3161,7 +3171,7 @@ body {
   .main-content {
     margin-left: 0;
     padding: 1rem;
-    padding-top: 3rem; /* room for toggle button */
+    padding-top: 3.75rem; /* clear the toggle button */
   }
 }
 

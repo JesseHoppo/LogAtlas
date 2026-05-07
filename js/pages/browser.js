@@ -14,6 +14,7 @@ import {
   inferBrowserFromPath,
   inferProfileFromPath,
   parseTimestampValue,
+  SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 import {
@@ -97,7 +98,7 @@ async function loadHistoryData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseHistoryFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         fileCount++;
@@ -137,7 +138,7 @@ async function loadBookmarksData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseBookmarkFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
       fileCount++;
@@ -165,7 +166,7 @@ async function loadBrowserMetadataData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseBrowserMetadataFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
       fileCount++;

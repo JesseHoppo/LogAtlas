@@ -1,6 +1,6 @@
 import { state, emit } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
-import { collectFileNodes, MAX_SEARCH_MATCHES_PER_FILE, SEARCH_BATCH_SIZE } from '../core/shared.js';
+import { collectFileNodes, MAX_SEARCH_MATCHES_PER_FILE, SEARCH_BATCH_SIZE, SHARED_TEXT_DECODER } from '../core/shared.js';
 import { escapeHtml, isTextFile, looksLikeText } from '../core/utils.js';
 import { navigateTo } from '../files/browser.js';
 
@@ -9,7 +9,6 @@ export function initSearch(navigateToPage) {
   const globalSearchBtn = document.getElementById('globalSearchBtn');
   const searchResults = document.getElementById('searchResults');
   const searchStatus = document.getElementById('searchStatus');
-  const textDecoder = new TextDecoder('utf-8');
   let searchRunId = 0;
 
   function resetSearchUi() {
@@ -35,7 +34,7 @@ export function initSearch(navigateToPage) {
     const isSearchableText = isTextFile(node.name) || looksLikeText(content);
     if (!isSearchableText && !allowBinaryFallback) return [];
 
-    const text = textDecoder.decode(content);
+    const text = SHARED_TEXT_DECODER.decode(content);
     const matches = [];
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {

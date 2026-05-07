@@ -191,7 +191,8 @@ function renderBarList(container, items, maxItems = 10) {
   const maxCount = top[0].count;
   container.innerHTML = top.map(item => {
     const pct = Math.round((item.count / maxCount) * 100);
-    return `<div class="dash-bar-row">
+    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeAttr(item.value)}: ${item.count}"`;
+    return `<div class="dash-bar-row" ${aria}>
       <div class="dash-bar-fill" style="width:${pct}%"></div>
       <span class="dash-bar-label">${escapeHtml(item.value)}</span>
       <span class="dash-bar-count">${item.count}</span>
@@ -212,7 +213,9 @@ function renderCookieBarList(container, items, maxItems = 10) {
   html += top.map(item => {
     const validPct = Math.round((item.valid / maxCount) * 100);
     const expiredPct = Math.round((item.expired / maxCount) * 100);
-    return `<div class="dash-bar-row dash-bar-row-stacked">
+    const ariaLabel = `${item.value}: ${item.count} cookies (${item.valid} valid, ${item.expired} expired)`;
+    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeAttr(ariaLabel)}"`;
+    return `<div class="dash-bar-row dash-bar-row-stacked" ${aria}>
       <div class="dash-bar-fill dash-bar-fill-valid" style="width:${validPct}%"></div>
       <div class="dash-bar-fill dash-bar-fill-expired" style="width:${expiredPct}%; left:${validPct}%"></div>
       <span class="dash-bar-label">${escapeHtml(item.value)}</span>

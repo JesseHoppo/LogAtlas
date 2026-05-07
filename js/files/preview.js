@@ -1,4 +1,4 @@
-// File preview modal 
+// File preview modal
 
 import { state, on, emit } from '../core/state.js';
 import { getNodeAtPath, loadFileContent, applyManualType, flattenTree } from './extractor.js';
@@ -14,8 +14,9 @@ import {
   syntaxHighlightJSON,
   MAX_PREVIEW_SIZE,
 } from '../core/utils.js';
+import { LIMITS } from '../core/definitions/patterns.js';
 import { toCSV } from '../transforms/shared.js';
-import { downloadBlob, copyToClipboard } from '../core/shared.js';
+import { downloadBlob, copyToClipboard, SHARED_TEXT_DECODER } from '../core/shared.js';
 import { openColumnMapper } from './columnMapper.js';
 import { buildFileTypeOptionsHtml, getFileTypeLabel, getNodeFileType } from './fileTypeRegistry.js';
 import {
@@ -51,8 +52,8 @@ let showingAllTextLines = false;
 let searchMatches = [];
 let currentMatchIndex = -1;
 
-const ROW_CAP = 500;
-const LINE_CAP = 5000;
+const ROW_CAP = LIMITS.previewRowCap;
+const LINE_CAP = LIMITS.previewLineCap;
 const WORD_OPEN_XML_EXTENSIONS = new Set(['docx', 'docm', 'dotx', 'dotm']);
 const SHEET_OPEN_XML_EXTENSIONS = new Set(['xlsx', 'xlsm', 'xltx', 'xltm']);
 const SLIDE_OPEN_XML_EXTENSIONS = new Set(['pptx', 'pptm', 'potx', 'potm']);
@@ -115,7 +116,7 @@ function collectXmlText(node) {
 
 async function readZipEntryText(entry) {
   const data = await entry.getData(new zip.Uint8ArrayWriter());
-  return new TextDecoder('utf-8').decode(data);
+  return SHARED_TEXT_DECODER.decode(data);
 }
 
 async function extractWordOpenXmlPreview(entryMap) {
@@ -331,6 +332,15 @@ function showPreviewTypeMenu() {
   `;
   document.body.appendChild(overlay);
 
+  function close() {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  }
+  document.addEventListener('keydown', onKey);
+
   overlay.querySelector('.filetype-options').addEventListener('click', (ev) => {
     const btn = ev.target.closest('.filetype-option');
     if (!btn) return;
@@ -338,13 +348,13 @@ function showPreviewTypeMenu() {
     if (state.fileTree) {
       state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
     }
-    overlay.remove();
+    close();
     updateTypeButton();
     emit('reanalyze');
   });
 
   overlay.addEventListener('click', (ev) => {
-    if (ev.target === overlay) overlay.remove();
+    if (ev.target === overlay) close();
   });
 }
 
@@ -788,7 +798,7 @@ async function showPreview(name, size, pathSegments) {
     }
   } else if (isTextFile(name)) {
     try {
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       currentDecodedText = text;
       const parsed = parsePreviewText(text, node);
       currentParsedData = parsed && parsed.rows.length > 0 ? parsed : null;
@@ -800,7 +810,7 @@ async function showPreview(name, size, pathSegments) {
   } else if (looksLikeText(content)) {
     // Extension not recognized but content looks like text
     try {
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       currentDecodedText = text;
       currentParsedData = null;
       showTextView();

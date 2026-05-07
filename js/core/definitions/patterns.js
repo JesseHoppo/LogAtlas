@@ -153,4 +153,10 @@ export const LIMITS = {
   topTimelineCookieDomains: 20,
   topHistoryDomainsPerDay: 5,
   maxAutofillOther: 20,
+  previewLineCap: 5000,
+  previewRowCap: 500,
+  previewMaxBytes: 5 * 1024 * 1024,
+  looksLikeTextSampleBytes: 4096,
+  autoLoadMaxBytes: 500 * 1024 * 1024,
+  iocMaxItems: 50,
 };

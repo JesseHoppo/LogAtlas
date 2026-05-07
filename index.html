@@ -3,9 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob: https:; frame-src 'self' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob: https:; frame-src 'self' blob:;">
   <title>Log Atlas</title>
   <link rel="stylesheet" href="css/styles.css">
+  <script>
+    // Pre-paint theme application; avoids a light-mode flash for dark users.
+    (function () {
+      try {
+        var stored = localStorage.getItem('logAtlasTheme');
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (stored === 'dark' || (stored == null && prefersDark)) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (_) { /* storage unavailable; default to light */ }
+    })();
+  </script>
   <script src="lib/zip.min.js"></script>
 </head>
 <body>

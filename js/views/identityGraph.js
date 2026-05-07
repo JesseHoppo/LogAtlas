@@ -252,6 +252,14 @@ function initIdentityGraph() {
   let autofillData = null;
   let autofillReceived = false;
 
+  function clearGating() {
+    dataLoaded = false;
+    sysinfoData = null;
+    sysinfoReceived = false;
+    autofillData = null;
+    autofillReceived = false;
+  }
+
   function tryBuild() {
     if (!dataLoaded || !sysinfoReceived || !autofillReceived) return;
     const result = buildIdentityProfile(
@@ -264,13 +272,8 @@ function initIdentityGraph() {
   on('analysis:sysinfo', (d) => { sysinfoData = d; sysinfoReceived = true; tryBuild(); });
   on('analysis:autofill', (d) => { autofillData = d; autofillReceived = true; tryBuild(); });
 
-  on('reset', () => {
-    dataLoaded = false;
-    sysinfoData = null;
-    sysinfoReceived = false;
-    autofillData = null;
-    autofillReceived = false;
-  });
+  on('reanalyze', clearGating);
+  on('reset', clearGating);
 }
 
 let identityData = null;

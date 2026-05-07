@@ -7,6 +7,7 @@ import {
   collectHintedNodes,
   downloadBlob,
   showNotification,
+  SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import { openColumnMapper } from '../files/columnMapper.js';
 
@@ -302,7 +303,7 @@ export async function openMapperForHint(hintKey, fileType) {
 
   const content = await loadFileContent(selected.node);
   if (!content) return;
-  const text = new TextDecoder('utf-8').decode(content);
+  const text = SHARED_TEXT_DECODER.decode(content);
   const fileName = selected.path || selected.node.name || 'Unknown file';
 
   const config = await openColumnMapper(text, fileName, fileType);

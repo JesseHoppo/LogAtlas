@@ -13,6 +13,7 @@ import {
   inferBrowserFromPath,
   inferProfileFromPath,
   inferServiceFromPath,
+  SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import {
   PAGE_SIZE,
@@ -112,7 +113,7 @@ async function loadAccountTokensData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseAccountTokenFile(text, path || node.name);
       if (!parsed || parsed.rows.length === 0) continue;
       fileCount++;
@@ -142,7 +143,7 @@ async function loadServiceArtifactsData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseServiceArtifactFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
       fileCount++;
@@ -189,7 +190,7 @@ async function loadCreditCardsData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseCreditCardFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
       fileCount++;

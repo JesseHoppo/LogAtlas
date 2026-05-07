@@ -3,6 +3,9 @@
 import { EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
 import { inferServiceFromPath } from './serviceRegistry.js';
 
+// Shared UTF-8 decoder reused across modules.
+const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
+
 const MAX_SEARCH_MATCHES_PER_FILE = 5;
 const SEARCH_BATCH_SIZE = 20;
 const CHROME_EPOCH_OFFSET = 11644473600000000n;
@@ -545,6 +548,25 @@ function formatRelativeTime(date) {
   return date.toLocaleDateString();
 }
 
+// Random password via rejection sampling (uniform over the 62-char charset).
+
+const PASSWORD_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const PASSWORD_REJECT_THRESHOLD = 4 * PASSWORD_CHARSET.length; // 248
+
+function randomPassword(length = 16) {
+  const out = [];
+  const buf = new Uint8Array(length * 2);
+  while (out.length < length) {
+    crypto.getRandomValues(buf);
+    for (const b of buf) {
+      if (b >= PASSWORD_REJECT_THRESHOLD) continue;
+      out.push(PASSWORD_CHARSET[b % PASSWORD_CHARSET.length]);
+      if (out.length >= length) break;
+    }
+  }
+  return out.join('');
+}
+
 // Download helper
 
 function downloadBlob(content, filename, mimeType) {
@@ -663,6 +685,7 @@ function summarizeList(values, limit = 2) {
 export {
   MAX_SEARCH_MATCHES_PER_FILE,
   SEARCH_BATCH_SIZE,
+  SHARED_TEXT_DECODER,
   classifyAutofillEntries,
   collectHintedNodes,
   collectFileNodes,
@@ -682,4 +705,5 @@ export {
   collectUniqueMatches,
   uniqueLimited,
   summarizeList,
+  randomPassword,
 };

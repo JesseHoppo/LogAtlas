@@ -9,6 +9,7 @@ import {
   copyToClipboard,
   extractDomain,
   extractBaseDomain,
+  randomPassword,
   showNotification,
 } from '../core/shared.js';
 import {
@@ -45,6 +46,8 @@ let sysinfoEntries = null;
 let fingerprintResult = null;
 let identityResult = null;
 
+const DEDUPE_KEY_SEP = '\u0000';
+
 function getCookieField({ row, headers }, pattern) {
   const index = headers.findIndex(h => pattern.test(h));
   return index >= 0 ? (row[index] || '') : '';
@@ -79,7 +82,7 @@ function exportObfuscatedCredentials() {
     const url = urlIdx >= 0 ? (row[urlIdx] || '') : '';
     const user = userIdx >= 0 ? (row[userIdx] || '') : '';
     const pass = passIdx >= 0 ? (row[passIdx] || '') : '';
-    const key = `${url}\t${user}\t${pass}`;
+    const key = url + DEDUPE_KEY_SEP + user + DEDUPE_KEY_SEP + pass;
     if (!seen.has(key)) {
       seen.add(key);
       uniqueRows.push(row);
@@ -123,7 +126,7 @@ function gatherReportData() {
       const url = urlIdx >= 0 ? (row[urlIdx] || '') : '';
       const user = userIdx >= 0 ? (row[userIdx] || '') : '';
       const pass = passIdx >= 0 ? (row[passIdx] || '') : '';
-      seen.add(`${url}\t${user}\t${pass}`);
+      seen.add(url + DEDUPE_KEY_SEP + user + DEDUPE_KEY_SEP + pass);
       const domain = extractBaseDomain(extractDomain(url));
       if (domain) domainCounts[domain] = (domainCounts[domain] || 0) + 1;
     }
@@ -497,10 +500,7 @@ async function exportParsedDataZip() {
     return;
   }
 
-  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  const zipPassword = Array.from(array, b => charset[b % charset.length]).join('');
+  const zipPassword = randomPassword(16);
 
   const acknowledged = await showPasswordModal(zipPassword);
   if (!acknowledged) return;

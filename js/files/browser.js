@@ -8,7 +8,7 @@ import {
   formatBytes,
   getFileIcon,
 } from '../core/utils.js';
-import { downloadBlob, copyToClipboard } from '../core/shared.js';
+import { downloadBlob, copyToClipboard, randomPassword } from '../core/shared.js';
 import { toCSV } from '../transforms/shared.js';
 import { buildFileTypeOptionsHtml } from './fileTypeRegistry.js';
 import { canOfferTransformAction, parseStructuredFile } from './structuredTransforms.js';
@@ -161,7 +161,7 @@ function renderGrid(items) {
   let html = '';
 
   if (state.currentPath.length > 0) {
-    html += `<div class="file-item back-item" data-action="back">` +
+    html += `<div class="file-item back-item" data-action="back" role="button" tabindex="0" aria-label="Go up one folder">` +
       `<div class="file-item-icon">&larr;</div>` +
       `<div class="file-item-name">..</div>` +
       `<div class="file-item-meta">Go back</div></div>`;
@@ -178,12 +178,13 @@ function renderGrid(items) {
     const icon = getFileIcon(item.name, isDir, item.isArchive);
     const checked = selectedFiles.has(item.name) ? 'checked' : '';
     const selectedClass = selectedFiles.has(item.name) ? ' selected' : '';
+    const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
 
     html += `<div class="file-item${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
-      `data-folder="${isDir}" data-size="${item.size}">`;
+      `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeAttr(verb)}">`;
 
     if (!isDir) {
-      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1">`;
+      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-label="Select ${escapeAttr(item.name)}">`;
     }
 
     html += `<div class="file-item-icon">${icon}</div>` +
@@ -210,7 +211,7 @@ function renderList(items) {
   let html = '';
 
   if (state.currentPath.length > 0) {
-    html += `<div class="file-list-item" data-action="back">` +
+    html += `<div class="file-list-item" data-action="back" role="button" tabindex="0" aria-label="Go up one folder">` +
       `<div class="file-list-icon">&larr;</div>` +
       `<div class="file-list-name">..</div>` +
       `<div class="file-list-meta">Go back</div></div>`;
@@ -227,12 +228,13 @@ function renderList(items) {
     const icon = getFileIcon(item.name, isDir, item.isArchive);
     const checked = selectedFiles.has(item.name) ? 'checked' : '';
     const selectedClass = selectedFiles.has(item.name) ? ' selected' : '';
+    const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
 
     html += `<div class="file-list-item${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
-      `data-folder="${isDir}" data-size="${item.size}">`;
+      `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeAttr(verb)}">`;
 
     if (!isDir) {
-      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1">`;
+      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-label="Select ${escapeAttr(item.name)}">`;
     }
 
     html += `<div class="file-list-icon">${icon}</div>` +
@@ -253,7 +255,21 @@ function renderList(items) {
   elFileList.innerHTML = html;
 }
 
-// Click handler (shared between grid & list)
+function activateItem(el) {
+  if (el.dataset.action === 'back') {
+    navigateTo(state.currentPath.slice(0, -1));
+    return;
+  }
+
+  const isFolder = el.dataset.folder === 'true';
+  if (isFolder) {
+    navigateTo([...state.currentPath, el.dataset.name]);
+  } else {
+    const name = el.dataset.name;
+    const size = parseInt(el.dataset.size) || 0;
+    emit('preview:open', { name, size, path: [...state.currentPath] });
+  }
+}
 
 function onItemClick(e) {
   if (e.target.classList.contains('file-select-cb')) {
@@ -267,21 +283,37 @@ function onItemClick(e) {
 
   const el = e.target.closest('[data-action="back"], [data-name]');
   if (!el) return;
+  activateItem(el);
+}
 
-  if (el.dataset.action === 'back') {
-    navigateTo(state.currentPath.slice(0, -1));
+function focusableSiblings(container) {
+  return Array.from(container.querySelectorAll('[role="button"][tabindex="0"]'));
+}
+
+function onItemKeyDown(e) {
+  const el = e.target.closest('[data-action="back"], [data-name]');
+  if (!el || el.getAttribute('role') !== 'button') return;
+
+  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault();
+    activateItem(el);
     return;
   }
 
-  const isFolder = el.dataset.folder === 'true';
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'Home' && e.key !== 'End') return;
 
-  if (isFolder) {
-    navigateTo([...state.currentPath, el.dataset.name]);
-  } else {
-    const name = el.dataset.name;
-    const size = parseInt(el.dataset.size) || 0;
-    emit('preview:open', { name, size, path: [...state.currentPath] });
-  }
+  const items = focusableSiblings(e.currentTarget);
+  const idx = items.indexOf(el);
+  if (idx < 0) return;
+
+  e.preventDefault();
+  let nextIdx = idx;
+  if (e.key === 'ArrowDown') nextIdx = Math.min(idx + 1, items.length - 1);
+  else if (e.key === 'ArrowUp') nextIdx = Math.max(idx - 1, 0);
+  else if (e.key === 'Home') nextIdx = 0;
+  else if (e.key === 'End') nextIdx = items.length - 1;
+
+  items[nextIdx]?.focus();
 }
 
 // Set Type action
@@ -301,6 +333,15 @@ function showTypeMenu() {
   `;
   document.body.appendChild(overlay);
 
+  function close() {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  }
+  document.addEventListener('keydown', onKey);
+
   overlay.querySelector('.filetype-options').addEventListener('click', (ev) => {
     const btn = ev.target.closest('.filetype-option');
     if (!btn) return;
@@ -314,14 +355,14 @@ function showTypeMenu() {
       state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
     }
 
-    overlay.remove();
+    close();
     clearSelection();
     render();
     emit('reanalyze');
   });
 
   overlay.addEventListener('click', (ev) => {
-    if (ev.target === overlay) overlay.remove();
+    if (ev.target === overlay) close();
   });
 }
 
@@ -374,10 +415,7 @@ async function exportSelectedZip() {
 
   let zipPassword = null;
   if (result.passwordProtect) {
-    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const arr = new Uint8Array(16);
-    crypto.getRandomValues(arr);
-    zipPassword = Array.from(arr, b => charset[b % charset.length]).join('');
+    zipPassword = randomPassword(16);
 
     const pwOverlay = document.createElement('div');
     pwOverlay.className = 'modal-overlay visible';
@@ -513,6 +551,8 @@ function initBrowser() {
   elBreadcrumb.addEventListener('click', onBreadcrumbClick);
   elFileGrid.addEventListener('click', onItemClick);
   elFileList.addEventListener('click', onItemClick);
+  elFileGrid.addEventListener('keydown', onItemKeyDown);
+  elFileList.addEventListener('keydown', onItemKeyDown);
 
   document.getElementById('gridViewBtn').addEventListener('click', () => setViewMode('grid'));
   document.getElementById('listViewBtn').addEventListener('click', () => setViewMode('list'));

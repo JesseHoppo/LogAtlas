@@ -16,7 +16,12 @@ function updateErrorList() {
   errorList?.classList.add('visible');
 }
 
-export function initLifecycle({ navigateToPage, refreshSidebarAvailability, updateDashboardVisibility }) {
+export function initLifecycle({
+  navigateToPage,
+  refreshSidebarAvailability,
+  updateDashboardVisibility,
+  resetOverviewState,
+}) {
   const loading = document.getElementById('loading');
   const results = document.getElementById('results');
   const navSearch = document.getElementById('navSearch');
@@ -36,6 +41,7 @@ export function initLifecycle({ navigateToPage, refreshSidebarAvailability, upda
 
   on('reanalyze', () => {
     if (!state.fileTree) return;
+    resetOverviewState?.();
     updateDashboardVisibility();
     updateErrorList();
     refreshSidebarAvailability();

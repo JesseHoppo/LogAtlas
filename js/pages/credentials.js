@@ -13,6 +13,7 @@ import {
   checkCookieValidity,
   extractDomain,
   extractBaseDomain,
+  SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import { classifyCookie } from '../analysis/sessionCookies.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
@@ -124,7 +125,7 @@ async function loadPasswordsData(fileTree, rootName) {
         failedFiles.push({ path: sourcePath, reason: 'Unreadable or empty file' });
         continue;
       }
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parsePasswordFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) {
         failedFiles.push({ path: sourcePath, reason: 'No credentials parsed' });
@@ -216,7 +217,7 @@ async function loadCookiesData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseCookieFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         fileCount++;
@@ -267,7 +268,7 @@ async function loadAutofillsData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const parsed = parseAutofillFile(text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         for (const row of parsed.rows) {
@@ -303,7 +304,7 @@ async function loadNotesData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = SHARED_TEXT_DECODER.decode(content);
       const entry = parseNoteArtifact(text, node.name || '', path, node.lastModified);
       if (!entry) continue;
 

@@ -1,5 +1,7 @@
 // Misc utility functions.
 
+import { LIMITS } from './definitions/patterns.js';
+
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
 function escapeHtml(str) {
@@ -42,7 +44,7 @@ const JUNK_FILES = new Set([
   '.ds_store', 'thumbs.db', 'desktop.ini',
 ]);
 
-const MAX_PREVIEW_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_PREVIEW_SIZE = LIMITS.previewMaxBytes;
 
 function getFileExtension(name) {
   const parts = name.split('.');
@@ -80,9 +82,9 @@ function isPreviewable(name) {
   return TEXT_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext) || ext === 'pdf' || OFFICE_PREVIEW_EXTENSIONS.has(ext);
 }
 
-// Quick check if raw bytes look like text (sample first 512 bytes).
+// Quick check if raw bytes look like text (samples the leading window).
 function looksLikeText(uint8Array) {
-  const len = Math.min(uint8Array.length, 512);
+  const len = Math.min(uint8Array.length, LIMITS.looksLikeTextSampleBytes);
   for (let i = 0; i < len; i++) {
     const b = uint8Array[i];
     if (b === 0) return false;

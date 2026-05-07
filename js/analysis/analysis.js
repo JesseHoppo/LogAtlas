@@ -2,6 +2,7 @@
 
 import { emit } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
+import { HINT_KEYS } from '../files/fileTypeRegistry.js';
 import {
   parsePasswordFile,
   parseCookieFile,
@@ -23,8 +24,8 @@ import { isPromotionalNoiseLine, stripLeadingNoiseLines } from '../transforms/sh
 import { parseWalletArtifact } from './walletArtifacts.js';
 import { parseNoteArtifact, summarizeNotes, classifyGrabbedFile, summarizeGrabbedFiles } from './contextArtifacts.js';
 import {
+  SHARED_TEXT_DECODER,
   classifyAutofillEntries,
-  collectHintedNodes,
   extractDomain,
   extractBaseDomain,
   inferBrowserFromPath,
@@ -37,12 +38,38 @@ import { classifyCookie } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
 import { FIELD_PATTERNS, IOC_KEY_MAP, CONTENT_IOC_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
 
+// NUL: never present in real credential fields, so safe as a dedupe separator.
+const DEDUPE_KEY_SEP = '\u0000';
+
+// Walk the tree once, bucketing file nodes by hint key.
+function bucketHintedNodes(fileTree, rootName) {
+  const buckets = Object.fromEntries(HINT_KEYS.map(k => [k, []]));
+
+  function walk(node, path) {
+    if (!node) return;
+    for (const key of HINT_KEYS) {
+      if (node[key]) buckets[key].push({ node, path });
+    }
+    if (node.children) {
+      for (const child of Object.values(node.children)) {
+        walk(child, path + '/' + child.name);
+      }
+    }
+  }
+
+  walk(fileTree, rootName);
+  return buckets;
+}
+
+async function decodeNodeText(node) {
+  const content = await loadFileContent(node);
+  if (!content) return null;
+  return SHARED_TEXT_DECODER.decode(content);
+}
+
 // Credentials
 
-async function analyzeCredentials(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_passwordFileHint', rootName, nodes);
-
+async function analyzeCredentials(nodes) {
   if (nodes.length === 0) {
     emit('analysis:credentials', {
       fileCount: 0,
@@ -66,12 +93,11 @@ async function analyzeCredentials(fileTree, rootName) {
 
   for (const { node, path } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) {
+      const text = await decodeNodeText(node);
+      if (text == null) {
         failedFiles.push({ path, reason: 'Unreadable or empty file' });
         continue;
       }
-      const text = new TextDecoder('utf-8').decode(content);
       const parsed = parsePasswordFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) {
         failedFiles.push({ path, reason: 'No credentials parsed' });
@@ -95,7 +121,7 @@ async function analyzeCredentials(fileTree, rootName) {
         const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
         const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
 
-        const key = `${url}\t${user}\t${pass}`;
+        const key = url + DEDUPE_KEY_SEP + user + DEDUPE_KEY_SEP + pass;
         if (!seen.has(key)) {
           seen.add(key);
           uniqueCredentials++;
@@ -121,10 +147,7 @@ async function analyzeCredentials(fileTree, rootName) {
 
 // Cookies
 
-async function analyzeCookies(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_cookieFileHint', rootName, nodes);
-
+async function analyzeCookies(nodes) {
   if (nodes.length === 0) {
     emit('analysis:cookies', { fileCount: 0, totalCookies: 0, uniqueDomains: 0, topDomains: [], sessionTokens: 0, validSessionTokens: 0 });
     return;
@@ -138,9 +161,8 @@ async function analyzeCookies(fileTree, rootName) {
 
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseCookieFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -210,10 +232,7 @@ async function analyzeCookies(fileTree, rootName) {
 
 // History
 
-async function analyzeHistory(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_historyHint', rootName, nodes);
-
+async function analyzeHistory(nodes) {
   if (nodes.length === 0) {
     emit('analysis:history', null);
     return;
@@ -225,9 +244,8 @@ async function analyzeHistory(fileTree, rootName) {
 
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseHistoryFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -277,10 +295,7 @@ async function analyzeHistory(fileTree, rootName) {
 
 // System info
 
-async function analyzeSystemInfo(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_sysInfoHint', rootName, nodes);
-
+async function analyzeSystemInfo(nodes) {
   if (nodes.length === 0) {
     emit('analysis:sysinfo', null);
     return;
@@ -288,12 +303,13 @@ async function analyzeSystemInfo(fileTree, rootName) {
 
   const merged = {};
   const sourceFiles = [];
+  const decoded = [];
 
-  for (const { node, path } of nodes) {
+  for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
+      decoded.push(text);
       const parsed = parseSystemInfoFile(text, node.name);
       if (!parsed || !parsed.entries) continue;
 
@@ -313,18 +329,8 @@ async function analyzeSystemInfo(fileTree, rootName) {
     return;
   }
 
-  // Combine all sysinfo source text for content-based IOC extraction
-  let combinedText = '';
-  for (const { node } of nodes) {
-    try {
-      const content = await loadFileContent(node);
-      if (content) {
-        combinedText += new TextDecoder('utf-8').decode(content) + '\n';
-      }
-    } catch {
-      // skip
-    }
-  }
+  // Reuse the already-decoded sysinfo text rather than re-loading and re-decoding.
+  const combinedText = decoded.length > 0 ? decoded.join('\n') + '\n' : '';
 
   emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText });
 
@@ -440,10 +446,7 @@ function extractInlineSections(text) {
 
 // Clipboard
 
-async function analyzeClipboard(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_clipboardHint', rootName, nodes);
-
+async function analyzeClipboard(nodes) {
   if (nodes.length === 0) {
     emit('analysis:clipboard', null);
     return;
@@ -456,9 +459,8 @@ async function analyzeClipboard(fileTree, rootName) {
   let pathCount = 0;
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseClipboardFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -506,19 +508,20 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
     }
   }
 
-  // Content-based IOC extraction from sysinfo text body
+  // Content-based IOC extraction. The labelled break enforces the global cap
+  // — a plain break would only exit the inner while.
   if (sysinfoText) {
-    for (const { label, pattern } of CONTENT_IOC_PATTERNS) {
-      const regex = new RegExp(pattern.source, pattern.flags);
+    outer: for (const { label, pattern } of CONTENT_IOC_PATTERNS) {
+      pattern.lastIndex = 0;
       let match;
-      while ((match = regex.exec(sysinfoText)) !== null) {
+      while ((match = pattern.exec(sysinfoText)) !== null) {
         const value = match[0];
         const k = `${label}:${value}`;
         if (!seen.has(k)) {
           seen.add(k);
           iocs.push({ label, value });
         }
-        if (iocs.length > 50) break; // safety cap
+        if (iocs.length >= LIMITS.iocMaxItems) break outer;
       }
     }
   }
@@ -528,10 +531,7 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
 
 // Autofill
 
-async function analyzeAutofills(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_autofillHint', rootName, nodes);
-
+async function analyzeAutofills(nodes) {
   if (nodes.length === 0) {
     emit('analysis:autofill', null);
     return;
@@ -543,9 +543,8 @@ async function analyzeAutofills(fileTree, rootName) {
 
   for (const { node, path } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseAutofillFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -609,10 +608,7 @@ async function analyzeAutofills(fileTree, rootName) {
   });
 }
 
-async function analyzeNotes(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_notesHint', rootName, nodes);
-
+async function analyzeNotes(nodes) {
   if (nodes.length === 0) {
     emit('analysis:notes', null);
     return;
@@ -622,9 +618,8 @@ async function analyzeNotes(fileTree, rootName) {
 
   for (const { node, path } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const entry = parseNoteArtifact(text, node.name || '', path, node.lastModified);
       if (entry) entries.push(entry);
     } catch {
@@ -645,10 +640,7 @@ async function analyzeNotes(fileTree, rootName) {
 
 // Domain detect
 
-async function analyzeDomainDetect(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_domainDetectHint', rootName, nodes);
-
+async function analyzeDomainDetect(nodes) {
   if (nodes.length === 0) {
     emit('analysis:domainDetect', null);
     return;
@@ -661,9 +653,8 @@ async function analyzeDomainDetect(fileTree, rootName) {
 
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseDomainDetectFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -693,10 +684,7 @@ async function analyzeDomainDetect(fileTree, rootName) {
   emit('analysis:domainDetect', { fileCount, totalHits, categories, entries });
 }
 
-async function analyzeCreditCards(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_creditCardHint', rootName, nodes);
-
+async function analyzeCreditCards(nodes) {
   if (nodes.length === 0) {
     emit('analysis:creditCards', null);
     return;
@@ -711,9 +699,8 @@ async function analyzeCreditCards(fileTree, rootName) {
 
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseCreditCardFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -750,10 +737,7 @@ async function analyzeCreditCards(fileTree, rootName) {
   });
 }
 
-async function analyzeBookmarks(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_bookmarkHint', rootName, nodes);
-
+async function analyzeBookmarks(nodes) {
   if (nodes.length === 0) {
     emit('analysis:bookmarks', null);
     return;
@@ -766,9 +750,8 @@ async function analyzeBookmarks(fileTree, rootName) {
 
   for (const { node, path } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseBookmarkFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -803,10 +786,7 @@ async function analyzeBookmarks(fileTree, rootName) {
   });
 }
 
-async function analyzeBrowserMetadata(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_browserMetadataHint', rootName, nodes);
-
+async function analyzeBrowserMetadata(nodes) {
   if (nodes.length === 0) {
     emit('analysis:browserMetadata', null);
     return;
@@ -819,9 +799,8 @@ async function analyzeBrowserMetadata(fileTree, rootName) {
 
   for (const { node, path } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseBrowserMetadataFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -854,10 +833,7 @@ async function analyzeBrowserMetadata(fileTree, rootName) {
   });
 }
 
-async function analyzeAccountTokens(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_accountTokenHint', rootName, nodes);
-
+async function analyzeAccountTokens(nodes) {
   if (nodes.length === 0) {
     emit('analysis:accountTokens', null);
     return;
@@ -872,9 +848,8 @@ async function analyzeAccountTokens(fileTree, rootName) {
 
   for (const { node, path } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseAccountTokenFile(text, path || node.name);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -911,10 +886,7 @@ async function analyzeAccountTokens(fileTree, rootName) {
   });
 }
 
-async function analyzeServiceArtifacts(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_serviceArtifactHint', rootName, nodes);
-
+async function analyzeServiceArtifacts(nodes) {
   if (nodes.length === 0) {
     emit('analysis:serviceArtifacts', null);
     return;
@@ -927,9 +899,8 @@ async function analyzeServiceArtifacts(fileTree, rootName) {
 
   for (const { node, path } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseServiceArtifactFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -959,10 +930,7 @@ async function analyzeServiceArtifacts(fileTree, rootName) {
   });
 }
 
-async function analyzeWalletArtifacts(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_cryptoWalletHint', rootName, nodes);
-
+async function analyzeWalletArtifacts(nodes) {
   if (nodes.length === 0) {
     emit('analysis:wallets', null);
     return;
@@ -1003,10 +971,7 @@ async function analyzeWalletArtifacts(fileTree, rootName) {
 
 // Download history
 
-async function analyzeDownloads(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_downloadHint', rootName, nodes);
-
+async function analyzeDownloads(nodes) {
   if (nodes.length === 0) {
     emit('analysis:downloads', null);
     return;
@@ -1018,9 +983,8 @@ async function analyzeDownloads(fileTree, rootName) {
 
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const parsed = parseDownloadFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
@@ -1050,10 +1014,7 @@ async function analyzeDownloads(fileTree, rootName) {
   });
 }
 
-async function analyzeGrabbedFiles(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_grabbedFileHint', rootName, nodes);
-
+async function analyzeGrabbedFiles(nodes) {
   if (nodes.length === 0) {
     emit('analysis:grabbedFiles', null);
     return;
@@ -1079,9 +1040,7 @@ async function analyzeGrabbedFiles(fileTree, rootName) {
 
 // Screenshot detection
 
-function findScreenshot(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_screenshotHint', rootName, nodes);
+function findScreenshot(nodes) {
   if (nodes.length === 0) {
     emit('analysis:screenshot', null);
     return;
@@ -1107,10 +1066,8 @@ async function runFingerprint(fileTree, rootName) {
   if (ctx.sysinfoNodes.length > 0) {
     for (const node of ctx.sysinfoNodes) {
       try {
-        const content = await loadFileContent(node);
-        if (!content) continue;
-
-        const text = new TextDecoder('utf-8').decode(content);
+        const text = await decodeNodeText(node);
+        if (text == null) continue;
         const parsed = parseSystemInfoFile(text, node.name);
         ctx.sysinfoCandidates.push({
           sysinfoFilename: node.name,
@@ -1128,10 +1085,8 @@ async function runFingerprint(fileTree, rootName) {
     const creditsTexts = [];
     for (const node of ctx.creditsNodes) {
       try {
-        const content = await loadFileContent(node);
-        if (content) {
-          creditsTexts.push(new TextDecoder('utf-8').decode(content));
-        }
+        const text = await decodeNodeText(node);
+        if (text != null) creditsTexts.push(text);
       } catch {
         // skip
       }
@@ -1144,11 +1099,8 @@ async function runFingerprint(fileTree, rootName) {
   // Password file header (some stealers embed branding here)
   if (ctx.passwordNode) {
     try {
-      const content = await loadFileContent(ctx.passwordNode);
-      if (content) {
-        const text = new TextDecoder('utf-8').decode(content);
-        ctx.passwordHeaderText = text.slice(0, 2000);
-      }
+      const text = await decodeNodeText(ctx.passwordNode);
+      if (text != null) ctx.passwordHeaderText = text.slice(0, 2000);
     } catch {
       // skip
     }
@@ -1160,10 +1112,7 @@ async function runFingerprint(fileTree, rootName) {
 
 // Installed software
 
-async function analyzeSoftware(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_softwareFileHint', rootName, nodes);
-
+async function analyzeSoftware(nodes) {
   if (nodes.length === 0) {
     emit('analysis:software', null);
     return;
@@ -1182,9 +1131,8 @@ async function analyzeSoftware(fileTree, rootName) {
 
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = new TextDecoder('utf-8').decode(content);
+      const text = await decodeNodeText(node);
+      if (text == null) continue;
       const lines = text.split('\n');
       let found = false;
 
@@ -1238,10 +1186,7 @@ async function analyzeSoftware(fileTree, rootName) {
 
 // Process list
 
-async function analyzeProcessList(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_processListHint', rootName, nodes);
-
+async function analyzeProcessList(nodes) {
   if (nodes.length === 0) {
     emit('analysis:processList', null);
     return;
@@ -1252,9 +1197,9 @@ async function analyzeProcessList(fileTree, rootName) {
 
   for (const { node } of nodes) {
     try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = stripLeadingNoiseLines(new TextDecoder('utf-8').decode(content));
+      const decoded = await decodeNodeText(node);
+      if (decoded == null) continue;
+      const text = stripLeadingNoiseLines(decoded);
       const lines = text.split('\n');
       let found = false;
 
@@ -1330,29 +1275,44 @@ async function analyzeProcessList(fileTree, rootName) {
   emit('analysis:processList', { fileCount: parsedCount, entries, uniqueCount: entries.length });
 }
 
-// Kick off all analyses
+// Kick off all analyses. Returns a promise resolved once every task settles;
+// `analysis:complete` fires from the resolution.
 
 function runAnalysis(fileTree, rootName) {
-  analyzeCredentials(fileTree, rootName);
-  analyzeCookies(fileTree, rootName);
-  analyzeHistory(fileTree, rootName);
-  analyzeSystemInfo(fileTree, rootName);
-  analyzeAutofills(fileTree, rootName);
-  analyzeNotes(fileTree, rootName);
-  analyzeBookmarks(fileTree, rootName);
-  analyzeBrowserMetadata(fileTree, rootName);
-  analyzeAccountTokens(fileTree, rootName);
-  analyzeServiceArtifacts(fileTree, rootName);
-  analyzeWalletArtifacts(fileTree, rootName);
-  analyzeDownloads(fileTree, rootName);
-  analyzeCreditCards(fileTree, rootName);
-  analyzeDomainDetect(fileTree, rootName);
-  analyzeSoftware(fileTree, rootName);
-  analyzeProcessList(fileTree, rootName);
-  analyzeClipboard(fileTree, rootName);
-  analyzeGrabbedFiles(fileTree, rootName);
-  findScreenshot(fileTree, rootName);
-  runFingerprint(fileTree, rootName);
+  const buckets = bucketHintedNodes(fileTree, rootName);
+
+  findScreenshot(buckets._screenshotHint);
+
+  const tasks = [
+    analyzeCredentials(buckets._passwordFileHint),
+    analyzeCookies(buckets._cookieFileHint),
+    analyzeHistory(buckets._historyHint),
+    analyzeSystemInfo(buckets._sysInfoHint),
+    analyzeAutofills(buckets._autofillHint),
+    analyzeNotes(buckets._notesHint),
+    analyzeBookmarks(buckets._bookmarkHint),
+    analyzeBrowserMetadata(buckets._browserMetadataHint),
+    analyzeAccountTokens(buckets._accountTokenHint),
+    analyzeServiceArtifacts(buckets._serviceArtifactHint),
+    analyzeWalletArtifacts(buckets._cryptoWalletHint),
+    analyzeDownloads(buckets._downloadHint),
+    analyzeCreditCards(buckets._creditCardHint),
+    analyzeDomainDetect(buckets._domainDetectHint),
+    analyzeSoftware(buckets._softwareFileHint),
+    analyzeProcessList(buckets._processListHint),
+    analyzeClipboard(buckets._clipboardHint),
+    analyzeGrabbedFiles(buckets._grabbedFileHint),
+    runFingerprint(fileTree, rootName),
+  ];
+
+  return Promise.allSettled(tasks).then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.error('Analysis task failed:', result.reason);
+      }
+    }
+    emit('analysis:complete');
+  });
 }
 
 export { runAnalysis, extractIOCs };
