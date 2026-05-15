@@ -1,4 +1,4 @@
-// Shared normalization/utility functions and regex constants used across transform parsers.
+// Shared normalisation/utility functions and regex constants used across transform parsers.
 
 export { JWT_TOKEN_PATTERN } from '../core/definitions/patterns.js';
 
@@ -39,11 +39,11 @@ const PASSWORD_PASS_KEYS = new Set([
 // Separator lines (e.g. ===============) are normalised to blank lines
 const SEPARATOR_LINE = /^[=\-*~_]{3,}\s*$/gm;
 
-export function normalizeSeparators(text) {
+export function normaliseSeparators(text) {
   return text.replace(SEPARATOR_LINE, '');
 }
 
-export function normalizeText(text) {
+export function normaliseText(text) {
   return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
@@ -110,25 +110,25 @@ export function isSeparatorOnlyLine(line) {
   return /^[=\-*~_]{3,}\s*$/.test(String(line || '').trim());
 }
 
-function normalizePasswordFieldKey(key) {
+function normalisePasswordFieldKey(key) {
   return String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 export function classifyPasswordFieldKey(key) {
-  const normalized = normalizePasswordFieldKey(key);
-  if (PASSWORD_SITE_KEYS.has(normalized)) return 'url';
-  if (PASSWORD_USER_KEYS.has(normalized)) return 'username';
-  if (PASSWORD_PASS_KEYS.has(normalized)) return 'password';
+  const normalised = normalisePasswordFieldKey(key);
+  if (PASSWORD_SITE_KEYS.has(normalised)) return 'url';
+  if (PASSWORD_USER_KEYS.has(normalised)) return 'username';
+  if (PASSWORD_PASS_KEYS.has(normalised)) return 'password';
   return '';
 }
 
-export function canonicalizePasswordExtraHeader(key) {
+export function canonicalisePasswordExtraHeader(key) {
   const raw = String(key || '').trim().replace(/\s+/g, ' ');
-  const normalized = normalizePasswordFieldKey(raw);
-  if (!normalized) return '';
-  if (['soft', 'software', 'application', 'app', 'program', 'client'].includes(normalized)) return 'Software';
-  if (['browser', 'webbrowser'].includes(normalized)) return 'Browser';
-  if (normalized === 'profile') return 'Profile';
+  const normalised = normalisePasswordFieldKey(raw);
+  if (!normalised) return '';
+  if (['soft', 'software', 'application', 'app', 'program', 'client'].includes(normalised)) return 'Software';
+  if (['browser', 'webbrowser'].includes(normalised)) return 'Browser';
+  if (normalised === 'profile') return 'Profile';
   return raw;
 }
 

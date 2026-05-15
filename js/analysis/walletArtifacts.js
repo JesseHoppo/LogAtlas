@@ -1,4 +1,4 @@
-import { inferBrowserFromPath, inferProfileFromPath, normalizePath, collectUniqueMatches, uniqueLimited, summarizeList } from '../core/shared.js';
+import { inferBrowserFromPath, inferProfileFromPath, normalisePath, collectUniqueMatches, uniqueLimited, summariseList } from '../core/shared.js';
 import { URL_REGEX, SCAN_EMAIL_REGEX, JWT_SCAN_REGEX } from '../core/definitions/patterns.js';
 import { inferStoreService } from '../core/serviceRegistry.js';
 
@@ -34,25 +34,25 @@ function maybeDecodeText(content, fileName) {
 }
 
 function detectStoreType(fileName, sourcePath, content) {
-  const normalizedPath = normalizePath(sourcePath).toLowerCase();
+  const normalisedPath = normalisePath(sourcePath).toLowerCase();
   const lowerName = String(fileName || '').toLowerCase();
   const bytes = content instanceof Uint8Array ? content : new Uint8Array(content || []);
   const header = bytes.length >= 16 ? new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 16)) : '';
 
   if (header.startsWith('SQLite format 3')) return 'SQLite';
   if (/\.(?:sqlite|sqlite3|db)$/i.test(lowerName)) return 'SQLite';
-  if (/\.ldb$/i.test(lowerName) || /(?:^|\/)(?:current|lock|log(?:\.old)?|manifest-\d+)$/i.test(normalizedPath)) return 'LevelDB';
+  if (/\.ldb$/i.test(lowerName) || /(?:^|\/)(?:current|lock|log(?:\.old)?|manifest-\d+)$/i.test(normalisedPath)) return 'LevelDB';
   if (/\.json$/i.test(lowerName)) return 'JSON';
   if (/\.txt$/i.test(lowerName)) return 'Text';
   return 'Store';
 }
 
 function detectArtifactType(fileName, sourcePath, storeType) {
-  const normalizedPath = normalizePath(sourcePath).toLowerCase();
+  const normalisedPath = normalisePath(sourcePath).toLowerCase();
   const lowerName = String(fileName || '').toLowerCase();
 
-  if (/keychain/i.test(lowerName) || /keychain/i.test(normalizedPath)) return 'Keychain Dump';
-  if (/seed\.txt$/i.test(lowerName) || /seed|mnemonic|recovery/i.test(normalizedPath)) return 'Seed / Recovery';
+  if (/keychain/i.test(lowerName) || /keychain/i.test(normalisedPath)) return 'Keychain Dump';
+  if (/seed\.txt$/i.test(lowerName) || /seed|mnemonic|recovery/i.test(normalisedPath)) return 'Seed / Recovery';
   if (/token\.json$/i.test(lowerName)) return 'Token Store';
   if (/data\.json$/i.test(lowerName)) return 'Application Data';
   if (storeType === 'SQLite') return 'SQLite Store';
@@ -93,11 +93,11 @@ function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: []
 
 function buildHighlights({ emails, urls, ethAddresses, btcAddresses, tokenCount, seedHints, ids }) {
   const parts = [];
-  if (emails.length > 0) parts.push(`email: ${summarizeList(emails)}`);
-  if (urls.length > 0) parts.push(`url: ${summarizeList(urls)}`);
-  if (ethAddresses.length > 0) parts.push(`ETH: ${summarizeList(ethAddresses, 1)}`);
-  if (btcAddresses.length > 0) parts.push(`BTC: ${summarizeList(btcAddresses, 1)}`);
-  if (ids.length > 0) parts.push(`id: ${summarizeList(ids, 1)}`);
+  if (emails.length > 0) parts.push(`email: ${summariseList(emails)}`);
+  if (urls.length > 0) parts.push(`url: ${summariseList(urls)}`);
+  if (ethAddresses.length > 0) parts.push(`ETH: ${summariseList(ethAddresses, 1)}`);
+  if (btcAddresses.length > 0) parts.push(`BTC: ${summariseList(btcAddresses, 1)}`);
+  if (ids.length > 0) parts.push(`id: ${summariseList(ids, 1)}`);
   if (tokenCount > 0) parts.push(`${tokenCount} token${tokenCount === 1 ? '' : 's'}`);
   if (seedHints > 0) parts.push('seed indicators');
   return parts.join(' | ') || 'Raw store present';
@@ -111,9 +111,9 @@ function parseWalletArtifact(content, fileName, sourcePath) {
   const carvedStrings = text ? [] : extractPrintableStrings(bytes);
   const combinedText = text || carvedStrings.join('\n');
   const service = inferStoreService(sourcePath || fileName, combinedText);
-  const normalizedPath = normalizePath(sourcePath || fileName);
-  const storeType = detectStoreType(fileName, normalizedPath, bytes);
-  const artifactType = detectArtifactType(fileName, normalizedPath, storeType);
+  const normalisedPath = normalisePath(sourcePath || fileName);
+  const storeType = detectStoreType(fileName, normalisedPath, bytes);
+  const artifactType = detectArtifactType(fileName, normalisedPath, storeType);
 
   let jsonSignals = { emails: [], urls: [], ids: [], tokenCount: 0, seedHints: 0 };
   if (text && /\.json$/i.test(fileName)) {
@@ -143,7 +143,7 @@ function parseWalletArtifact(content, fileName, sourcePath) {
   const seedHints = jsonSignals.seedHints + ((/mnemonic|seed phrase|recovery phrase|secret recovery/i.test(combinedText)) ? 1 : 0);
 
   const meaningful = emails.length || urls.length || ethAddresses.length || btcAddresses.length || tokenCount || seedHints;
-  const pathLooksRelevant = /(wallet|bitwarden|metamask|phantom|trust wallet|exodus|atomic|keplr|tronlink|ronin|rabby|extension|local extension settings|token\.json|seed\.txt|keychain)/i.test(normalizedPath);
+  const pathLooksRelevant = /(wallet|bitwarden|metamask|phantom|trust wallet|exodus|atomic|keplr|tronlink|ronin|rabby|extension|local extension settings|token\.json|seed\.txt|keychain)/i.test(normalisedPath);
   if (!meaningful && !pathLooksRelevant) return null;
 
   return {
@@ -151,8 +151,8 @@ function parseWalletArtifact(content, fileName, sourcePath) {
     category: service.category,
     artifactType,
     storeType,
-    browser: inferBrowserFromPath(normalizedPath),
-    profile: inferProfileFromPath(normalizedPath),
+    browser: inferBrowserFromPath(normalisedPath),
+    profile: inferProfileFromPath(normalisedPath),
     highlights: buildHighlights({ emails, urls, ethAddresses, btcAddresses, tokenCount, seedHints, ids }),
     emailCount: emails.length,
     addressCount: ethAddresses.length + btcAddresses.length,

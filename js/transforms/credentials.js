@@ -6,19 +6,19 @@ import {
   AUTOFILL_KV_PATTERN,
   GOOGLE_RESTORE_TOKEN_PATTERN,
   PASSWORD_KV_PATTERN,
-  normalizeText,
-  normalizeSeparators,
+  normaliseText,
+  normaliseSeparators,
   stripLeadingNoiseLines,
   isSeparatorOnlyLine,
   classifyPasswordFieldKey,
-  canonicalizePasswordExtraHeader,
+  canonicalisePasswordExtraHeader,
 } from './shared.js';
 import {
   detectFormat,
   parseDelimited,
   parseWithConfig,
   buildPasswordDataset,
-  finalizeCredentialDataset,
+  finaliseCredentialDataset,
 } from './delimited.js';
 
 // Chrome stores timestamps as microseconds since 1601-01-01 (Windows epoch).
@@ -66,7 +66,7 @@ function parsePasswordKeyValueRecords(text) {
     allowPasswordContinuation = false;
   };
 
-  for (const rawLine of normalizeText(text).split('\n')) {
+  for (const rawLine of normaliseText(text).split('\n')) {
     const line = rawLine.trim();
     if (!line) continue;
     if (isSeparatorOnlyLine(line)) {
@@ -87,7 +87,7 @@ function parsePasswordKeyValueRecords(text) {
     const role = classifyPasswordFieldKey(rawKey);
     const header = role
       ? (role === 'url' ? 'URL' : role === 'username' ? 'Username' : 'Password')
-      : canonicalizePasswordExtraHeader(rawKey);
+      : canonicalisePasswordExtraHeader(rawKey);
 
     if (line.includes('://') && line.indexOf(':') < line.indexOf('://') && !role && !['Software', 'Browser', 'Profile'].includes(header)) {
       if (allowPasswordContinuation && current.Password) {
@@ -169,7 +169,7 @@ function parseCredentialComboLine(line) {
 
 function parseCredentialComboLines(text) {
   const records = [];
-  const lines = normalizeText(text).split('\n');
+  const lines = normaliseText(text).split('\n');
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -229,7 +229,7 @@ function applyPasswordFallbackHeaders(parsed, format) {
   };
 }
 
-function finalizeAutofillDataset(parsed) {
+function finaliseAutofillDataset(parsed) {
   if (!parsed || !parsed.rows || parsed.rows.length === 0) return null;
 
   const fieldIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.formField.test(h));
@@ -252,29 +252,29 @@ const AUTOFILL_RECORD_NAME_KEYS = new Set(['name', 'field', 'key', 'label']);
 const AUTOFILL_RECORD_VALUE_KEYS = new Set(['value']);
 const AUTOFILL_INLINE_EXCLUDED_KEYS = new Set(['browser', 'profile', 'value']);
 
-function normalizeAutofillFieldName(name) {
+function normaliseAutofillFieldName(name) {
   return String(name || '').replace(/:+$/, '').replace(/\s+/g, ' ').trim();
 }
 
 function isLikelyAutofillFieldName(name) {
-  const normalized = normalizeAutofillFieldName(name);
-  if (!normalized || normalized.length > 120) return false;
-  if (/^\d+$/.test(normalized)) return false;
-  if (/^[^A-Za-z]+$/.test(normalized)) return false;
-  if (/^(?:https?|file):/i.test(normalized)) return false;
-  if (/telegram/i.test(normalized)) return false;
-  if (/[*|\\/]{3,}/.test(normalized)) return false;
+  const normalised = normaliseAutofillFieldName(name);
+  if (!normalised || normalised.length > 120) return false;
+  if (/^\d+$/.test(normalised)) return false;
+  if (/^[^A-Za-z]+$/.test(normalised)) return false;
+  if (/^(?:https?|file):/i.test(normalised)) return false;
+  if (/telegram/i.test(normalised)) return false;
+  if (/[*|\\/]{3,}/.test(normalised)) return false;
   return true;
 }
 
 function isLikelyAutofillFieldValue(value) {
-  const normalized = String(value || '').trim();
-  if (!normalized || normalized.length > AUTOFILL_BLOCK_MAX_VALUE_LENGTH) return false;
-  if (/^[*=_~#-]{6,}$/.test(normalized)) return false;
+  const normalised = String(value || '').trim();
+  if (!normalised || normalised.length > AUTOFILL_BLOCK_MAX_VALUE_LENGTH) return false;
+  if (/^[*=_~#-]{6,}$/.test(normalised)) return false;
   return true;
 }
 
-function normalizeAutofillRecordLabel(key) {
+function normaliseAutofillRecordLabel(key) {
   return String(key || '').trim().toLowerCase().replace(/\s+/g, '');
 }
 
@@ -284,7 +284,7 @@ function parseAutofillLabelledRecords(clean) {
   let currentValue = '';
 
   function flush() {
-    const name = normalizeAutofillFieldName(currentName);
+    const name = normaliseAutofillFieldName(currentName);
     const value = String(currentValue || '').trim();
     if (isLikelyAutofillFieldName(name) && isLikelyAutofillFieldValue(value)) {
       rows.push([name, value]);
@@ -303,7 +303,7 @@ function parseAutofillLabelledRecords(clean) {
     const match = trimmed.match(AUTOFILL_SPACED_KV_PATTERN) || trimmed.match(AUTOFILL_KV_PATTERN);
     if (!match) continue;
 
-    const label = normalizeAutofillRecordLabel(match[1]);
+    const label = normaliseAutofillRecordLabel(match[1]);
     const value = match[2].trim();
     if (!AUTOFILL_RECORD_LABEL_KEYS.has(label) || !value) continue;
 
@@ -339,7 +339,7 @@ function parseAutofillBlocks(clean) {
   for (const block of blocks) {
     if (block.length < 2 || block.length > AUTOFILL_BLOCK_MAX_LINES) continue;
 
-    const name = normalizeAutofillFieldName(block[0]);
+    const name = normaliseAutofillFieldName(block[0]);
     const value = block.slice(1).join(' ').trim();
     if (!isLikelyAutofillFieldName(name) || !isLikelyAutofillFieldValue(value)) continue;
 
@@ -372,10 +372,10 @@ function parseLooseAutofillLine(line) {
   const genericKvMatch = trimmed.match(AUTOFILL_KV_PATTERN);
 
   const buildRow = (rawName, rawValue) => {
-    const name = normalizeAutofillFieldName(rawName);
+    const name = normaliseAutofillFieldName(rawName);
     const value = String(rawValue || '').trim();
     if (!name || !value) return null;
-    if (AUTOFILL_INLINE_EXCLUDED_KEYS.has(normalizeAutofillRecordLabel(name))) return null;
+    if (AUTOFILL_INLINE_EXCLUDED_KEYS.has(normaliseAutofillRecordLabel(name))) return null;
     return [name, value];
   };
 
@@ -399,25 +399,25 @@ function parseLooseAutofillLine(line) {
 }
 
 export function parsePasswordFile(text, config) {
-  const clean = normalizeSeparators(normalizeText(text));
+  const clean = normaliseSeparators(normaliseText(text));
 
   // If explicit config from column mapper, use it directly
-  if (config) return finalizeCredentialDataset(parseWithConfig(clean, config));
+  if (config) return finaliseCredentialDataset(parseWithConfig(clean, config));
 
   const format = detectFormat(clean);
   if (format && format.type === 'delimited') {
-    const parsed = finalizeCredentialDataset(applyPasswordFallbackHeaders(parseDelimited(clean, format), format));
+    const parsed = finaliseCredentialDataset(applyPasswordFallbackHeaders(parseDelimited(clean, format), format));
     if (parsed) return parsed;
   }
 
-  const comboParsed = finalizeCredentialDataset(parseCredentialComboLines(clean));
-  const keyValueParsed = finalizeCredentialDataset(parsePasswordKeyValueRecords(clean));
+  const comboParsed = finaliseCredentialDataset(parseCredentialComboLines(clean));
+  const keyValueParsed = finaliseCredentialDataset(parsePasswordKeyValueRecords(clean));
 
   if (comboParsed && keyValueParsed) {
     return comboParsed.rows.length > keyValueParsed.rows.length ? comboParsed : keyValueParsed;
   }
 
-  return comboParsed || keyValueParsed || finalizeCredentialDataset(parseLoosePasswordBlocks(clean));
+  return comboParsed || keyValueParsed || finaliseCredentialDataset(parseLoosePasswordBlocks(clean));
 }
 
 // Cookie parser
@@ -497,15 +497,15 @@ function findCookieArrayInObject(text) {
 }
 
 export function parseCookieFile(text, config) {
-  const clean = normalizeText(text);
+  const clean = normaliseText(text);
 
   // If explicit config from column mapper, use it directly
   if (config) return parseWithConfig(clean, config);
 
-  const sanitized = stripLeadingNoiseLines(clean).trim();
+  const sanitised = stripLeadingNoiseLines(clean).trim();
 
   // Try JSON format first
-  const trimmed = sanitized || clean.trim();
+  const trimmed = sanitised || clean.trim();
   if (trimmed.startsWith('[')) {
     const jsonResult = parseJSONCookies(trimmed);
     if (jsonResult) return jsonResult;
@@ -518,7 +518,7 @@ export function parseCookieFile(text, config) {
     }
   }
 
-  const lines = (sanitized || clean).split('\n').map(l => l.trim()).filter(l => l !== '');
+  const lines = (sanitised || clean).split('\n').map(l => l.trim()).filter(l => l !== '');
   if (lines.length === 0) return null;
 
   const restoreTokens = parseGoogleRestoreTokens(lines);
@@ -555,25 +555,25 @@ export function parseCookieFile(text, config) {
   }
 
   // Fallback: try generic delimited detection (CSV, pipe, etc.)
-  const format = detectFormat(sanitized || clean);
+  const format = detectFormat(sanitised || clean);
   if (format && format.type === 'delimited') {
-    return parseDelimited(sanitized || clean, format);
+    return parseDelimited(sanitised || clean, format);
   }
 
   return null;
 }
 
 export function parseAutofillFile(text, config) {
-  const clean = normalizeSeparators(normalizeText(text));
+  const clean = normaliseSeparators(normaliseText(text));
 
   if (config) {
     const parsed = parseWithConfig(clean, config);
-    return finalizeAutofillDataset(parsed) || parsed;
+    return finaliseAutofillDataset(parsed) || parsed;
   }
 
   const format = detectFormat(clean);
   if (format && format.type === 'delimited') {
-    const parsed = finalizeAutofillDataset(parseDelimited(clean, format));
+    const parsed = finaliseAutofillDataset(parseDelimited(clean, format));
     if (parsed) return parsed;
   }
 

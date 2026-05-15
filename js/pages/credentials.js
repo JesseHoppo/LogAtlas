@@ -7,7 +7,7 @@ import {
   parseCookieFile,
   parseAutofillFile,
 } from '../transforms/credentials.js';
-import { parseNoteArtifact, summarizeNotes } from '../analysis/contextArtifacts.js';
+import { parseNoteArtifact, summariseNotes } from '../analysis/contextArtifacts.js';
 import {
   collectHintedNodes,
   checkCookieValidity,
@@ -84,8 +84,8 @@ function getCookieColumnMap(headers, columnCount) {
   return map;
 }
 
-function normalizeCookieRow(row, columnMap, includeSubDomain) {
-  const normalized = [
+function normaliseCookieRow(row, columnMap, includeSubDomain) {
+  const normalised = [
     row[columnMap.domain] || '',
     row[columnMap.path] || '',
     row[columnMap.secure] || '',
@@ -94,10 +94,10 @@ function normalizeCookieRow(row, columnMap, includeSubDomain) {
     row[columnMap.value] || '',
   ];
 
-  if (!includeSubDomain) return normalized;
+  if (!includeSubDomain) return normalised;
 
-  normalized.splice(1, 0, row[columnMap.subDomain] || '');
-  return normalized;
+  normalised.splice(1, 0, row[columnMap.subDomain] || '');
+  return normalised;
 }
 
 // Load functions
@@ -237,11 +237,11 @@ async function loadCookiesData(fileTree, rootName) {
 
   for (const { parsed, columnMap } of parsedFiles) {
     for (const row of parsed.rows) {
-      const normalizedRow = normalizeCookieRow(row, columnMap, includeSubDomain);
-      const expiresVal = expiresIdx >= 0 ? normalizedRow[expiresIdx] : null;
-      const cookieName = nameIdx >= 0 ? normalizedRow[nameIdx] : '';
+      const normalisedRow = normaliseCookieRow(row, columnMap, includeSubDomain);
+      const expiresVal = expiresIdx >= 0 ? normalisedRow[expiresIdx] : null;
+      const cookieName = nameIdx >= 0 ? normalisedRow[nameIdx] : '';
       rows.push({
-        row: normalizedRow,
+        row: normalisedRow,
         validity: checkCookieValidity(expiresVal),
         sessionType: classifyCookie(cookieName),
         headers,
@@ -655,7 +655,7 @@ function renderNotesPage(searchQuery = '') {
   notesShown = Math.min(PAGE_SIZE, filtered.length);
 
   const total = notesData.entries.length;
-  const statsData = summarizeNotes(filtered);
+  const statsData = summariseNotes(filtered);
   summary.textContent = filtered.length !== total
     ? `Showing ${filtered.length.toLocaleString()} of ${total.toLocaleString()} notes from ${notesData.fileCount} file(s)`
     : `${total.toLocaleString()} notes from ${notesData.fileCount} file(s)`;

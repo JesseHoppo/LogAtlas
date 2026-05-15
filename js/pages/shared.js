@@ -168,8 +168,8 @@ export function parseDownloadSize(rawValue) {
   const raw = String(rawValue).trim();
   if (!raw) return { raw: '', bytes: null, display: '' };
 
-  const normalized = raw.replace(/,/g, '');
-  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*(bytes?|b|kb|mb|gb|tb)?$/i);
+  const normalised = raw.replace(/,/g, '');
+  const match = normalised.match(/^(\d+(?:\.\d+)?)\s*(bytes?|b|kb|mb|gb|tb)?$/i);
   if (!match) {
     return { raw, bytes: null, display: raw };
   }

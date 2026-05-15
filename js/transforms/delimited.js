@@ -53,7 +53,7 @@ const ROLE_TO_HEADER = {
 
 const KNOWN_HEADER_NAMES = new Set([
   ...Object.keys(ROLE_TO_HEADER),
-  ...Object.values(ROLE_TO_HEADER).map(normalizeHeaderCell),
+  ...Object.values(ROLE_TO_HEADER).map(normaliseHeaderCell),
   'uri',
   'host',
   'hostname',
@@ -123,7 +123,7 @@ const KNOWN_HEADER_NAMES = new Set([
   'key',
 ]);
 
-function normalizeHeaderCell(value) {
+function normaliseHeaderCell(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
@@ -173,7 +173,7 @@ function detectHeaderRow(firstLine, delimiter) {
 
   let matches = 0;
   for (const cell of cells) {
-    if (KNOWN_HEADER_NAMES.has(normalizeHeaderCell(cell))) matches++;
+    if (KNOWN_HEADER_NAMES.has(normaliseHeaderCell(cell))) matches++;
   }
 
   return matches >= Math.max(2, Math.ceil(cells.length / 2));
@@ -426,7 +426,7 @@ export function buildPasswordDataset(records) {
   return { headers, rows };
 }
 
-export function finalizeCredentialDataset(parsed) {
+export function finaliseCredentialDataset(parsed) {
   if (!parsed || !parsed.rows || parsed.rows.length === 0) return null;
 
   const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));

@@ -18,8 +18,8 @@ import {
   SYSINFO_CAPTURE_SECTION_PATTERN,
   SYSINFO_STRUCTURED_KEY_PATTERN,
   SYSINFO_MULTILINE_KEY_PATTERN,
-  normalizeText,
-  normalizeSeparators,
+  normaliseText,
+  normaliseSeparators,
   stripLeadingNoiseLines,
   decodeHtmlEntities,
   isPromotionalNoiseLine,
@@ -69,7 +69,7 @@ function inferTokenKind(value, accountId = '', hint = '') {
   return 'Token';
 }
 
-function sanitizeStructuredValue(value, maxLength = 500) {
+function sanitiseStructuredValue(value, maxLength = 500) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (text.length <= maxLength) return text;
   return text.slice(0, maxLength - 1) + '\u2026';
@@ -157,7 +157,7 @@ function removePromotionalNoise(text) {
     .join('\n');
 }
 
-function normalizeSysinfoLine(rawLine) {
+function normaliseSysinfoLine(rawLine) {
   return String(rawLine || '')
     .trim()
     .replace(/^[\p{So}\p{Sk}\u200d\ufe0f]+\s*/u, '')
@@ -194,9 +194,9 @@ function parseSystemInfoTextEntries(text, requireStructuredStart = true) {
     pendingValues = [];
   };
 
-  for (const rawLine of normalizeText(text).split('\n')) {
+  for (const rawLine of normaliseText(text).split('\n')) {
     const trimmed = rawLine.trim();
-    const clean = normalizeSysinfoLine(rawLine);
+    const clean = normaliseSysinfoLine(rawLine);
     const isIndented = /^[\t ]+/.test(rawLine);
 
     if (!trimmed) {
@@ -258,16 +258,16 @@ function parseSystemInfoTextEntries(text, requireStructuredStart = true) {
 }
 
 export function parseSystemInfoFile(text, fileName = '') {
-  const clean = normalizeText(text);
+  const clean = normaliseText(text);
 
   if (/\.json$/i.test(fileName)) {
     try {
       const entries = {};
       for (const [key, value] of flattenObjectEntries(JSON.parse(clean))) {
-        const normalizedKey = String(key || '').trim();
-        const normalizedValue = String(value || '').trim();
-        if (!normalizedKey || !normalizedValue || normalizedValue === 'null' || normalizedValue === '[]') continue;
-        if (!entries[normalizedKey]) entries[normalizedKey] = normalizedValue;
+        const normalisedKey = String(key || '').trim();
+        const normalisedValue = String(value || '').trim();
+        if (!normalisedKey || !normalisedValue || normalisedValue === 'null' || normalisedValue === '[]') continue;
+        if (!entries[normalisedKey]) entries[normalisedKey] = normalisedValue;
       }
       if (Object.keys(entries).length > 0) {
         return {
@@ -296,12 +296,12 @@ export function parseSystemInfoFile(text, fileName = '') {
 }
 
 export function parseHistoryFile(text, config) {
-  const clean = normalizeText(text);
+  const clean = normaliseText(text);
 
   if (config) return parseWithConfig(clean, config);
 
-  const normalized = removePromotionalNoise(normalizeSeparators(clean));
-  const nonNoiseLines = normalized
+  const normalised = removePromotionalNoise(normaliseSeparators(clean));
+  const nonNoiseLines = normalised
     .split('\n')
     .map(line => line.trim())
     .filter(line => line && !isPromotionalNoiseLine(line));
@@ -312,7 +312,7 @@ export function parseHistoryFile(text, config) {
   }
 
   const blockRows = [];
-  for (const block of normalized.split(/\n\s*\n+/).filter(block => block.trim())) {
+  for (const block of normalised.split(/\n\s*\n+/).filter(block => block.trim())) {
     let url = '';
     let title = '';
     let visits = '1';
@@ -340,14 +340,14 @@ export function parseHistoryFile(text, config) {
     return { headers: ['URL', 'Title', 'Visits', 'Last Visit'], rows: blockRows };
   }
 
-  const format = detectFormat(normalized);
+  const format = detectFormat(normalised);
   if (format && format.type === 'delimited') {
-    const parsed = parseDelimited(normalized, format);
+    const parsed = parseDelimited(normalised, format);
     if (hasParsedHistoryUrls(parsed)) return parsed;
   }
 
   if (format && format.type === 'block') {
-    const result = parseBlocks(normalized, format.headers);
+    const result = parseBlocks(normalised, format.headers);
     if (result && result.rows.length > 0) {
       const indices = {};
       for (let i = 0; i < result.headers.length; i++) {
@@ -395,16 +395,16 @@ export function parseHistoryFile(text, config) {
 }
 
 export function parseDownloadFile(text) {
-  const clean = normalizeText(text);
-  const normalized = normalizeSeparators(clean);
+  const clean = normaliseText(text);
+  const normalised = normaliseSeparators(clean);
 
-  const format = detectFormat(normalized);
+  const format = detectFormat(normalised);
   if (format && format.type === 'delimited') {
-    return parseDelimited(normalized, format);
+    return parseDelimited(normalised, format);
   }
 
   if (format && format.type === 'block') {
-    const result = parseBlocks(normalized, format.headers);
+    const result = parseBlocks(normalised, format.headers);
     if (result && result.rows.length > 0) {
       const indices = {};
       for (let i = 0; i < result.headers.length; i++) {
@@ -422,7 +422,7 @@ export function parseDownloadFile(text) {
     }
   }
 
-  const lines = normalized.split('\n');
+  const lines = normalised.split('\n');
   const rows = [];
   let i = 0;
   while (i < lines.length) {
@@ -458,7 +458,7 @@ export function parseDownloadFile(text) {
   return null;
 }
 
-function normalizeDomainDetectTarget(target) {
+function normaliseDomainDetectTarget(target) {
   return target
     .replace(/^[-*•]\s+/, '')
     .replace(/\s{2,}/g, ' ')
@@ -476,7 +476,7 @@ function extractDomainDetectEntries(segment, section) {
   let match;
   while ((match = DOMAIN_DETECT_LABELED_ENTRY.exec(clean)) !== null) {
     const label = match[1].trim();
-    const target = normalizeDomainDetectTarget(match[2]);
+    const target = normaliseDomainDetectTarget(match[2]);
     const count = match[3] || '1';
     if (!target || isPromotionalNoiseLine(target)) continue;
     rows.push([section || 'General', label, target, count]);
@@ -486,7 +486,7 @@ function extractDomainDetectEntries(segment, section) {
 
   DOMAIN_DETECT_UNLABELED_ENTRY.lastIndex = 0;
   while ((match = DOMAIN_DETECT_UNLABELED_ENTRY.exec(clean)) !== null) {
-    const target = normalizeDomainDetectTarget(match[2]);
+    const target = normaliseDomainDetectTarget(match[2]);
     const count = match[3] || '1';
     if (!target || isPromotionalNoiseLine(target)) continue;
     rows.push([section || 'General', '', target, count]);
@@ -496,7 +496,7 @@ function extractDomainDetectEntries(segment, section) {
 
   const plainTargets = clean
     .split(/\s*,\s*/)
-    .map(normalizeDomainDetectTarget)
+    .map(normaliseDomainDetectTarget)
     .filter(target => target && !isPromotionalNoiseLine(target));
   for (const target of plainTargets) {
     rows.push([section || 'General', '', target, '1']);
@@ -520,7 +520,7 @@ function splitDomainDetectSection(line) {
 }
 
 export function parseDomainDetectFile(text) {
-  const clean = removePromotionalNoise(normalizeSeparators(normalizeText(text)));
+  const clean = removePromotionalNoise(normaliseSeparators(normaliseText(text)));
   const rows = [];
   let currentSection = 'General';
 
@@ -589,7 +589,7 @@ function splitClipboardEntries(clean) {
 }
 
 export function parseClipboardFile(text) {
-  const clean = normalizeText(text).trim();
+  const clean = normaliseText(text).trim();
   if (!clean) return null;
 
   const rows = [];
@@ -638,7 +638,7 @@ function parseBookmarkJson(value, folder = '', rows = []) {
 }
 
 export function parseBookmarkFile(text) {
-  const clean = normalizeSeparators(normalizeText(text)).trim();
+  const clean = normaliseSeparators(normaliseText(text)).trim();
   if (!clean) return null;
 
   if (clean.startsWith('{') || clean.startsWith('[')) {
@@ -695,14 +695,14 @@ export function parseBookmarkFile(text) {
 }
 
 export function parseBrowserMetadataFile(text) {
-  const clean = normalizeText(text).trim();
+  const clean = normaliseText(text).trim();
   if (!clean) return null;
 
   if (clean.startsWith('{') || clean.startsWith('[')) {
     try {
       const obj = JSON.parse(clean);
       const rows = flattenObjectEntries(obj)
-        .map(([key, value]) => [key, sanitizeStructuredValue(value)])
+        .map(([key, value]) => [key, sanitiseStructuredValue(value)])
         .filter(([, value]) => value);
       if (rows.length > 0) return { headers: ['Key', 'Value'], rows };
     } catch {
@@ -715,9 +715,9 @@ export function parseBrowserMetadataFile(text) {
   for (const line of lines) {
     const match = line.match(/^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*(?:=\s*|:\s+)(.*)$/);
     if (match) {
-      rows.push([match[1].trim(), sanitizeStructuredValue(match[2])]);
+      rows.push([match[1].trim(), sanitiseStructuredValue(match[2])]);
     } else {
-      rows.push([rows.length === 0 && lines.length === 1 ? 'Value' : `Entry ${rows.length + 1}`, sanitizeStructuredValue(line)]);
+      rows.push([rows.length === 0 && lines.length === 1 ? 'Value' : `Entry ${rows.length + 1}`, sanitiseStructuredValue(line)]);
     }
   }
 
@@ -725,7 +725,7 @@ export function parseBrowserMetadataFile(text) {
 }
 
 export function parseAccountTokenFile(text, hint = '') {
-  const clean = removePromotionalNoise(normalizeSeparators(normalizeText(text)));
+  const clean = removePromotionalNoise(normaliseSeparators(normaliseText(text)));
   if (!clean) return null;
 
   const rows = [];
@@ -736,8 +736,8 @@ export function parseAccountTokenFile(text, hint = '') {
     : '';
 
   const appendRow = (tokenValue, accountValue = '', extraNote = '', hintText = '') => {
-    const token = sanitizeStructuredValue(tokenValue, 1200);
-    const accountId = sanitizeStructuredValue(accountValue, 300);
+    const token = sanitiseStructuredValue(tokenValue, 1200);
+    const accountId = sanitiseStructuredValue(accountValue, 300);
     const rowNote = [note, extraNote].filter(Boolean).join('; ');
 
     if (token && (/\s/.test(token) || !/[A-Za-z0-9]/.test(token))) return;
@@ -764,7 +764,7 @@ export function parseAccountTokenFile(text, hint = '') {
 
       const headerMatch = line.match(/^=+\s*(.*?)\s*=+$/);
       if (headerMatch) {
-        headerHint = sanitizeStructuredValue(headerMatch[1], 240);
+        headerHint = sanitiseStructuredValue(headerMatch[1], 240);
         const userMatch = headerHint.match(/\buser=([^;=\s]+)/i);
         if (userMatch && !accountId) accountId = userMatch[1].trim();
         continue;
@@ -786,7 +786,7 @@ export function parseAccountTokenFile(text, hint = '') {
       match = line.match(/^(?:profile|host)\s*[:=]\s*(.+)$/i);
       if (match) {
         const label = /^profile/i.test(line) ? 'Profile' : 'Host';
-        extraNote = [extraNote, `${label}: ${sanitizeStructuredValue(match[1], 240)}`].filter(Boolean).join('; ');
+        extraNote = [extraNote, `${label}: ${sanitiseStructuredValue(match[1], 240)}`].filter(Boolean).join('; ');
       }
     }
 
@@ -880,7 +880,7 @@ function parseStructuredServiceBlocks(clean) {
       if (!line) continue;
       const match = line.match(/^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*(?:=\s*|:\s+)(.*)$/);
       if (!match) continue;
-      record[match[1].trim()] = sanitizeStructuredValue(match[2]);
+      record[match[1].trim()] = sanitiseStructuredValue(match[2]);
     }
     const section = record['Account Name'] || record['Display Name'] || record['Email'] || record.clsid || `Record ${i + 1}`;
     for (const [key, value] of Object.entries(record)) {
@@ -909,21 +909,21 @@ function parseThunderbirdPrefs(clean) {
 
     const parts = key.split('.');
     const section = parts.slice(0, Math.min(parts.length, 3)).join('.');
-    rows.push([section || 'Preferences', key, sanitizeStructuredValue(value, 1200)]);
+    rows.push([section || 'Preferences', key, sanitiseStructuredValue(value, 1200)]);
   }
 
   return rows;
 }
 
 export function parseServiceArtifactFile(text) {
-  const clean = removePromotionalNoise(normalizeText(text)).trim();
+  const clean = removePromotionalNoise(normaliseText(text)).trim();
   if (!clean) return null;
 
   if (clean.startsWith('{') || clean.startsWith('[')) {
     try {
       const obj = JSON.parse(clean);
       const rows = flattenObjectEntries(obj)
-        .map(([key, value]) => ['JSON', key, sanitizeStructuredValue(value)])
+        .map(([key, value]) => ['JSON', key, sanitiseStructuredValue(value)])
         .filter(([, , value]) => value);
       if (rows.length > 0) return { headers: ['Section', 'Key', 'Value'], rows };
     } catch {
@@ -947,7 +947,7 @@ export function parseServiceArtifactFile(text) {
     if (!line) continue;
     const match = line.match(/^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*(?:=\s*|:\s+)(.*)$/);
     if (match) {
-      kvRows.push(['Config', match[1].trim(), sanitizeStructuredValue(match[2])]);
+      kvRows.push(['Config', match[1].trim(), sanitiseStructuredValue(match[2])]);
     }
   }
   if (kvRows.length > 0) {
@@ -958,7 +958,7 @@ export function parseServiceArtifactFile(text) {
   const seen = new Set();
 
   for (const matchText of clean.match(URL_INDICATOR_PATTERN) || []) {
-    const value = sanitizeStructuredValue(matchText);
+    const value = sanitiseStructuredValue(matchText);
     if (!seen.has(`url:${value}`)) {
       seen.add(`url:${value}`);
       indicatorRows.push(['Indicator', 'URL', value]);
@@ -966,7 +966,7 @@ export function parseServiceArtifactFile(text) {
   }
 
   for (const matchText of clean.match(WINDOWS_PATH_PATTERN) || []) {
-    const value = sanitizeStructuredValue(matchText);
+    const value = sanitiseStructuredValue(matchText);
     if (!seen.has(`path:${value}`)) {
       seen.add(`path:${value}`);
       indicatorRows.push(['Indicator', 'Path', value]);
@@ -975,7 +975,7 @@ export function parseServiceArtifactFile(text) {
 
   const tokenCandidates = clean.match(/[A-Za-z0-9._-]{20,}\.[A-Za-z0-9._-]{4,}\.[A-Za-z0-9._-]{10,}/g) || [];
   for (const candidate of tokenCandidates.slice(0, 10)) {
-    const value = sanitizeStructuredValue(candidate, 300);
+    const value = sanitiseStructuredValue(candidate, 300);
     if (!seen.has(`token:${value}`)) {
       seen.add(`token:${value}`);
       indicatorRows.push(['Indicator', inferTokenKind(value), value]);

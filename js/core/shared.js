@@ -102,10 +102,10 @@ function collectFileNodes(node, path, results) {
 
 // Domain extraction
 
-function normalizeDomain(hostname) {
-  const normalized = String(hostname || '').toLowerCase().replace(/^www\./, '');
-  if (!normalized || normalized === 'localhost') return null;
-  return normalized;
+function normaliseDomain(hostname) {
+  const normalised = String(hostname || '').toLowerCase().replace(/^www\./, '');
+  if (!normalised || normalised === 'localhost') return null;
+  return normalised;
 }
 
 function extractDomain(url) {
@@ -113,10 +113,10 @@ function extractDomain(url) {
   try {
     let u = url.trim();
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-    return normalizeDomain(new URL(u).hostname);
+    return normaliseDomain(new URL(u).hostname);
   } catch {
     const match = url.match(/(?:https?:\/\/)?(?:www\.)?([^\/\s:]+)/i);
-    return normalizeDomain(match ? match[1] : '');
+    return normaliseDomain(match ? match[1] : '');
   }
 }
 
@@ -151,15 +151,15 @@ function inferProfileFromPath(pathText) {
   return pathProfileMatch ? pathProfileMatch[1].trim() : '';
 }
 
-function normalizeAutofillValue(value) {
+function normaliseAutofillValue(value) {
   return String(value || '')
     .replace(/^value\s*:\s*/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function normalizeAutofillFieldName(name) {
-  return normalizeAutofillValue(name)
+function normaliseAutofillFieldName(name) {
+  return normaliseAutofillValue(name)
     .replace(/^(?:name|field|label)\s*:\s*/i, '')
     .trim();
 }
@@ -168,41 +168,41 @@ function isLikelyAutofillEmail(value) {
   return Boolean(extractAutofillEmail(value));
 }
 
-function canonicalizeAutofillEmail(value) {
-  const normalized = extractAutofillEmail(value) || normalizeAutofillValue(value);
-  return normalized ? normalized.toLowerCase() : '';
+function canonicaliseAutofillEmail(value) {
+  const normalised = extractAutofillEmail(value) || normaliseAutofillValue(value);
+  return normalised ? normalised.toLowerCase() : '';
 }
 
 function isLikelyAutofillPhone(value) {
-  const normalized = normalizeAutofillValue(value);
-  if (!normalized || !/^[+()\d\s-]+$/.test(normalized)) return false;
-  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/.test(normalized)) return false;
+  const normalised = normaliseAutofillValue(value);
+  if (!normalised || !/^[+()\d\s-]+$/.test(normalised)) return false;
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/.test(normalised)) return false;
 
-  const digits = normalized.replace(/\D/g, '');
+  const digits = normalised.replace(/\D/g, '');
   return digits.length >= 7 && digits.length <= 15;
 }
 
-function canonicalizeAutofillPhone(value) {
-  const digits = normalizeAutofillValue(value).replace(/\D/g, '');
+function canonicaliseAutofillPhone(value) {
+  const digits = normaliseAutofillValue(value).replace(/\D/g, '');
   if (digits.length < 7 || digits.length > 15) return '';
   return digits;
 }
 
-function normalizeAutofillLetters(value) {
+function normaliseAutofillLetters(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '');
 }
 
 function tokenizeAutofillName(value) {
-  return normalizeAutofillValue(value)
+  return normaliseAutofillValue(value)
     .split(/\s+/)
     .map((token) => token.replace(/^[^\p{L}]+|[^\p{L}.']+$/gu, ''))
     .filter(Boolean);
 }
 
 function tokenizeAutofillFieldName(name) {
-  return normalizeAutofillFieldName(name)
+  return normaliseAutofillFieldName(name)
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
@@ -210,15 +210,15 @@ function tokenizeAutofillFieldName(name) {
 }
 
 function hasExcludedAutofillNameContext(name) {
-  if (AUTOFILL_NAME_FIELD_EXCLUSION_PATTERN.test(normalizeAutofillFieldName(name))) return true;
+  if (AUTOFILL_NAME_FIELD_EXCLUSION_PATTERN.test(normaliseAutofillFieldName(name))) return true;
   return tokenizeAutofillFieldName(name).some((token) => AUTOFILL_NAME_ENTITY_FIELD_TOKENS.has(token));
 }
 
 function getAutofillNameFieldRole(name) {
   if (hasExcludedAutofillNameContext(name)) return 'excluded';
 
-  const normalized = normalizeAutofillFieldName(name);
-  const tokens = tokenizeAutofillFieldName(normalized);
+  const normalised = normaliseAutofillFieldName(name);
+  const tokens = tokenizeAutofillFieldName(normalised);
 
   if (tokens.includes('firstname') || tokens.includes('first') || tokens.includes('given')) return 'given';
   if (tokens.includes('middlename') || tokens.includes('middle')) return 'middle';
@@ -227,18 +227,18 @@ function getAutofillNameFieldRole(name) {
   if (tokens.includes('fullname') || (tokens.includes('full') && tokens.includes('name'))) return 'full';
   if ((tokens.includes('contact') || tokens.includes('customer') || tokens.includes('recipient') || tokens.includes('payer')) && tokens.includes('name')) return 'full';
   if ((tokens.includes('billing') || tokens.includes('shipping')) && tokens.includes('name')) return 'full';
-  if (AUTOFILL_NAME_STRONG_FIELD_PATTERN.test(normalized)) return 'full';
-  if (AUTOFILL_NAME_WEAK_FIELD_PATTERN.test(normalized)) return 'generic';
+  if (AUTOFILL_NAME_STRONG_FIELD_PATTERN.test(normalised)) return 'full';
+  if (AUTOFILL_NAME_WEAK_FIELD_PATTERN.test(normalised)) return 'generic';
   return 'none';
 }
 
 function isRepeatedCharacterToken(token) {
-  const letters = normalizeAutofillLetters(token).replace(/[^\p{L}]/gu, '').toLowerCase();
+  const letters = normaliseAutofillLetters(token).replace(/[^\p{L}]/gu, '').toLowerCase();
   return letters.length >= 2 && new Set(letters).size === 1;
 }
 
 function isLikelyAutofillNameToken(token, allowInitial = false) {
-  const letters = normalizeAutofillLetters(token).replace(/[^\p{L}]/gu, '');
+  const letters = normaliseAutofillLetters(token).replace(/[^\p{L}]/gu, '');
   if (!letters) return false;
   if (letters.length === 1) return allowInitial;
   if (letters.length < 2 || letters.length > 24) return false;
@@ -253,57 +253,57 @@ function isLikelyAutofillNameToken(token, allowInitial = false) {
 }
 
 function isLikelyAutofillName(value, { allowSingleToken = true } = {}) {
-  const normalized = normalizeAutofillValue(value);
-  if (!normalized || normalized.length < 2 || normalized.length > 60) return false;
-  if (/@|[_%:/\\]|^\W+$/.test(normalized)) return false;
-  if (/www|https?/i.test(normalized)) return false;
-  if (/\d/.test(normalized)) return false;
-  const tokens = tokenizeAutofillName(normalized);
+  const normalised = normaliseAutofillValue(value);
+  if (!normalised || normalised.length < 2 || normalised.length > 60) return false;
+  if (/@|[_%:/\\]|^\W+$/.test(normalised)) return false;
+  if (/www|https?/i.test(normalised)) return false;
+  if (/\d/.test(normalised)) return false;
+  const tokens = tokenizeAutofillName(normalised);
   if (tokens.length === 0 || tokens.length > 5) return false;
   if (!allowSingleToken && tokens.length === 1) return false;
   const allowInitials = tokens.length > 1;
   if (tokens.some((token) => !isLikelyAutofillNameToken(token, allowInitials))) return false;
   if (tokens.length > 1) {
-    const longTokens = tokens.filter((token) => normalizeAutofillLetters(token).replace(/[^\p{L}]/gu, '').length >= 3);
+    const longTokens = tokens.filter((token) => normaliseAutofillLetters(token).replace(/[^\p{L}]/gu, '').length >= 3);
     if (longTokens.length === 0) return false;
   }
-  return AUTOFILL_NAME_VALUE_PATTERN.test(normalized);
+  return AUTOFILL_NAME_VALUE_PATTERN.test(normalised);
 }
 
 function isStrongAutofillNameField(name) {
-  const normalized = normalizeAutofillFieldName(name);
-  if (hasExcludedAutofillNameContext(normalized)) return false;
-  return AUTOFILL_NAME_STRONG_FIELD_PATTERN.test(normalized);
+  const normalised = normaliseAutofillFieldName(name);
+  if (hasExcludedAutofillNameContext(normalised)) return false;
+  return AUTOFILL_NAME_STRONG_FIELD_PATTERN.test(normalised);
 }
 
 function isWeakAutofillNameField(name) {
-  const normalized = normalizeAutofillFieldName(name);
-  return AUTOFILL_NAME_WEAK_FIELD_PATTERN.test(normalized)
-    && !hasExcludedAutofillNameContext(normalized);
+  const normalised = normaliseAutofillFieldName(name);
+  return AUTOFILL_NAME_WEAK_FIELD_PATTERN.test(normalised)
+    && !hasExcludedAutofillNameContext(normalised);
 }
 
 function isLikelyAutofillAddressField(name) {
-  const normalized = normalizeAutofillFieldName(name);
-  return AUTOFILL_ADDRESS_STRONG_FIELD_PATTERN.test(normalized);
+  const normalised = normaliseAutofillFieldName(name);
+  return AUTOFILL_ADDRESS_STRONG_FIELD_PATTERN.test(normalised);
 }
 
 function isLikelyAutofillAddressValue(value) {
-  const normalized = normalizeAutofillValue(value);
-  if (!normalized || normalized.length > 140) return false;
-  if (isLikelyAutofillEmail(normalized)) return false;
-  if (isLikelyAutofillPhone(normalized)) return false;
-  if (/^(?:https?|file):/i.test(normalized)) return false;
-  if (/^[A-F0-9:-]{12,}$/i.test(normalized)) return false;
-  if (normalized.split(/\s+/).length > 16) return false;
+  const normalised = normaliseAutofillValue(value);
+  if (!normalised || normalised.length > 140) return false;
+  if (isLikelyAutofillEmail(normalised)) return false;
+  if (isLikelyAutofillPhone(normalised)) return false;
+  if (/^(?:https?|file):/i.test(normalised)) return false;
+  if (/^[A-F0-9:-]{12,}$/i.test(normalised)) return false;
+  if (normalised.split(/\s+/).length > 16) return false;
   return true;
 }
 
 function extractAutofillEmail(value) {
-  const normalized = normalizeAutofillValue(value);
-  if (!normalized) return '';
-  if (EMAIL_REGEX.test(normalized)) return normalized;
+  const normalised = normaliseAutofillValue(value);
+  if (!normalised) return '';
+  if (EMAIL_REGEX.test(normalised)) return normalised;
 
-  const matches = normalized.match(SCAN_EMAIL_REGEX);
+  const matches = normalised.match(SCAN_EMAIL_REGEX);
   return matches && matches.length > 0 ? matches[0] : '';
 }
 
@@ -313,16 +313,16 @@ function buildAutofillNameSupport(entries) {
   const phraseTokenCounts = new Map();
 
   for (const entry of entries || []) {
-    const fieldName = normalizeAutofillFieldName(entry?.name || '');
-    const value = normalizeAutofillValue(entry?.value || '');
+    const fieldName = normaliseAutofillFieldName(entry?.name || '');
+    const value = normaliseAutofillValue(entry?.value || '');
     if (!value) continue;
 
     const role = getAutofillNameFieldRole(fieldName);
     if (role === 'excluded' || role === 'none') continue;
     if (!isLikelyAutofillName(value)) continue;
 
-    const normalizedValue = value.toLowerCase();
-    valueCounts.set(normalizedValue, (valueCounts.get(normalizedValue) || 0) + 1);
+    const normalisedValue = value.toLowerCase();
+    valueCounts.set(normalisedValue, (valueCounts.get(normalisedValue) || 0) + 1);
 
     const tokens = tokenizeAutofillName(value);
     if (tokens.length === 1 && role !== 'generic') {
@@ -349,8 +349,8 @@ function getAutofillNameTokenSupport(token, support) {
 }
 
 function isSupportedAutofillName(value, fieldName, support) {
-  const normalizedField = normalizeAutofillFieldName(fieldName);
-  const role = getAutofillNameFieldRole(normalizedField);
+  const normalisedField = normaliseAutofillFieldName(fieldName);
+  const role = getAutofillNameFieldRole(normalisedField);
   if (role === 'excluded' || role === 'none') return false;
 
   const tokens = tokenizeAutofillName(value);
@@ -359,7 +359,7 @@ function isSupportedAutofillName(value, fieldName, support) {
 
   if (tokens.length === 1) {
     if (role === 'generic') return false;
-    const letterCount = normalizeAutofillLetters(tokens[0]).replace(/[^\p{L}]/gu, '').length;
+    const letterCount = normaliseAutofillLetters(tokens[0]).replace(/[^\p{L}]/gu, '').length;
     if (letterCount < 3) return false;
     const tokenSupport = support?.phraseTokenCounts?.get(tokens[0].toLowerCase()) || 0;
     return tokenSupport > 0;
@@ -379,17 +379,17 @@ function isSupportedAutofillName(value, fieldName, support) {
   return true;
 }
 
-function dedupeAutofillStrings(values, canonicalize) {
+function dedupeAutofillStrings(values, canonicalise) {
   const out = [];
   const seen = new Set();
 
   for (const raw of values) {
-    const display = normalizeAutofillValue(raw);
+    const display = normaliseAutofillValue(raw);
     if (!display) continue;
-    const key = canonicalize ? canonicalize(display) : display.toLowerCase();
+    const key = canonicalise ? canonicalise(display) : display.toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    out.push(canonicalize === canonicalizeAutofillEmail ? key : display);
+    out.push(canonicalise === canonicaliseAutofillEmail ? key : display);
   }
 
   return out;
@@ -404,8 +404,8 @@ function classifyAutofillEntries(entries, maxOther = 20) {
   const nameSupport = buildAutofillNameSupport(entries);
 
   for (const entry of entries || []) {
-    const name = normalizeAutofillFieldName(entry?.name || '');
-    const value = normalizeAutofillValue(entry?.value || '');
+    const name = normaliseAutofillFieldName(entry?.name || '');
+    const value = normaliseAutofillValue(entry?.value || '');
     if (!name || !value) continue;
 
     const lower = name.toLowerCase();
@@ -434,8 +434,8 @@ function classifyAutofillEntries(entries, maxOther = 20) {
   const otherAll = other.map((entry) => ({ ...entry }));
 
   return {
-    emails: dedupeAutofillStrings(emails, canonicalizeAutofillEmail),
-    phones: dedupeAutofillStrings(phones, canonicalizeAutofillPhone),
+    emails: dedupeAutofillStrings(emails, canonicaliseAutofillEmail),
+    phones: dedupeAutofillStrings(phones, canonicaliseAutofillPhone),
     names: dedupeAutofillStrings(names),
     addresses: dedupeAutofillStrings(addresses),
     other: otherAll.slice(0, maxOther),
@@ -477,8 +477,8 @@ function parseTimestampValue(value) {
     }
   }
 
-  const normalized = str.includes('T') ? str : str.replace(' ', 'T');
-  const native = new Date(normalized);
+  const normalised = str.includes('T') ? str : str.replace(' ', 'T');
+  const native = new Date(normalised);
   if (!isNaN(native.getTime()) && native.getFullYear() > 1970 && native.getFullYear() < 3000) {
     return native;
   }
@@ -582,9 +582,9 @@ function downloadBlob(content, filename, mimeType) {
 function topN(arr, n) {
   const counts = new Map();
   for (const item of arr) {
-    const normalized = String(item || '').trim();
-    if (!normalized) continue;
-    counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    const normalised = String(item || '').trim();
+    if (!normalised) continue;
+    counts.set(normalised, (counts.get(normalised) || 0) + 1);
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -633,7 +633,7 @@ async function copyToClipboard(text) {
   }
 }
 
-function normalizePath(value) {
+function normalisePath(value) {
   return String(value || '').replace(/\\/g, '/');
 }
 
@@ -664,18 +664,18 @@ function uniqueLimited(values, limit = 5) {
   const seen = new Set();
   const result = [];
   for (const value of values || []) {
-    const normalized = String(value || '').trim();
-    if (!normalized) continue;
-    const key = normalized.toLowerCase();
+    const normalised = String(value || '').trim();
+    if (!normalised) continue;
+    const key = normalised.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push(normalized);
+    result.push(normalised);
     if (result.length >= limit) break;
   }
   return result;
 }
 
-function summarizeList(values, limit = 2) {
+function summariseList(values, limit = 2) {
   const items = uniqueLimited(values, limit + 1);
   if (items.length === 0) return '';
   if (items.length <= limit) return items.join(', ');
@@ -700,10 +700,10 @@ export {
   topN,
   showNotification,
   copyToClipboard,
-  normalizePath,
+  normalisePath,
   truncateText,
   collectUniqueMatches,
   uniqueLimited,
-  summarizeList,
+  summariseList,
   randomPassword,
 };

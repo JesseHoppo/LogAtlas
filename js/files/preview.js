@@ -74,7 +74,7 @@ function decodeXmlEntities(text) {
     .replace(/&apos;/g, "'");
 }
 
-function normalizeExtractedText(text) {
+function normaliseExtractedText(text) {
   return String(text || '')
     .replace(/\r/g, '')
     .replace(/[ \t]+\n/g, '\n')
@@ -129,7 +129,7 @@ async function extractWordOpenXmlPreview(entryMap) {
   const paragraphs = Array.from(doc.getElementsByTagNameNS('*', 'p'));
   const blocks = [];
   for (const paragraph of paragraphs) {
-    const text = normalizeExtractedText(collectXmlText(paragraph));
+    const text = normaliseExtractedText(collectXmlText(paragraph));
     if (text) blocks.push(text);
   }
 
@@ -151,7 +151,7 @@ async function extractSlideOpenXmlPreview(entryMap) {
     if (!doc) continue;
 
     const textNodes = Array.from(doc.getElementsByTagNameNS('*', 't'))
-      .map(node => normalizeExtractedText(node.textContent || ''))
+      .map(node => normaliseExtractedText(node.textContent || ''))
       .filter(Boolean);
 
     if (textNodes.length === 0) continue;
@@ -173,8 +173,8 @@ function readWorkbookRelationships(relsText) {
     const id = rel.getAttribute('Id');
     const target = rel.getAttribute('Target');
     if (!id || !target) continue;
-    const normalized = target.replace(/^\/+/, '').replace(/^xl\//i, '');
-    map.set(id, `xl/${normalized}`);
+    const normalised = target.replace(/^\/+/, '').replace(/^xl\//i, '');
+    map.set(id, `xl/${normalised}`);
   }
   return map;
 }
@@ -184,7 +184,7 @@ function extractSharedStrings(sharedStringsText) {
   if (!sharedDoc) return [];
 
   return Array.from(sharedDoc.getElementsByTagNameNS('*', 'si'))
-    .map(node => normalizeExtractedText(collectXmlText(node)));
+    .map(node => normaliseExtractedText(collectXmlText(node)));
 }
 
 function readWorkbookSheets(workbookText, relMap) {
@@ -218,7 +218,7 @@ function extractWorksheetValues(sheetText, sharedStrings) {
 
     if (type === 'inlineStr') {
       const inlineNode = cell.getElementsByTagNameNS('*', 'is')[0];
-      value = normalizeExtractedText(collectXmlText(inlineNode));
+      value = normaliseExtractedText(collectXmlText(inlineNode));
     } else {
       const valueNode = cell.getElementsByTagNameNS('*', 'v')[0];
       const rawValue = valueNode ? String(valueNode.textContent || '').trim() : '';
@@ -233,7 +233,7 @@ function extractWorksheetValues(sheetText, sharedStrings) {
       }
     }
 
-    value = normalizeExtractedText(value);
+    value = normaliseExtractedText(value);
     if (!value) continue;
     values.push(`${ref}\t${value}`);
   }
@@ -781,7 +781,7 @@ async function showPreview(name, size, pathSegments) {
     elBody.innerHTML = renderPdfPreview(content, name);
   } else if (isOfficeOpenXmlFile(name)) {
     try {
-      const text = normalizeExtractedText(await extractOfficeOpenXmlPreview(content, name));
+      const text = normaliseExtractedText(await extractOfficeOpenXmlPreview(content, name));
       if (requestId !== previewRequestId) return;
       if (!text) {
         elBody.innerHTML = renderError('Limited preview is not available for this Office file.');
@@ -808,7 +808,7 @@ async function showPreview(name, size, pathSegments) {
       elBody.innerHTML = renderError('Failed to decode file content.');
     }
   } else if (looksLikeText(content)) {
-    // Extension not recognized but content looks like text
+    // Extension not recognised but content looks like text
     try {
       const text = SHARED_TEXT_DECODER.decode(content);
       currentDecodedText = text;

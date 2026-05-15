@@ -28,16 +28,16 @@ const STORE_SERVICE_DEFINITIONS = Object.freeze([
   { name: 'Apple Keychain', category: 'Secret Store', patterns: [/keychain/i], extensionIds: [] },
 ]);
 
-function normalizeServiceText(value) {
+function normaliseServiceText(value) {
   return String(value || '').replace(/\\/g, '/').toLowerCase();
 }
 
 function findServiceDefinition(value, definitions) {
-  const normalized = normalizeServiceText(value);
-  if (!normalized) return null;
+  const normalised = normaliseServiceText(value);
+  if (!normalised) return null;
 
   for (const definition of definitions) {
-    if (definition.patterns.some((pattern) => pattern.test(normalized))) {
+    if (definition.patterns.some((pattern) => pattern.test(normalised))) {
       return definition;
     }
   }
@@ -46,14 +46,14 @@ function findServiceDefinition(value, definitions) {
 }
 
 function findStoreServiceByPath(pathText) {
-  const normalizedPath = normalizeServiceText(pathText);
-  if (!normalizedPath) return null;
+  const normalisedPath = normaliseServiceText(pathText);
+  if (!normalisedPath) return null;
 
   for (const definition of STORE_SERVICE_DEFINITIONS) {
-    if (definition.patterns.some((pattern) => pattern.test(normalizedPath))) {
+    if (definition.patterns.some((pattern) => pattern.test(normalisedPath))) {
       return definition;
     }
-    if (definition.extensionIds.some((id) => normalizedPath.includes(id))) {
+    if (definition.extensionIds.some((id) => normalisedPath.includes(id))) {
       return definition;
     }
   }
@@ -66,9 +66,9 @@ function decodeJwtPayload(token) {
   if (parts.length < 2) return null;
 
   try {
-    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padding = '='.repeat((4 - normalized.length % 4) % 4);
-    const decoded = atob(normalized + padding);
+    const normalised = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padding = '='.repeat((4 - normalised.length % 4) % 4);
+    const decoded = atob(normalised + padding);
     return JSON.parse(decoded);
   } catch {
     return null;

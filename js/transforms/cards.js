@@ -2,8 +2,8 @@
 
 import {
   CREDIT_CARD_KV_PATTERN,
-  normalizeText,
-  normalizeSeparators,
+  normaliseText,
+  normaliseSeparators,
 } from './shared.js';
 import {
   detectFormat,
@@ -170,7 +170,7 @@ function parsePipeDelimitedCardLine(line) {
 }
 
 export function parseCreditCardFile(text, config) {
-  const clean = normalizeSeparators(normalizeText(text));
+  const clean = normaliseSeparators(normaliseText(text));
 
   if (config) {
     const parsed = parseWithConfig(clean, config);

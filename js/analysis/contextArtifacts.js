@@ -1,5 +1,5 @@
 import { getFileExtension, formatBytes } from '../core/utils.js';
-import { extractBaseDomain, extractDomain, parseTimestampValue, normalizePath, truncateText, collectUniqueMatches } from '../core/shared.js';
+import { extractBaseDomain, extractDomain, parseTimestampValue, normalisePath, truncateText, collectUniqueMatches } from '../core/shared.js';
 import { URL_REGEX, SCAN_EMAIL_REGEX, SCAN_PHONE_REGEX } from '../core/definitions/patterns.js';
 
 const CREDENTIAL_HINT_REGEX = /(password|passcode|passphrase|pwd\b|username|login|credential|account|token|backup code|recovery code|密码|用户名|账号|登录名|登陆名|口令)/gi;
@@ -69,12 +69,12 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
     domains,
     credentialHints,
     walletHints,
-    source: normalizePath(sourcePath || fileName),
+    source: normalisePath(sourcePath || fileName),
     modifiedDate: parseTimestampValue(lastModified),
   };
 }
 
-function summarizeNotes(entries) {
+function summariseNotes(entries) {
   const list = entries || [];
   const urls = list.reduce((sum, entry) => sum + (entry.urls?.length || 0), 0);
   const emails = list.reduce((sum, entry) => sum + (entry.emails?.length || 0), 0);
@@ -90,8 +90,8 @@ function summarizeNotes(entries) {
 }
 
 function splitGrabCollection(pathText) {
-  const normalized = normalizePath(pathText);
-  const importantMatch = normalized.match(/^(.*?)(?:\/|^)(Important Files)\/(.+)$/i);
+  const normalised = normalisePath(pathText);
+  const importantMatch = normalised.match(/^(.*?)(?:\/|^)(Important Files)\/(.+)$/i);
   if (importantMatch) {
     return {
       collection: 'Important Files',
@@ -99,7 +99,7 @@ function splitGrabCollection(pathText) {
     };
   }
 
-  const grabMatch = normalized.match(/^(.*?)(?:\/|^)(FileGrabber)\/(.+)$/i);
+  const grabMatch = normalised.match(/^(.*?)(?:\/|^)(FileGrabber)\/(.+)$/i);
   if (grabMatch) {
     return {
       collection: 'FileGrabber',
@@ -125,12 +125,12 @@ function classifyGrabbedFile(sourcePath, sizeBytes = 0, lastModified = null) {
     extension: extension || '(none)',
     sizeBytes: Number(sizeBytes || 0),
     sizeDisplay: formatBytes(Number(sizeBytes || 0)),
-    source: normalizePath(sourcePath),
+    source: normalisePath(sourcePath),
     modifiedDate: parseTimestampValue(lastModified),
   };
 }
 
-function summarizeGrabbedFiles(entries) {
+function summariseGrabbedFiles(entries) {
   const list = entries || [];
   return {
     fileCount: list.length,
@@ -139,7 +139,7 @@ function summarizeGrabbedFiles(entries) {
 
 export {
   parseNoteArtifact,
-  summarizeNotes,
+  summariseNotes,
   classifyGrabbedFile,
-  summarizeGrabbedFiles,
+  summariseGrabbedFiles,
 };

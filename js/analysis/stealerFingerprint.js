@@ -64,7 +64,7 @@ function scoreFamily(familyName, sig, ctx) {
     }
   }
 
-  // 5. ASCII banners (whitespace-normalized comparison)
+  // 5. ASCII banners (whitespace-normalised comparison)
   if (sig.asciiBanners && sig.asciiBanners.length > 0) {
     maxScore += W.ASCII_BANNER;
     const allText = [ctx.sysinfoText, ctx.creditsText, ctx.passwordHeaderText].filter(Boolean).join('\n');
