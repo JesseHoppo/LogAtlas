@@ -108,14 +108,48 @@ function normaliseDomain(hostname) {
   return normalised;
 }
 
+// Reverse-DNS Android package (e.g. `com.roblox.client`). Treat as opaque so
+// extractBaseDomain doesn't strip parts off the package name.
+const ANDROID_PACKAGE_PATTERN = /^(?:com|org)\.[a-z][a-z0-9_]*(?:\.[a-z0-9_][a-z0-9_]*)+$/i;
+
+const HOSTED_SCHEMES = new Set([
+  'smtp', 'smtps', 'imap', 'imaps', 'pop3', 'pop3s', 'oauth', 'ftp', 'sftp',
+]);
+
 function extractDomain(url) {
   if (!url) return null;
+  const raw = String(url).trim();
+  if (!raw) return null;
+
+  // Non-HTTP schemes — without this branch the fallback below prefixes
+  // `https://` and the URL parser swallows the scheme as the hostname.
+  const schemeMatch = raw.match(/^([a-z][a-z0-9+.-]*):/i);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1].toLowerCase();
+    if (scheme === 'android') {
+      // Chrome Smart Lock: `android://<hash>@com.package.name/`.
+      const m = raw.match(/^android:\/\/(?:[^@/]*@)?([a-z][a-z0-9_]*(?:\.[a-z0-9_][a-z0-9_]*)+)/i);
+      return m ? m[1].toLowerCase() : null;
+    }
+    if (scheme === 'file') {
+      return 'local-file';
+    }
+    if (HOSTED_SCHEMES.has(scheme)) {
+      try {
+        return normaliseDomain(new URL(raw).hostname);
+      } catch {
+        const m = raw.match(/^[a-z]+:\/\/(?:[^@/]*@)?([^/\s:?#]+)/i);
+        return m ? normaliseDomain(m[1]) : null;
+      }
+    }
+  }
+
   try {
-    let u = url.trim();
+    let u = raw;
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
     return normaliseDomain(new URL(u).hostname);
   } catch {
-    const match = url.match(/(?:https?:\/\/)?(?:www\.)?([^\/\s:]+)/i);
+    const match = raw.match(/(?:https?:\/\/)?(?:www\.)?([^\/\s:]+)/i);
     return normaliseDomain(match ? match[1] : '');
   }
 }
@@ -123,6 +157,8 @@ function extractDomain(url) {
 function extractBaseDomain(domain) {
   if (!domain) return domain;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return domain;
+  if (domain === 'local-file') return domain;
+  if (ANDROID_PACKAGE_PATTERN.test(domain)) return domain;
   const parts = domain.split('.');
   if (parts.length <= 2) return domain;
   const commonSLDs = ['co', 'com', 'net', 'org', 'gov', 'edu', 'ac'];
