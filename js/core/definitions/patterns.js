@@ -81,6 +81,25 @@ export const JWT_TOKEN_PATTERN = new RegExp(`^${JWT_TOKEN_PATTERN_SOURCE}$`);
 export const JWT_SCAN_REGEX = new RegExp(`\\b${JWT_TOKEN_PATTERN_SOURCE}\\b`, 'g');
 
 
+// Sysinfo keys that hold the malware-capture timestamp. Used by Timeline,
+// Currentness Lab capture-anchor inference, and the IOC `Log Date` panel.
+// Family variants: Vidar `Date` / `Local Time`, Lumma `Local Date`,
+// RedLine `Log date`, Meduza `System time`.
+export const CAPTURE_TIME_KEYS = [
+  /^date$/i,
+  /^log\s*date$/i,
+  /^system\s*date$/i,
+  /^system\s*time$/i,
+  /^local\s*date$/i,
+  /^local\s*time$/i,
+  /^current\s*time$/i,
+  /^time$/i,
+  /^timestamp$/i,
+  /^infection\s*date$/i,
+  /^stolen\s*time$/i,
+  /^capture\s*date$/i,
+];
+
 // IOC extraction from sysinfo
 
 export const IOC_KEY_MAP = [
@@ -95,7 +114,7 @@ export const IOC_KEY_MAP = [
   { label: 'OS', patterns: [/^os$/i, /^windows$/i, /^system\s*version$/i, /^os\s*version$/i, /^mac\s*os\s*version$/i] },
   { label: 'Malware Path', patterns: [/^running\s*path$/i, /^execution\s*path$/i, /^path$/i, /^work\s*dir$/i] },
   { label: 'Build ID', patterns: [/^build$/i, /^build\s*id$/i, /^build\s*tag$/i, /^version\s*build$/i, /^version$/i, /^lummac2\s*build$/i, /^build\s*date$/i] },
-  { label: 'Log Date', patterns: [/^date$/i, /^log\s*date$/i, /^system\s*date$/i, /^local\s*date$/i, /^local\s*time$/i, /^current\s*time$/i, /^time$/i] },
+  { label: 'Log Date', patterns: CAPTURE_TIME_KEYS },
   { label: 'Antivirus', patterns: [/^antivirus$/i, /^anti\s*virus$/i, /^av$/i, /^installed\s*av$/i] },
   { label: 'Product Key', patterns: [/^product\s*key$/i] },
   { label: 'Display Resolution', patterns: [/^display\s*resolution$/i, /^resolution$/i, /^screen\s*resolution$/i] },
@@ -113,20 +132,6 @@ export const CONTENT_IOC_PATTERNS = [
   { label: 'Telegram Contact', pattern: /(?<![a-zA-Z0-9._%+-])@[a-zA-Z_]\w{3,}/g },
   { label: 'Telegram Channel', pattern: /t\.me\/[a-zA-Z_]\w{3,}/gi },
   { label: 'Malware Signature', pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/gi },
-];
-
-export const CAPTURE_TIME_KEYS = [
-  /^date$/i,
-  /^log\s*date$/i,
-  /^system\s*date$/i,
-  /^local\s*date$/i,
-  /^local\s*time$/i,
-  /^current\s*time$/i,
-  /^time$/i,
-  /^timestamp$/i,
-  /^infection\s*date$/i,
-  /^stolen\s*time$/i,
-  /^capture\s*date$/i,
 ];
 
 export const IGNORE_DATE_KEYS = [

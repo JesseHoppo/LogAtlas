@@ -30,6 +30,7 @@ import {
   extractBaseDomain,
   inferBrowserFromPath,
   inferServiceFromPath,
+  normaliseTimeZone,
   parseTimestampValue,
   checkCookieValidity,
   topN,
@@ -543,10 +544,23 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
   for (const { label, patterns } of IOC_KEY_MAP) {
     for (const [key, value] of Object.entries(sysinfoEntries)) {
       if (patterns.some(rx => rx.test(key))) {
-        const k = `${label}:${value}`;
+        // Canonicalise Vidar / RedLine TZ encodings to `UTC±HH:MM`; keep the
+        // raw form on the IOC so exports can still reach the original string.
+        let displayValue = value;
+        let rawValue;
+        if (label === 'Timezone') {
+          const tz = normaliseTimeZone(value);
+          if (tz.offset != null || tz.source === 'unknown') {
+            displayValue = tz.label;
+            if (tz.label !== String(value).trim()) rawValue = String(value);
+          }
+        }
+        const k = `${label}:${displayValue}`;
         if (!seen.has(k)) {
           seen.add(k);
-          iocs.push({ label, value });
+          const ioc = { label, value: displayValue };
+          if (rawValue) ioc.rawValue = rawValue;
+          iocs.push(ioc);
         }
         break;
       }

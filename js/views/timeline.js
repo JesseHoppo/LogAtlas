@@ -5,7 +5,7 @@ import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
 import { getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData } from '../pages/browser.js';
 import { getGrabbedFilesData, getScreenshotsData } from '../pages/activity.js';
-import { extractBaseDomain, extractDomain, collectFileNodes, parseTimestampValue } from '../core/shared.js';
+import { extractBaseDomain, extractDomain, collectFileNodes, normaliseTimeZone, parseTimestampValue } from '../core/shared.js';
 import { escapeHtml } from '../core/utils.js';
 import { CAPTURE_TIME_KEYS, IGNORE_DATE_KEYS, FIELD_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
 
@@ -49,7 +49,8 @@ function extractStealerEvents(entries) {
   let timezone = '';
   for (const [key, value] of Object.entries(entries)) {
     if (/^(time\s*zone|timezone|utc)$/i.test(key) && value) {
-      timezone = value.trim();
+      const normalised = normaliseTimeZone(value);
+      timezone = normalised.label || value.trim();
       break;
     }
   }

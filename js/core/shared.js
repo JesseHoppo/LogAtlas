@@ -682,6 +682,80 @@ function summariseList(values, limit = 2) {
   return `${items.slice(0, limit).join(', ')} +${items.length - limit} more`;
 }
 
+// Stealer families store the victim's TimeZone in several different shapes:
+// signed integer hour offset, unsigned 32-bit overflow (Vidar v17), Windows
+// display string `(UTC±HH:MM) Region`, or pre-formatted `UTC±HH:MM`. Returns
+// `{ offset, label, source, raw }` where `offset` is in minutes (null when
+// unparseable) and `label` falls back to the original string so the UI always
+// has something to render.
+function normaliseTimeZone(raw) {
+  const out = { offset: null, label: '', source: 'absent', raw };
+  if (raw == null) return out;
+  const s = String(raw).trim();
+  if (!s) return out;
+  out.raw = s;
+  out.label = s;
+
+  // "(UTC-05:00) Bogotá, Lima, Quito" — Windows display string.
+  const winMatch = s.match(/^\(UTC(?:([+-])(\d{1,2})(?::(\d{2}))?)?\)\s*(.*)$/i);
+  if (winMatch) {
+    const sign = winMatch[1] === '-' ? -1 : 1;
+    const h = winMatch[2] ? parseInt(winMatch[2], 10) : 0;
+    const m = winMatch[3] ? parseInt(winMatch[3], 10) : 0;
+    const offset = sign * (h * 60 + m);
+    out.offset = offset;
+    out.source = 'windows-display';
+    out.label = formatTimeZoneLabel(offset, winMatch[4] && winMatch[4].trim() || null);
+    return out;
+  }
+
+  // "UTC+5", "UTC-3", "UTC-05:00", "UTC+10:30"
+  const cleanMatch = s.match(/^UTC([+-])(\d{1,2})(?::?(\d{2}))?$/i);
+  if (cleanMatch) {
+    const sign = cleanMatch[1] === '-' ? -1 : 1;
+    const h = parseInt(cleanMatch[2], 10);
+    const m = cleanMatch[3] ? parseInt(cleanMatch[3], 10) : 0;
+    const offset = sign * (h * 60 + m);
+    out.offset = offset;
+    out.source = 'string-offset';
+    out.label = formatTimeZoneLabel(offset);
+    return out;
+  }
+
+  // Pure integer — Vidar v17. Negative offsets often arrive as unsigned 32-bit
+  // overflow (e.g. 4294967293 = -3), positive offsets as small ints (e.g. 8 = UTC+8).
+  if (/^-?\d{1,10}$/.test(s)) {
+    let n = Number(s);
+    let overflowed = false;
+    if (n > 2_000_000_000) {
+      n -= 0x100000000;
+      overflowed = true;
+    }
+    if (n >= -14 && n <= 14) {
+      out.offset = n * 60;
+      out.source = overflowed ? 'integer-overflow' : 'integer';
+      out.label = formatTimeZoneLabel(out.offset);
+      return out;
+    }
+    out.source = 'invalid-int';
+    out.label = `${s} (invalid offset)`;
+    return out;
+  }
+
+  out.source = 'unknown';
+  return out;
+}
+
+function formatTimeZoneLabel(minutes, regionLabel) {
+  if (minutes == null) return '?';
+  const sign = minutes < 0 ? '-' : '+';
+  const abs = Math.abs(minutes);
+  const h = String(Math.floor(abs / 60)).padStart(2, '0');
+  const m = String(abs % 60).padStart(2, '0');
+  const base = `UTC${sign}${h}:${m}`;
+  return regionLabel ? `${base} (${regionLabel})` : base;
+}
+
 export {
   MAX_SEARCH_MATCHES_PER_FILE,
   SEARCH_BATCH_SIZE,
@@ -694,6 +768,7 @@ export {
   inferBrowserFromPath,
   inferProfileFromPath,
   inferServiceFromPath,
+  normaliseTimeZone,
   parseTimestampValue,
   checkCookieValidity,
   downloadBlob,
