@@ -395,7 +395,7 @@ function parseArchiveTimestamp(name) {
   return null;
 }
 
-function inferCaptureContext({ sysinfoEntries, rootZipName, sourceLastModified }) {
+function inferCaptureContext({ sysinfoEntries, rootZipName, sourceLastModified, historyMaxDate }) {
   const entries = sysinfoEntries || {};
   for (const [key, value] of Object.entries(entries)) {
     if (!value || !CAPTURE_TIME_KEYS.some((pattern) => pattern.test(key))) continue;
@@ -409,6 +409,13 @@ function inferCaptureContext({ sysinfoEntries, rootZipName, sourceLastModified }
   if (sourceLastModified) {
     const fallback = parseTimestampValue(sourceLastModified);
     if (fallback) return { date: fallback, source: 'source-last-modified' };
+  }
+
+  // Lower-bound: credentials cannot have been exfiltrated before the last
+  // browsing event the log captured. Useful for Rhadamanthys and stripped
+  // logs that don't carry a sysinfo timestamp.
+  if (historyMaxDate instanceof Date && !Number.isNaN(historyMaxDate.getTime())) {
+    return { date: historyMaxDate, source: 'history-derived' };
   }
 
   return { date: null, source: 'none' };
@@ -1680,10 +1687,20 @@ function dedupeCredentials(credentials) {
 
 function buildCredentialCurrentnessModel(input) {
   const credentials = dedupeCredentials(input.credentials || []);
+
+  let historyMaxDate = null;
+  for (const entry of input.history || []) {
+    const candidate = entry?.lastVisitDate instanceof Date
+      ? entry.lastVisitDate
+      : parseTimestampValue(entry?.lastVisitDate || entry?.lastVisit);
+    if (candidate && (!historyMaxDate || candidate > historyMaxDate)) historyMaxDate = candidate;
+  }
+
   const captureContext = inferCaptureContext({
     sysinfoEntries: input.sysinfoEntries || null,
     rootZipName: input.rootZipName || '',
     sourceLastModified: input.sourceLastModified || null,
+    historyMaxDate,
   });
 
   const identitySets = buildExactIdentitySets({

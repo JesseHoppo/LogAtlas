@@ -31,6 +31,7 @@ import {
   inferBrowserFromPath,
   inferServiceFromPath,
   normaliseTimeZone,
+  parseSoftwareLine,
   parseTimestampValue,
   checkCookieValidity,
   topN,
@@ -318,19 +319,24 @@ async function analyseHistory(nodes) {
     return;
   }
 
-  const datedEntries = entries.filter(entry => entry.lastVisitDate);
-  const mostRecent = datedEntries.length > 0
-    ? datedEntries.reduce((latest, entry) => (!latest || entry.lastVisitDate > latest.lastVisitDate ? entry : latest), null)
-    : null;
+  const datedEntries = entries
+    .filter(entry => entry.lastVisitDate)
+    .sort((a, b) => b.lastVisitDate - a.lastVisitDate);
+  const mostRecent = datedEntries.slice(0, 10).map(entry => ({
+    url: entry.url,
+    title: entry.title,
+    lastVisit: entry.lastVisit,
+    lastVisitDate: entry.lastVisitDate ? entry.lastVisitDate.toISOString() : null,
+  }));
+  const latestVisitDate = datedEntries[0]?.lastVisitDate?.toISOString() || null;
 
   emit('analysis:history', {
     fileCount,
     totalEntries: entries.length,
     uniqueDomains: new Set(domains).size,
     topDomains: topN(domains, LIMITS.topDomains),
-    mostRecent: mostRecent
-      ? { url: mostRecent.url, title: mostRecent.title, lastVisit: mostRecent.lastVisit }
-      : null,
+    mostRecent,
+    latestVisitDate,
   });
 }
 
@@ -392,13 +398,6 @@ function extractInlineSections(text) {
   const SUB_HEADER = /^(?:All Users|Current User)\s*:/i;
   const KV_LINE = /^[A-Za-z][A-Za-z0-9 _./()%-]*?\s*(?:=\s*|:\s+)/;
 
-  const VERSION_PATTERNS = [
-    /^(.+?)\s*-\s*(.+)$/,
-    /^(.+?)\s*\(([^)]+)\)$/,
-    /^(.+?)\s+(v?\d+\.\d+(?:\.\d+)?(?:[-.\w]*)?)$/i,
-    /^(.+?)\s*\[([^\]]+)\]$/,
-  ];
-
   let softwareLines = null;
   let processLines = null;
   let currentTarget = null;
@@ -444,17 +443,9 @@ function extractInlineSections(text) {
     const seen = new Set();
     for (const line of softwareLines) {
       if (line.length > 120) continue;
-      let name = line;
-      let version = null;
-      for (const pattern of VERSION_PATTERNS) {
-        const match = line.match(pattern);
-        if (match) {
-          name = match[1].trim();
-          const verStr = match[2].trim();
-          if (/\d/.test(verStr)) version = verStr;
-          break;
-        }
-      }
+      const parsed = parseSoftwareLine(line);
+      if (!parsed) continue;
+      const { name, version } = parsed;
       if (name && !seen.has(name.toLowerCase())) {
         seen.add(name.toLowerCase());
         entries.push({ name, version });
@@ -1197,13 +1188,6 @@ async function analyseSoftware(nodes) {
   const seen = new Set();
   let parsedCount = 0;
 
-  const VERSION_PATTERNS = [
-    /^(.+?)\s*-\s*(.+)$/,                          // Name - Version
-    /^(.+?)\s*\(([^)]+)\)$/,                        // Name (Version)
-    /^(.+?)\s+(v?\d+\.\d+(?:\.\d+)?(?:[-.\w]*)?)$/i, // Name v1.2.3
-    /^(.+?)\s*\[([^\]]+)\]$/,                        // Name [Version]
-  ];
-
   for (const { node } of nodes) {
     try {
       const text = await decodeNodeText(node);
@@ -1212,33 +1196,17 @@ async function analyseSoftware(nodes) {
       let found = false;
 
       for (const rawLine of lines) {
-        const line = rawLine.trim()
-          .replace(/^[-_\s]+/, '')
-          .replace(/[-_\s]+$/, '')
-          .replace(/^\d+\)\s*/, '');
-
+        const line = rawLine.trim();
         if (!line) continue;
-        if (line.includes('   ')) continue;  // skip lines with 3+ consecutive spaces
-        if (/https?:\/\//i.test(line) || /www\./i.test(line)) continue;  // skip URLs
-        if (/(===|\*\*\*|###|\$\$\$)/.test(line)) continue;  // skip separators
+        if (line.includes('   ')) continue;
+        if (/https?:\/\//i.test(line) || /www\./i.test(line)) continue;
+        if (/(===|\*\*\*|###|\$\$\$)/.test(line)) continue;
         if (line.length > 120) continue;
-        if (/^[-=*#]{3,}$/.test(line)) continue;  // pure separator lines
+        if (/^[-=*#]{3,}$/.test(line)) continue;
 
-        let name = line;
-        let version = null;
-
-        for (const pattern of VERSION_PATTERNS) {
-          const match = line.match(pattern);
-          if (match) {
-            name = match[1].trim();
-            const verStr = match[2].trim();
-            if (/\d/.test(verStr)) {
-              version = verStr;
-            }
-            break;
-          }
-        }
-
+        const parsed = parseSoftwareLine(line);
+        if (!parsed) continue;
+        const { name, version } = parsed;
         if (name && !seen.has(name.toLowerCase())) {
           seen.add(name.toLowerCase());
           entries.push({ name, version });

@@ -374,7 +374,8 @@ function renderTriageOverview() {
   }
   if (history?.totalEntries > 0) {
     const domainText = topValuesText(history.topDomains);
-    const recentText = history.mostRecent?.lastVisit ? ` Most recent parsed visit: ${history.mostRecent.lastVisit}.` : '';
+    const latestVisit = history.mostRecent?.[0]?.lastVisit || '';
+    const recentText = latestVisit ? ` Most recent parsed visit: ${latestVisit}.` : '';
     riskItems.push(
       domainText
         ? `${pluralise(history.totalEntries, 'history entry', 'history entries')} parsed across ${pluralise(history.uniqueDomains || 0, 'domain')}, with the most visited domains including ${domainText}.${recentText}`.trim()

@@ -326,6 +326,9 @@ function isLikelyAutofillAddressField(name) {
 function isLikelyAutofillAddressValue(value) {
   const normalised = normaliseAutofillValue(value);
   if (!normalised || normalised.length > 140) return false;
+  // State codes ("CA", "VIC") and form-field abbreviations ("EA", "HR") aren't
+  // useful address content on their own.
+  if (normalised.length <= 3) return false;
   if (isLikelyAutofillEmail(normalised)) return false;
   if (isLikelyAutofillPhone(normalised)) return false;
   if (/^(?:https?|file):/i.test(normalised)) return false;
@@ -782,6 +785,49 @@ function normaliseTimeZone(raw) {
   return out;
 }
 
+// Stealers write installed-software entries in a handful of shapes:
+// `Name [version] - vendor`, `Name (version)`, `Name - version`, `Name v1.2.3`.
+// Patterns are tried in order — the bracket form runs first so Vidar v17's
+// `[16.0.18229.20208] - Microsoft Corp` tail doesn't trip the dash form.
+const SOFTWARE_PATTERNS = [
+  /^(.+?)\s*\[(\d[\w.+-]*)\]\s*(?:[-–]\s*.*)?$/,
+  /^(.+?)\s*\((v?\d+(?:\.\d+)+[\w.+-]*)\)\s*$/i,
+  /^(.+?)\s+[-–]\s+(v?\d+(?:\.\d+)+[\w.+-]*)\s*$/i,
+  /^(.+?)\s+(v?\d+\.\d+(?:\.\d+)?(?:[-.\w]*)?)\s*$/i,
+];
+
+function parseSoftwareLine(rawLine) {
+  if (!rawLine) return null;
+  // Vidar v1.5 occasionally truncates entries mid-suffix
+  // (`Mozilla Firefox (x64 en`) — drop the dangling open-paren tail.
+  let line = String(rawLine).trim()
+    .replace(/^[-_\s]+/, '')
+    .replace(/[-_\s]+$/, '')
+    .replace(/^\d+\)\s*/, '')
+    .replace(/\s*\([^)]*$/, '');
+  if (!line) return null;
+
+  let name = line;
+  let version = null;
+  for (const pattern of SOFTWARE_PATTERNS) {
+    const match = line.match(pattern);
+    if (match) {
+      name = match[1].trim();
+      const verStr = match[2].trim();
+      if (/\d/.test(verStr)) version = verStr;
+      break;
+    }
+  }
+  if (!version) {
+    const embedded = name.match(/^(.+?)\s*\[(\d[\w.+-]*)\]\s*$/);
+    if (embedded) {
+      name = embedded[1].trim();
+      version = embedded[2].trim();
+    }
+  }
+  return name ? { name, version } : null;
+}
+
 function formatTimeZoneLabel(minutes, regionLabel) {
   if (minutes == null) return '?';
   const sign = minutes < 0 ? '-' : '+';
@@ -805,6 +851,7 @@ export {
   inferProfileFromPath,
   inferServiceFromPath,
   normaliseTimeZone,
+  parseSoftwareLine,
   parseTimestampValue,
   checkCookieValidity,
   downloadBlob,
