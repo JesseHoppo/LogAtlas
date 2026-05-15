@@ -9,7 +9,7 @@ import {
   isMacOSMetadata,
 } from '../core/utils.js';
 import { promptForPassword, isRememberChecked } from './password.js';
-import { applyDetectionHints } from '../analysis/detection.js';
+import { applyDetectionHints, reconcileAggregatePasswordFiles } from '../analysis/detection.js';
 import { HINT_KEYS, FILE_TYPE_TO_HINT } from './fileTypeRegistry.js';
 
 const MAX_DEPTH = 10;
@@ -396,6 +396,7 @@ async function extractFile(file) {
     await extractArchiveIntoTree(root, file, file.name, 0);
   }
 
+  reconcileAggregatePasswordFiles(root);
   state.fileTree = root;
   state.flatFiles = flattenTree(root, file.name);
   setLoading(null);
@@ -502,6 +503,7 @@ async function addFilesToTree(files) {
     }
   }
 
+  reconcileAggregatePasswordFiles(root);
   state.flatFiles = flattenTree(root, state.rootZipName);
   setLoading(null);
 

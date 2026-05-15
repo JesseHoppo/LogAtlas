@@ -1,7 +1,7 @@
 // File classification
 
 import { FILE_TYPE_PATTERNS, TEXT_EXTENSIONS } from '../core/definitions/fileTypes.js';
-import { normalizePath } from '../core/shared.js';
+import { normalisePath } from '../core/shared.js';
 
 // Credits/copyright files
 
@@ -24,12 +24,23 @@ function isLikelyProcessListFile(name) {
 // Password files
 
 function isLikelyPasswordFilename(name, parentDir, fullPath = '') {
-  const normalizedPath = normalizePath(fullPath);
-  if (FILE_TYPE_PATTERNS.password.exclusions.some(rx => rx.test(name))) return false;
-  if (/(^|\/)(?:mails?|email clients?)\/outlook\/credentials\.txt$/i.test(normalizedPath)) return false;
-  if (/(^|\/)(?:ftps?|ftp)\/filezilla\/credentials\.txt$/i.test(normalizedPath)) return false;
+  const trimmedName = String(name || '').trim();
+  const normalisedPath = normalisePath(fullPath);
+  if (FILE_TYPE_PATTERNS.password.exclusions.some(rx => rx.test(trimmedName))) return false;
+  if (isLikelyAggregatePasswordFile(trimmedName)) return false;
+  if (/(^|\/)(?:mails?|email clients?)\/outlook\/credentials\.txt$/i.test(normalisedPath)) return false;
+  if (/(^|\/)(?:ftps?|ftp)\/filezilla\/credentials\.txt$/i.test(normalisedPath)) return false;
   if (parentDir && FILE_TYPE_PATTERNS.password.parentDirMatch.test(parentDir)) return true;
-  return FILE_TYPE_PATTERNS.password.patterns.some(rx => rx.test(name));
+  return FILE_TYPE_PATTERNS.password.patterns.some(rx => rx.test(trimmedName));
+}
+
+// Aggregate / summary password files (`All Passwords.txt`,
+// `unique_passwords.txt`). Promoted to a real password file only when no
+// per-profile file exists — see reconcileAggregatePasswordFiles.
+function isLikelyAggregatePasswordFile(name) {
+  const trimmedName = String(name || '').trim();
+  const patterns = FILE_TYPE_PATTERNS.password.aggregatePatterns || [];
+  return patterns.some(rx => rx.test(trimmedName));
 }
 
 // Cookie files
@@ -72,9 +83,9 @@ function isLikelyHistoryFile(name, parentDir) {
 
 function isLikelyBookmarkFile(name, parentDir, fullPath) {
   const b = FILE_TYPE_PATTERNS.bookmark;
-  const normalizedPath = normalizePath(fullPath);
+  const normalisedPath = normalisePath(fullPath);
   if (parentDir && b.folderPattern.test(parentDir) && TEXT_EXTENSIONS.test(name)) return true;
-  if (normalizedPath && /(^|\/)bookmarks?\//i.test(normalizedPath) && TEXT_EXTENSIONS.test(name)) return true;
+  if (normalisedPath && /(^|\/)bookmarks?\//i.test(normalisedPath) && TEXT_EXTENSIONS.test(name)) return true;
   return b.filePatterns.some(rx => rx.test(name));
 }
 
@@ -82,14 +93,14 @@ function isLikelyBookmarkFile(name, parentDir, fullPath) {
 
 function isLikelyBrowserMetadataFile(name, parentDir, fullPath) {
   const bm = FILE_TYPE_PATTERNS.browserMetadata;
-  const normalizedPath = normalizePath(fullPath);
+  const normalisedPath = normalisePath(fullPath);
   if (/^debug\.txt$/i.test(name)) {
-    if (/(^|\/)(chrome|edge|firefox|opera|brave|vivaldi|chromium)\//i.test(normalizedPath)) return true;
+    if (/(^|\/)(chrome|edge|firefox|opera|brave|vivaldi|chromium)\//i.test(normalisedPath)) return true;
   } else if (bm.filePatterns.some(rx => rx.test(name))) {
     return true;
   }
   if (parentDir && bm.folderPatterns.some(rx => rx.test(parentDir)) && TEXT_EXTENSIONS.test(name)) return true;
-  return bm.pathPatterns.some(rx => rx.test(normalizedPath));
+  return bm.pathPatterns.some(rx => rx.test(normalisedPath));
 }
 
 // Screenshots
@@ -133,10 +144,10 @@ function isLikelyDomainDetectFile(name) {
 
 function isLikelyCryptoWalletFile(name, parentDir, fullPath) {
   const cw = FILE_TYPE_PATTERNS.cryptoWallet;
-  const normalizedPath = normalizePath(fullPath);
+  const normalisedPath = normalisePath(fullPath);
   if (cw.filePatterns.some(rx => rx.test(name))) return true;
   if (parentDir && cw.folderPatterns.some(rx => rx.test(parentDir))) return true;
-  if (cw.pathPatterns && cw.pathPatterns.some(rx => rx.test(normalizedPath))) return true;
+  if (cw.pathPatterns && cw.pathPatterns.some(rx => rx.test(normalisedPath))) return true;
   return false;
 }
 
@@ -144,11 +155,11 @@ function isLikelyCryptoWalletFile(name, parentDir, fullPath) {
 
 function isLikelyAccountTokenFile(name, parentDir, fullPath) {
   const at = FILE_TYPE_PATTERNS.accountToken;
-  const normalizedPath = normalizePath(fullPath);
-  if (at.pathPatterns.some(rx => rx.test(normalizedPath))) return true;
+  const normalisedPath = normalisePath(fullPath);
+  if (at.pathPatterns.some(rx => rx.test(normalisedPath))) return true;
   if (parentDir && at.folderPatterns.some(rx => rx.test(parentDir)) && TEXT_EXTENSIONS.test(name)) return true;
   return at.filePatterns.some(rx => rx.test(name)) && (
-    /googleaccounts|fbfastcheck|discord|steam/i.test(normalizedPath) ||
+    /googleaccounts|fbfastcheck|discord|steam/i.test(normalisedPath) ||
     /^(?:restore_|googletokens?|discordtokens?|discord\.txt|token_eaab\.txt|ids?\.txt|tokens?\.txt)/i.test(name)
   );
 }
@@ -157,16 +168,16 @@ function isLikelyAccountTokenFile(name, parentDir, fullPath) {
 
 function isLikelyServiceArtifactFile(name, parentDir, fullPath) {
   const sa = FILE_TYPE_PATTERNS.serviceArtifact;
-  const normalizedPath = normalizePath(fullPath);
-  if (sa.pathPatterns.some(rx => rx.test(normalizedPath))) return true;
+  const normalisedPath = normalisePath(fullPath);
+  if (sa.pathPatterns.some(rx => rx.test(normalisedPath))) return true;
 
-  if (/^(?:system|service|user)\.conf$/i.test(name) && /anydesk/i.test(normalizedPath)) return true;
-  if (/^accounts\.txt$/i.test(name) && /(outlook|email clients?)/i.test(normalizedPath)) return true;
-  if (/^usersettings\.json$/i.test(name) && /outlook/i.test(normalizedPath)) return true;
-  if (/^token\.txt$/i.test(name) && /telegram/i.test(normalizedPath)) return true;
-  if (/^\d+\.(?:log|ldb)$/i.test(name) && /discord\/.*leveldb/i.test(normalizedPath)) return true;
+  if (/^(?:system|service|user)\.conf$/i.test(name) && /anydesk/i.test(normalisedPath)) return true;
+  if (/^accounts\.txt$/i.test(name) && /(outlook|email clients?)/i.test(normalisedPath)) return true;
+  if (/^usersettings\.json$/i.test(name) && /outlook/i.test(normalisedPath)) return true;
+  if (/^token\.txt$/i.test(name) && /telegram/i.test(normalisedPath)) return true;
+  if (/^\d+\.(?:log|ldb)$/i.test(name) && /discord\/.*leveldb/i.test(normalisedPath)) return true;
 
-  return sa.filePatterns.some(rx => rx.test(name)) && /(telegram|outlook|anydesk|discord)/i.test(normalizedPath);
+  return sa.filePatterns.some(rx => rx.test(name)) && /(telegram|outlook|anydesk|discord)/i.test(normalisedPath);
 }
 
 // Legacy messenger / token files
@@ -189,25 +200,26 @@ function isLikelyClipboardFile(name) {
 
 function isLikelyNoteFile(name, parentDir, fullPath) {
   const notes = FILE_TYPE_PATTERNS.notes;
-  const normalizedPath = normalizePath(fullPath);
+  const normalisedPath = normalisePath(fullPath);
   if (notes.filePatterns.some(rx => rx.test(name))) return true;
   if (parentDir && notes.folderPatterns.some(rx => rx.test(parentDir)) && TEXT_EXTENSIONS.test(name)) return true;
-  return notes.pathPatterns.some(rx => rx.test(normalizedPath)) && TEXT_EXTENSIONS.test(name);
+  return notes.pathPatterns.some(rx => rx.test(normalisedPath)) && TEXT_EXTENSIONS.test(name);
 }
 
 // Grabbed files / important documents
 
 function isLikelyGrabbedFile(name, parentDir, fullPath) {
   const grabbed = FILE_TYPE_PATTERNS.grabbedFiles;
-  const normalizedPath = normalizePath(fullPath);
+  const normalisedPath = normalisePath(fullPath);
   if (parentDir && grabbed.folderPatterns.some(rx => rx.test(parentDir))) return true;
-  return grabbed.pathPatterns.some(rx => rx.test(normalizedPath));
+  return grabbed.pathPatterns.some(rx => rx.test(normalisedPath));
 }
 
 // Apply all hints to a node. Returns true if anything was detected.
 function applyDetectionHints(node, name, parentDir, fullPath = '') {
   let detected = false;
   if (isLikelyPasswordFilename(name, parentDir, fullPath)) { node._passwordFileHint = true; detected = true; }
+  else if (isLikelyAggregatePasswordFile(name)) { node._passwordFileAggregateHint = true; detected = true; }
   if (isLikelyCookieFile(name, parentDir))        { node._cookieFileHint = true;   detected = true; }
   if (isLikelySystemInfoFile(name, parentDir))     { node._sysInfoHint = true;      detected = true; }
   if (isLikelyAutofillFile(name, parentDir))       { node._autofillHint = true;     detected = true; }
@@ -232,4 +244,28 @@ function applyDetectionHints(node, name, parentDir, fullPath = '') {
   return detected;
 }
 
-export { applyDetectionHints };
+// Run after the file walk to fold the aggregate-password hint into the real
+// one. If any per-profile password file is present, drop aggregates (they'd
+// double-count); otherwise promote them so credentials still get extracted.
+function reconcileAggregatePasswordFiles(tree) {
+  if (!tree) return;
+  let hasIndividual = false;
+  const aggregates = [];
+  walk(tree);
+
+  for (const node of aggregates) {
+    if (!hasIndividual) node._passwordFileHint = true;
+    delete node._passwordFileAggregateHint;
+  }
+
+  function walk(node) {
+    if (!node) return;
+    if (node._passwordFileHint) hasIndividual = true;
+    if (node._passwordFileAggregateHint) aggregates.push(node);
+    if (node.children) {
+      for (const child of Object.values(node.children)) walk(child);
+    }
+  }
+}
+
+export { applyDetectionHints, reconcileAggregatePasswordFiles };

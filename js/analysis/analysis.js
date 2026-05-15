@@ -22,7 +22,7 @@ import {
 import { parseCreditCardFile } from '../transforms/cards.js';
 import { isPromotionalNoiseLine, stripLeadingNoiseLines } from '../transforms/shared.js';
 import { parseWalletArtifact } from './walletArtifacts.js';
-import { parseNoteArtifact, summarizeNotes, classifyGrabbedFile, summarizeGrabbedFiles } from './contextArtifacts.js';
+import { parseNoteArtifact, summariseNotes, classifyGrabbedFile, summariseGrabbedFiles } from './contextArtifacts.js';
 import {
   SHARED_TEXT_DECODER,
   classifyAutofillEntries,
@@ -69,13 +69,21 @@ async function decodeNodeText(node) {
 
 // Credentials
 
-async function analyzeCredentials(nodes) {
+// Emails are case-insensitive per RFC; lowercase them so case variants merge.
+// Non-email usernames keep their original casing.
+function normaliseUsername(value) {
+  const v = String(value || '');
+  return v.includes('@') ? v.toLowerCase() : v;
+}
+
+async function analyseCredentials(nodes) {
   if (nodes.length === 0) {
     emit('analysis:credentials', {
       fileCount: 0,
       candidateFileCount: 0,
       totalCredentials: 0,
       uniqueCredentials: 0,
+      urlsWithoutCredentials: 0,
       topDomains: [],
       topUsernames: [],
       failedFiles: [],
@@ -89,6 +97,7 @@ async function analyzeCredentials(nodes) {
   const failedFiles = [];
   let totalCredentials = 0;
   let uniqueCredentials = 0;
+  let urlsWithoutCredentials = 0;
   let parsedCount = 0;
 
   for (const { node, path } of nodes) {
@@ -114,19 +123,33 @@ async function analyzeCredentials(nodes) {
       }
 
       parsedCount++;
-      totalCredentials += parsed.rows.length;
 
       for (const row of parsed.rows) {
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
         const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
         const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
 
-        const key = url + DEDUPE_KEY_SEP + user + DEDUPE_KEY_SEP + pass;
+        // Chrome's saved-URL index leaks rows with no credentials into Vidar's
+        // password dump. Bucket them separately so they don't inflate counts.
+        if (!user && !pass) {
+          urlsWithoutCredentials++;
+          continue;
+        }
+
+        totalCredentials++;
+
+        // Dedupe on (base domain, username, password) so the same credential
+        // saved across profiles or under sibling subdomains collapses to one row.
+        const domainPart = url
+          ? (extractBaseDomain(extractDomain(url) || '') || extractDomain(url) || url).toLowerCase()
+          : '';
+        const userPart = normaliseUsername(user);
+        const key = domainPart + DEDUPE_KEY_SEP + userPart + DEDUPE_KEY_SEP + pass;
         if (!seen.has(key)) {
           seen.add(key);
           uniqueCredentials++;
           if (url) allDomains.push(extractDomain(url));
-          if (user) allUsernames.push(user);
+          if (user) allUsernames.push(userPart);
         }
       }
     } catch (err) {
@@ -139,6 +162,7 @@ async function analyzeCredentials(nodes) {
     candidateFileCount: nodes.length,
     totalCredentials,
     uniqueCredentials,
+    urlsWithoutCredentials,
     topDomains: topN(allDomains, LIMITS.topDomains),
     topUsernames: topN(allUsernames, LIMITS.topUsernames),
     failedFiles,
@@ -147,7 +171,7 @@ async function analyzeCredentials(nodes) {
 
 // Cookies
 
-async function analyzeCookies(nodes) {
+async function analyseCookies(nodes) {
   if (nodes.length === 0) {
     emit('analysis:cookies', { fileCount: 0, totalCookies: 0, uniqueDomains: 0, topDomains: [], sessionTokens: 0, validSessionTokens: 0 });
     return;
@@ -232,7 +256,7 @@ async function analyzeCookies(nodes) {
 
 // History
 
-async function analyzeHistory(nodes) {
+async function analyseHistory(nodes) {
   if (nodes.length === 0) {
     emit('analysis:history', null);
     return;
@@ -295,7 +319,7 @@ async function analyzeHistory(nodes) {
 
 // System info
 
-async function analyzeSystemInfo(nodes) {
+async function analyseSystemInfo(nodes) {
   if (nodes.length === 0) {
     emit('analysis:sysinfo', null);
     return;
@@ -430,12 +454,33 @@ function extractInlineSections(text) {
     const seen = new Set();
     for (const line of processLines) {
       if (isPromotionalNoiseLine(line) || /^===\s*running processes\s*===$/i.test(line)) continue;
-      const name = line.replace(/^[-*•]\s+/, '').trim();
-      if (!name || name.length > 200) continue;
+      const cleaned = line.replace(/^[-*•]\s+/, '').trim();
+      if (!cleaned || cleaned.length > 200) continue;
+
+      let name = cleaned;
+      let pid = null;
+      // Vidar v1.5 writes `[pid] name`; other families write `name [pid]` /
+      // `name (pid)`.
+      const bracketPrefix = cleaned.match(/^\[(\d+)\]\s+(.+)$/);
+      if (bracketPrefix) {
+        pid = bracketPrefix[1];
+        name = bracketPrefix[2].trim();
+      } else {
+        const bracketSuffix = cleaned.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
+        if (bracketSuffix) {
+          name = bracketSuffix[1].trim();
+          pid = bracketSuffix[2];
+        }
+      }
+      if (!name) continue;
+
       const key = name.toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
-        entries.push({ name, pid: null });
+        entries.push({ name, pid });
+      } else if (pid) {
+        const existing = entries.find((entry) => entry.name.toLowerCase() === key);
+        if (existing && !existing.pid) existing.pid = pid;
       }
     }
     if (entries.length > 0) {
@@ -446,7 +491,7 @@ function extractInlineSections(text) {
 
 // Clipboard
 
-async function analyzeClipboard(nodes) {
+async function analyseClipboard(nodes) {
   if (nodes.length === 0) {
     emit('analysis:clipboard', null);
     return;
@@ -531,7 +576,7 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
 
 // Autofill
 
-async function analyzeAutofills(nodes) {
+async function analyseAutofills(nodes) {
   if (nodes.length === 0) {
     emit('analysis:autofill', null);
     return;
@@ -608,7 +653,7 @@ async function analyzeAutofills(nodes) {
   });
 }
 
-async function analyzeNotes(nodes) {
+async function analyseNotes(nodes) {
   if (nodes.length === 0) {
     emit('analysis:notes', null);
     return;
@@ -633,14 +678,14 @@ async function analyzeNotes(nodes) {
   }
 
   emit('analysis:notes', {
-    ...summarizeNotes(entries),
+    ...summariseNotes(entries),
     entries,
   });
 }
 
 // Domain detect
 
-async function analyzeDomainDetect(nodes) {
+async function analyseDomainDetect(nodes) {
   if (nodes.length === 0) {
     emit('analysis:domainDetect', null);
     return;
@@ -684,7 +729,7 @@ async function analyzeDomainDetect(nodes) {
   emit('analysis:domainDetect', { fileCount, totalHits, categories, entries });
 }
 
-async function analyzeCreditCards(nodes) {
+async function analyseCreditCards(nodes) {
   if (nodes.length === 0) {
     emit('analysis:creditCards', null);
     return;
@@ -737,7 +782,7 @@ async function analyzeCreditCards(nodes) {
   });
 }
 
-async function analyzeBookmarks(nodes) {
+async function analyseBookmarks(nodes) {
   if (nodes.length === 0) {
     emit('analysis:bookmarks', null);
     return;
@@ -786,7 +831,7 @@ async function analyzeBookmarks(nodes) {
   });
 }
 
-async function analyzeBrowserMetadata(nodes) {
+async function analyseBrowserMetadata(nodes) {
   if (nodes.length === 0) {
     emit('analysis:browserMetadata', null);
     return;
@@ -833,7 +878,7 @@ async function analyzeBrowserMetadata(nodes) {
   });
 }
 
-async function analyzeAccountTokens(nodes) {
+async function analyseAccountTokens(nodes) {
   if (nodes.length === 0) {
     emit('analysis:accountTokens', null);
     return;
@@ -886,7 +931,7 @@ async function analyzeAccountTokens(nodes) {
   });
 }
 
-async function analyzeServiceArtifacts(nodes) {
+async function analyseServiceArtifacts(nodes) {
   if (nodes.length === 0) {
     emit('analysis:serviceArtifacts', null);
     return;
@@ -930,7 +975,7 @@ async function analyzeServiceArtifacts(nodes) {
   });
 }
 
-async function analyzeWalletArtifacts(nodes) {
+async function analyseWalletArtifacts(nodes) {
   if (nodes.length === 0) {
     emit('analysis:wallets', null);
     return;
@@ -971,7 +1016,7 @@ async function analyzeWalletArtifacts(nodes) {
 
 // Download history
 
-async function analyzeDownloads(nodes) {
+async function analyseDownloads(nodes) {
   if (nodes.length === 0) {
     emit('analysis:downloads', null);
     return;
@@ -1014,7 +1059,7 @@ async function analyzeDownloads(nodes) {
   });
 }
 
-async function analyzeGrabbedFiles(nodes) {
+async function analyseGrabbedFiles(nodes) {
   if (nodes.length === 0) {
     emit('analysis:grabbedFiles', null);
     return;
@@ -1033,7 +1078,7 @@ async function analyzeGrabbedFiles(nodes) {
   }
 
   emit('analysis:grabbedFiles', {
-    ...summarizeGrabbedFiles(entries),
+    ...summariseGrabbedFiles(entries),
     entries,
   });
 }
@@ -1112,7 +1157,7 @@ async function runFingerprint(fileTree, rootName) {
 
 // Installed software
 
-async function analyzeSoftware(nodes) {
+async function analyseSoftware(nodes) {
   if (nodes.length === 0) {
     emit('analysis:software', null);
     return;
@@ -1186,7 +1231,7 @@ async function analyzeSoftware(nodes) {
 
 // Process list
 
-async function analyzeProcessList(nodes) {
+async function analyseProcessList(nodes) {
   if (nodes.length === 0) {
     emit('analysis:processList', null);
     return;
@@ -1228,18 +1273,24 @@ async function analyzeProcessList(nodes) {
             pid = pidDashMatch[1];
             name = pidDashMatch[2].trim();
           } else {
-          const bracketMatch = line.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
-            if (bracketMatch) {
-              name = bracketMatch[1].trim();
-              pid = bracketMatch[2];
+            const bracketPrefix = line.match(/^\[(\d+)\]\s+(.+)$/);
+            if (bracketPrefix) {
+              pid = bracketPrefix[1];
+              name = bracketPrefix[2].trim();
             } else {
-              const parts = line.split('\t').map(p => p.trim()).filter(Boolean);
-              if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
-                name = parts[0];
-                pid = parts[1];
-                if (parts.length >= 3) commandLine = parts.slice(2).join(' ');
-              } else if (parts.length === 1) {
-                name = parts[0];
+              const bracketMatch = line.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
+              if (bracketMatch) {
+                name = bracketMatch[1].trim();
+                pid = bracketMatch[2];
+              } else {
+                const parts = line.split('\t').map(p => p.trim()).filter(Boolean);
+                if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+                  name = parts[0];
+                  pid = parts[1];
+                  if (parts.length >= 3) commandLine = parts.slice(2).join(' ');
+                } else if (parts.length === 1) {
+                  name = parts[0];
+                }
               }
             }
           }
@@ -1284,24 +1335,24 @@ function runAnalysis(fileTree, rootName) {
   findScreenshot(buckets._screenshotHint);
 
   const tasks = [
-    analyzeCredentials(buckets._passwordFileHint),
-    analyzeCookies(buckets._cookieFileHint),
-    analyzeHistory(buckets._historyHint),
-    analyzeSystemInfo(buckets._sysInfoHint),
-    analyzeAutofills(buckets._autofillHint),
-    analyzeNotes(buckets._notesHint),
-    analyzeBookmarks(buckets._bookmarkHint),
-    analyzeBrowserMetadata(buckets._browserMetadataHint),
-    analyzeAccountTokens(buckets._accountTokenHint),
-    analyzeServiceArtifacts(buckets._serviceArtifactHint),
-    analyzeWalletArtifacts(buckets._cryptoWalletHint),
-    analyzeDownloads(buckets._downloadHint),
-    analyzeCreditCards(buckets._creditCardHint),
-    analyzeDomainDetect(buckets._domainDetectHint),
-    analyzeSoftware(buckets._softwareFileHint),
-    analyzeProcessList(buckets._processListHint),
-    analyzeClipboard(buckets._clipboardHint),
-    analyzeGrabbedFiles(buckets._grabbedFileHint),
+    analyseCredentials(buckets._passwordFileHint),
+    analyseCookies(buckets._cookieFileHint),
+    analyseHistory(buckets._historyHint),
+    analyseSystemInfo(buckets._sysInfoHint),
+    analyseAutofills(buckets._autofillHint),
+    analyseNotes(buckets._notesHint),
+    analyseBookmarks(buckets._bookmarkHint),
+    analyseBrowserMetadata(buckets._browserMetadataHint),
+    analyseAccountTokens(buckets._accountTokenHint),
+    analyseServiceArtifacts(buckets._serviceArtifactHint),
+    analyseWalletArtifacts(buckets._cryptoWalletHint),
+    analyseDownloads(buckets._downloadHint),
+    analyseCreditCards(buckets._creditCardHint),
+    analyseDomainDetect(buckets._domainDetectHint),
+    analyseSoftware(buckets._softwareFileHint),
+    analyseProcessList(buckets._processListHint),
+    analyseClipboard(buckets._clipboardHint),
+    analyseGrabbedFiles(buckets._grabbedFileHint),
     runFingerprint(fileTree, rootName),
   ];
 

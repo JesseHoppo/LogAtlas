@@ -8,11 +8,16 @@ export const FILE_TYPE_PATTERNS = {
       /^passwords?[_\s](?:google\s?chrome|microsoft\s?edge|firefox|opera|brave|vivaldi|chromium)[^/]*\.(txt|tsv|csv)$/i,
       /^logins?\.(txt|tsv|csv)$/i,
       /^credentials?\.(txt|tsv|csv)$/i,
+      /^browser[_\s]?passwords?\.(txt|tsv|csv)$/i,
+    ],
+    // Aggregate summary files — only promoted when no per-profile file exists,
+    // otherwise they'd double-count. See reconcileAggregatePasswordFiles.
+    aggregatePatterns: [
+      /^(?:all|unique|icloud)[\s_-]*passwords?(?:\([^)]+\))?\.(txt|tsv|csv)$/i,
     ],
     exclusions: [
       /bruteforce/i,
       /wordlist/i,
-      /^(?:all|unique|icloud)[\s_-]*passwords?\.(txt|tsv|csv)$/i,
       /^brute\.txt$/i,
     ],
     parentDirMatch: /^(?:passwords?|logins)$/i,
