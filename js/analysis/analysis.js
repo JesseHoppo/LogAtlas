@@ -174,13 +174,18 @@ async function analyseCredentials(nodes) {
 
 async function analyseCookies(nodes) {
   if (nodes.length === 0) {
-    emit('analysis:cookies', { fileCount: 0, totalCookies: 0, uniqueDomains: 0, topDomains: [], sessionTokens: 0, validSessionTokens: 0 });
+    emit('analysis:cookies', {
+      fileCount: 0, totalCookies: 0, uniqueDomains: 0, topDomains: [],
+      totalValid: 0, totalExpired: 0, totalSession: 0, totalUnknown: 0, totalNoDomain: 0,
+      sessionTokens: 0, validSessionTokens: 0,
+    });
     return;
   }
 
   const domainStats = {};
   let totalCookies = 0;
   let parsedCount = 0;
+  let totalNoDomain = 0;
   let sessionTokens = 0;
   let validSessionTokens = 0;
 
@@ -200,10 +205,10 @@ async function analyseCookies(nodes) {
 
       for (const row of parsed.rows) {
         const domain = (domainIdx >= 0 ? (row[domainIdx] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase();
-        if (!domain) continue;
+        if (!domain) { totalNoDomain++; continue; }
 
         if (!domainStats[domain]) {
-          domainStats[domain] = { total: 0, valid: 0, expired: 0 };
+          domainStats[domain] = { total: 0, valid: 0, expired: 0, session: 0, unknown: 0 };
         }
         domainStats[domain].total++;
 
@@ -211,6 +216,8 @@ async function analyseCookies(nodes) {
         const validity = checkCookieValidity(expiresVal);
         if (validity.status === 'valid') domainStats[domain].valid++;
         else if (validity.status === 'expired') domainStats[domain].expired++;
+        else if (validity.status === 'session') domainStats[domain].session++;
+        else domainStats[domain].unknown++;
 
         const cookieName = nameIdx >= 0 ? row[nameIdx] : '';
         const sessionType = classifyCookie(cookieName);
@@ -228,9 +235,13 @@ async function analyseCookies(nodes) {
 
   let totalValid = 0;
   let totalExpired = 0;
+  let totalSession = 0;
+  let totalUnknown = 0;
   for (const stats of Object.values(domainStats)) {
     totalValid += stats.valid;
     totalExpired += stats.expired;
+    totalSession += stats.session;
+    totalUnknown += stats.unknown;
   }
 
   const topDomains = Object.entries(domainStats)
@@ -240,7 +251,9 @@ async function analyseCookies(nodes) {
       value: domain,
       count: stats.total,
       valid: stats.valid,
-      expired: stats.expired
+      expired: stats.expired,
+      session: stats.session,
+      unknown: stats.unknown,
     }));
 
   emit('analysis:cookies', {
@@ -249,6 +262,9 @@ async function analyseCookies(nodes) {
     uniqueDomains,
     totalValid,
     totalExpired,
+    totalSession,
+    totalUnknown,
+    totalNoDomain,
     topDomains,
     sessionTokens,
     validSessionTokens,

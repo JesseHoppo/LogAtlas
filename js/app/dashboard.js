@@ -33,7 +33,7 @@ function setOverviewState(key, value) {
   renderTriageOverview();
 }
 
-function pluralize(value, singular, plural = singular + 's') {
+function pluralise(value, singular, plural = singular + 's') {
   return `${value.toLocaleString()} ${value === 1 ? singular : plural}`;
 }
 
@@ -155,16 +155,16 @@ function buildCaseBriefing({
   if (user) introParts[introParts.length - 1] += ` used by ${user}`;
 
   const scopeParts = [];
-  if (totalFiles > 0) scopeParts.push(pluralize(totalFiles, 'file'));
-  if (credentials?.uniqueCredentials > 0) scopeParts.push(pluralize(credentials.uniqueCredentials, 'unique credential'));
-  if (cookies?.validSessionTokens > 0) scopeParts.push(pluralize(cookies.validSessionTokens, 'valid browser session'));
-  if (history?.totalEntries > 0) scopeParts.push(pluralize(history.totalEntries, 'history entry', 'history entries'));
-  if (tokens?.totalEntries > 0) scopeParts.push(pluralize(tokens.totalEntries, 'token entry', 'token entries'));
-  if (wallets?.totalEntries > 0) scopeParts.push(pluralize(wallets.totalEntries, 'wallet/store artifact'));
-  if (cards?.totalCards > 0) scopeParts.push(pluralize(cards.totalCards, 'card entry', 'card entries'));
-  if (grabbed?.fileCount > 0) scopeParts.push(pluralize(grabbed.fileCount, 'grabbed file'));
-  else if (notes?.totalNotes > 0) scopeParts.push(pluralize(notes.totalNotes, 'note file'));
-  else if (screenshot?.entries?.length > 0) scopeParts.push(pluralize(screenshot.entries.length, 'screenshot'));
+  if (totalFiles > 0) scopeParts.push(pluralise(totalFiles, 'file'));
+  if (credentials?.uniqueCredentials > 0) scopeParts.push(pluralise(credentials.uniqueCredentials, 'unique credential'));
+  if (cookies?.validSessionTokens > 0) scopeParts.push(pluralise(cookies.validSessionTokens, 'valid browser session'));
+  if (history?.totalEntries > 0) scopeParts.push(pluralise(history.totalEntries, 'history entry', 'history entries'));
+  if (tokens?.totalEntries > 0) scopeParts.push(pluralise(tokens.totalEntries, 'token entry', 'token entries'));
+  if (wallets?.totalEntries > 0) scopeParts.push(pluralise(wallets.totalEntries, 'wallet/store artifact'));
+  if (cards?.totalCards > 0) scopeParts.push(pluralise(cards.totalCards, 'card entry', 'card entries'));
+  if (grabbed?.fileCount > 0) scopeParts.push(pluralise(grabbed.fileCount, 'grabbed file'));
+  else if (notes?.totalNotes > 0) scopeParts.push(pluralise(notes.totalNotes, 'note file'));
+  else if (screenshot?.entries?.length > 0) scopeParts.push(pluralise(screenshot.entries.length, 'screenshot'));
 
   const scopeText = joinNaturalList(scopeParts.slice(0, 5));
   return scopeText ? `${introParts.join('')}. It contains ${scopeText}.` : `${introParts.join('')}.`;
@@ -357,19 +357,19 @@ function renderTriageOverview() {
     const domainText = topValuesText(credentials.topDomains);
     riskItems.push(
       domainText
-        ? `${pluralize(credentials.uniqueCredentials, 'unique credential')} recovered, with the heaviest credential volume tied to ${domainText}.`
-        : `${pluralize(credentials.uniqueCredentials, 'unique credential')} recovered across the parsed credential files.`
+        ? `${pluralise(credentials.uniqueCredentials, 'unique credential')} recovered, with the heaviest credential volume tied to ${domainText}.`
+        : `${pluralise(credentials.uniqueCredentials, 'unique credential')} recovered across the parsed credential files.`
     );
   }
   if (credentials?.failedFiles?.length > 0) {
-    riskItems.push(`${pluralize(credentials.failedFiles.length, 'password file')} could not be parsed cleanly and may require manual review.`);
+    riskItems.push(`${pluralise(credentials.failedFiles.length, 'password file')} could not be parsed cleanly and may require manual review.`);
   }
   if (cookies?.validSessionTokens > 0) {
     const domainText = topValuesText(cookies.topDomains);
     riskItems.push(
       domainText
-        ? `${pluralize(cookies.validSessionTokens, 'valid browser session')} recovered, most heavily concentrated in cookies for ${domainText}.`
-        : `${pluralize(cookies.validSessionTokens, 'valid browser session')} recovered from the cookie data.`
+        ? `${pluralise(cookies.validSessionTokens, 'valid browser session')} recovered, most heavily concentrated in cookies for ${domainText}.`
+        : `${pluralise(cookies.validSessionTokens, 'valid browser session')} recovered from the cookie data.`
     );
   }
   if (history?.totalEntries > 0) {
@@ -377,38 +377,38 @@ function renderTriageOverview() {
     const recentText = history.mostRecent?.lastVisit ? ` Most recent parsed visit: ${history.mostRecent.lastVisit}.` : '';
     riskItems.push(
       domainText
-        ? `${pluralize(history.totalEntries, 'history entry', 'history entries')} parsed across ${pluralize(history.uniqueDomains || 0, 'domain')}, with the most visited domains including ${domainText}.${recentText}`.trim()
-        : `${pluralize(history.totalEntries, 'history entry', 'history entries')} parsed from browser history.${recentText}`.trim()
+        ? `${pluralise(history.totalEntries, 'history entry', 'history entries')} parsed across ${pluralise(history.uniqueDomains || 0, 'domain')}, with the most visited domains including ${domainText}.${recentText}`.trim()
+        : `${pluralise(history.totalEntries, 'history entry', 'history entries')} parsed from browser history.${recentText}`.trim()
     );
   }
   if (tokens?.totalEntries > 0) {
     const servicesText = topValuesText(tokens.services);
-    riskItems.push(`Account-token material is present${servicesText ? ` for ${servicesText}` : ''}${tokens.uniqueAccounts ? ` across ${pluralize(tokens.uniqueAccounts, 'account identifier')}` : ''}.`);
+    riskItems.push(`Account-token material is present${servicesText ? ` for ${servicesText}` : ''}${tokens.uniqueAccounts ? ` across ${pluralise(tokens.uniqueAccounts, 'account identifier')}` : ''}.`);
   }
   if (wallets?.totalEntries > 0) {
     const servicesText = topValuesText(wallets.services);
     const extra = [];
-    if (wallets.withSeedHints > 0) extra.push(pluralize(wallets.withSeedHints, 'seed/recovery hit'));
-    if (wallets.withTokenSignals > 0) extra.push(pluralize(wallets.withTokenSignals, 'token-bearing store'));
-    riskItems.push(`${pluralize(wallets.totalEntries, 'wallet or raw-store artifact')} detected${servicesText ? ` for ${servicesText}` : ''}${extra.length ? `, including ${joinNaturalList(extra)}` : ''}.`);
+    if (wallets.withSeedHints > 0) extra.push(pluralise(wallets.withSeedHints, 'seed/recovery hit'));
+    if (wallets.withTokenSignals > 0) extra.push(pluralise(wallets.withTokenSignals, 'token-bearing store'));
+    riskItems.push(`${pluralise(wallets.totalEntries, 'wallet or raw-store artifact')} detected${servicesText ? ` for ${servicesText}` : ''}${extra.length ? `, including ${joinNaturalList(extra)}` : ''}.`);
   }
   if (cards?.totalCards > 0) {
     const parts = [];
-    if (cards.withHolder > 0) parts.push(pluralize(cards.withHolder, 'named cardholder'));
-    if (cards.withExpiry > 0) parts.push(pluralize(cards.withExpiry, 'expiry value'));
-    if (cards.withCvc > 0) parts.push(pluralize(cards.withCvc, 'CVC value'));
-    riskItems.push(`${pluralize(cards.totalCards, 'payment-card entry', 'payment-card entries')} recovered${parts.length ? `, with ${joinNaturalList(parts)}` : ''}.`);
+    if (cards.withHolder > 0) parts.push(pluralise(cards.withHolder, 'named cardholder'));
+    if (cards.withExpiry > 0) parts.push(pluralise(cards.withExpiry, 'expiry value'));
+    if (cards.withCvc > 0) parts.push(pluralise(cards.withCvc, 'CVC value'));
+    riskItems.push(`${pluralise(cards.totalCards, 'payment-card entry', 'payment-card entries')} recovered${parts.length ? `, with ${joinNaturalList(parts)}` : ''}.`);
   }
   if (notes?.credentialNotes > 0 || notes?.walletNotes > 0) {
     const notableNoteCount = notes.entries
       ? notes.entries.filter(entry => entry.credentialHints > 0 || entry.walletHints > 0).length
       : Math.max(notes.credentialNotes || 0, notes.walletNotes || 0);
-    riskItems.push(`Notes contain credential or wallet language in ${pluralize(notableNoteCount, 'file')}.`);
+    riskItems.push(`Notes contain credential or wallet language in ${pluralise(notableNoteCount, 'file')}.`);
   } else if (notes?.totalNotes > 0) {
-    riskItems.push(`${pluralize(notes.totalNotes, 'note file')} may contain victim context, account notes, or operator comments.`);
+    riskItems.push(`${pluralise(notes.totalNotes, 'note file')} may contain victim context, account notes, or operator comments.`);
   }
   if (grabbed?.fileCount > 0) {
-    riskItems.push(`${pluralize(grabbed.fileCount, 'grabbed file')} recovered from FileGrabber / Important Files.`);
+    riskItems.push(`${pluralise(grabbed.fileCount, 'grabbed file')} recovered from FileGrabber / Important Files.`);
   }
   if (services?.totalEntries > 0) {
     const servicesText = topValuesText(services.services);
@@ -418,16 +418,16 @@ function renderTriageOverview() {
     const domainText = topValuesText(downloads.topDomains);
     riskItems.push(
       domainText
-        ? `${pluralize(downloads.totalDownloads, 'download entry', 'download entries')} logged, with the most common source domains including ${domainText}.`
-        : `${pluralize(downloads.totalDownloads, 'download entry', 'download entries')} logged in the recovered history.`
+        ? `${pluralise(downloads.totalDownloads, 'download entry', 'download entries')} logged, with the most common source domains including ${domainText}.`
+        : `${pluralise(downloads.totalDownloads, 'download entry', 'download entries')} logged in the recovered history.`
     );
   }
   if (domainDetect?.totalHits > 0) {
     const categoryCount = Object.keys(domainDetect.categories || {}).length;
-    riskItems.push(`${pluralize(domainDetect.totalHits, 'domain-detection hit')} recorded across ${pluralize(categoryCount, 'category')}.`);
+    riskItems.push(`${pluralise(domainDetect.totalHits, 'domain-detection hit')} recorded across ${pluralise(categoryCount, 'category')}.`);
   }
   if (screenshot?.entries?.length > 0) {
-    riskItems.push(`${pluralize(screenshot.entries.length, 'desktop screenshot')} captured during collection.`);
+    riskItems.push(`${pluralise(screenshot.entries.length, 'desktop screenshot')} captured during collection.`);
   }
 
   if (riskItems.length > 0) {
@@ -609,6 +609,15 @@ export function initDashboard() {
 
     if (data.totalCookies > 0) {
       let summaryHtml = `${data.totalCookies.toLocaleString()} cookies across ${data.uniqueDomains} domains from ${data.fileCount} file(s) &mdash; <span class="cookie-valid">${data.totalValid.toLocaleString()} valid</span>, <span class="cookie-expired">${data.totalExpired.toLocaleString()} expired</span>`;
+      if (data.totalSession > 0) {
+        summaryHtml += `, <span class="cookie-session">${data.totalSession.toLocaleString()} session</span>`;
+      }
+      if (data.totalUnknown > 0) {
+        summaryHtml += `, <span class="cookie-unknown">${data.totalUnknown.toLocaleString()} unparseable expiry</span>`;
+      }
+      if (data.totalNoDomain > 0) {
+        summaryHtml += `, <span class="cookie-unknown">${data.totalNoDomain.toLocaleString()} no domain</span>`;
+      }
       if (data.sessionTokens > 0) {
         summaryHtml += ` &mdash; <span class="cookie-auth">${data.sessionTokens.toLocaleString()} session token${data.sessionTokens !== 1 ? 's' : ''}</span>`;
         if (data.validSessionTokens > 0) {

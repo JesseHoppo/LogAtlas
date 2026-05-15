@@ -2846,6 +2846,9 @@ body {
 .cookie-session {
   color: var(--text-muted);
 }
+.cookie-unknown {
+  color: var(--warning);
+}
 
 .validity-badge {
   display: inline-block;
