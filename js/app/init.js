@@ -9,6 +9,8 @@ import { initIdentityGraph, initIdentityPage } from '../views/identityGraph.js';
 import { initColumnMapper } from '../files/columnMapper.js';
 import { initPasteText } from '../files/pasteText.js';
 import { initDomainExplorer } from '../views/domainExplorer.js';
+import { initCurrentnessLab } from '../views/currentnessLab.js';
+import { loadDomainCategories } from '../core/domainCategories.js';
 import {
   initDashboard,
   updateDashboardVisibility,
@@ -44,6 +46,7 @@ const moduleInitializers = [
   ['Identity graph', initIdentityGraph],
   ['Identity page', initIdentityPage],
   ['Domain explorer', initDomainExplorer],
+  ['Currentness lab', initCurrentnessLab],
   ['Dashboard', initDashboard],
 ];
 
@@ -51,7 +54,7 @@ for (const [name, init] of moduleInitializers) {
   try {
     init();
   } catch (error) {
-    console.error(`${name} failed to initialize:`, error);
+    console.error(`${name} failed to initialise:`, error);
   }
 }
 
@@ -87,5 +90,9 @@ initKeyboardShortcuts({
 initThemeToggle();
 
 document.getElementById('resetBtn')?.addEventListener('click', resetUI);
+
+// Fetch the vendored domain category data in the background. Lab and Domain
+// Explorer subscribe to `domains:categoriesLoaded` and rebuild when ready.
+void loadDomainCategories();
 
 void autoLoadFromQuery(fileHandling.handleFiles);

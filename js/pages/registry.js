@@ -361,6 +361,24 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     emptyText: 'No identity data available.',
     afterContentHtml: '<div id="identityEmailMap"></div>',
   },
+  {
+    name: 'currentnesslab',
+    pageId: 'pageCurrentnessLab',
+    navId: 'navCurrentnessLab',
+    sidebarSection: 'experiments',
+    navLabel: 'Currentness Lab',
+    title: 'Currentness Lab',
+    summaryId: 'currentnessLabSummary',
+    summaryText: 'No credential currentness data.',
+    searchId: 'currentnessLabSearch',
+    searchPlaceholder: 'Search scored credentials...',
+    searchLabel: 'Search credential currentness',
+    exportId: 'exportCurrentnessLabCsv',
+    statsId: 'currentnessLabStats',
+    beforeContentHtml: '<div id="currentnessLabMeta"></div>',
+    contentId: 'currentnessLabContent',
+    emptyText: 'No credential currentness data available.',
+  },
 ]);
 
 const PAGE_IDS = Object.freeze({
@@ -440,6 +458,11 @@ function renderSidebarDataNav() {
   const analysisMount = document.getElementById('generatedAnalysisNav');
   if (analysisMount) {
     analysisMount.innerHTML = renderSidebarButtons('analysis');
+  }
+
+  const experimentsMount = document.getElementById('generatedExperimentsNav');
+  if (experimentsMount) {
+    experimentsMount.innerHTML = renderSidebarButtons('experiments');
   }
 }
 
