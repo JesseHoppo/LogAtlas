@@ -10,11 +10,20 @@ Thumbs.db
 *.swo
 *~
 
-# Test data
+# Sample archives — never commit raw stealer logs.
 Example Logs/
-*.test.zip
-test_*.zip
-example_*.zip
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# Generated / scratch
 reports/
 scripts/
 processed examples/
+OVERVIEW.md
+
+# Internal review docs (audit findings, batch plans, sweep harness).
+reviews/
