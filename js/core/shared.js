@@ -116,6 +116,17 @@ const HOSTED_SCHEMES = new Set([
   'smtp', 'smtps', 'imap', 'imaps', 'pop3', 'pop3s', 'oauth', 'ftp', 'sftp',
 ]);
 
+// Browser-internal URLs: settings pages, extension storage, about: pages.
+// Useless in topDomains lists — drop entirely rather than bucket under the
+// scheme name.
+const BROWSER_INTERNAL_SCHEMES = new Set([
+  'chrome', 'chrome-extension', 'chrome-search', 'chrome-untrusted',
+  'edge', 'edge-extension',
+  'moz-extension', 'firefox',
+  'brave', 'opera', 'vivaldi', 'arc',
+  'about', 'view-source', 'devtools',
+]);
+
 function extractDomain(url) {
   if (!url) return null;
   const raw = String(url).trim();
@@ -126,6 +137,9 @@ function extractDomain(url) {
   const schemeMatch = raw.match(/^([a-z][a-z0-9+.-]*):/i);
   if (schemeMatch) {
     const scheme = schemeMatch[1].toLowerCase();
+    if (BROWSER_INTERNAL_SCHEMES.has(scheme)) {
+      return null;
+    }
     if (scheme === 'android') {
       // Chrome Smart Lock: `android://<hash>@com.package.name/`.
       const m = raw.match(/^android:\/\/(?:[^@/]*@)?([a-z][a-z0-9_]*(?:\.[a-z0-9_][a-z0-9_]*)+)/i);

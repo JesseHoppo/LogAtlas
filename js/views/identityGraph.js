@@ -106,7 +106,15 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
     if (autofillData.emails) identity.emails = [...autofillData.emails];
     if (autofillData.phones) identity.phones = [...autofillData.phones];
     if (!identity.location && autofillData.addresses && autofillData.addresses.length > 0) {
-      identity.location = autofillData.addresses[0];
+      // Prefer the longest reasonably-shaped row. Bare postcodes / suburb
+      // names alone (`4113`, `Brisbane`) make terrible "Location" labels.
+      const candidates = autofillData.addresses
+        .map(addr => String(addr || '').trim())
+        .filter(addr => addr.length >= 8);
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.length - a.length);
+        identity.location = candidates[0];
+      }
     }
   }
 

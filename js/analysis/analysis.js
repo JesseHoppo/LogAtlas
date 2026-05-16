@@ -150,7 +150,11 @@ async function analyseCredentials(nodes) {
         if (!seen.has(key)) {
           seen.add(key);
           uniqueCredentials++;
-          if (url) allDomains.push(extractDomain(url));
+          if (url) {
+            const host = extractDomain(url);
+            const base = host ? (extractBaseDomain(host) || host) : null;
+            if (base) allDomains.push(base);
+          }
           if (user) allUsernames.push(userPart);
         }
       }
@@ -245,7 +249,22 @@ async function analyseCookies(nodes) {
     totalUnknown += stats.unknown;
   }
 
-  const topDomains = Object.entries(domainStats)
+  // Roll up per-host stats to eTLD+1 for the headline list. Per-host detail
+  // is still available on the cookies page via the underlying row data.
+  const baseStats = {};
+  for (const [host, stats] of Object.entries(domainStats)) {
+    const base = extractBaseDomain(host) || host;
+    if (!baseStats[base]) {
+      baseStats[base] = { total: 0, valid: 0, expired: 0, session: 0, unknown: 0 };
+    }
+    baseStats[base].total += stats.total;
+    baseStats[base].valid += stats.valid;
+    baseStats[base].expired += stats.expired;
+    baseStats[base].session += stats.session;
+    baseStats[base].unknown += stats.unknown;
+  }
+
+  const topDomains = Object.entries(baseStats)
     .sort((a, b) => b[1].total - a[1].total)
     .slice(0, LIMITS.topCookieDomains)
     .map(([domain, stats]) => ({
@@ -830,8 +849,9 @@ async function analyseBookmarks(nodes) {
       for (const row of parsed.rows) {
         const url = (row[0] || '').trim();
         if (!url) continue;
-        const domain = extractDomain(url);
-        if (domain) allDomains.push(domain);
+        const host = extractDomain(url);
+        const base = host ? (extractBaseDomain(host) || host) : null;
+        if (base) allDomains.push(base);
       }
     } catch {
       // skip
@@ -1061,7 +1081,10 @@ async function analyseDownloads(nodes) {
       const urlIdx = parsed.headers.findIndex(h => /url/i.test(h));
       for (const row of parsed.rows) {
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : (row[1] || '').trim();
-        if (url) allDomains.push(extractDomain(url));
+        if (!url) continue;
+        const host = extractDomain(url);
+        const base = host ? (extractBaseDomain(host) || host) : null;
+        if (base) allDomains.push(base);
       }
     } catch {
       // skip
