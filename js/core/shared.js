@@ -852,6 +852,38 @@ function formatTimeZoneLabel(minutes, regionLabel) {
   return regionLabel ? `${base} (${regionLabel})` : base;
 }
 
+// User-field values the stealer wrote that don't represent a real human:
+// OEM-default vendor names (Dell, HP), Windows account placeholders
+// (Administrator, Guest), OS names that snuck into the User field, and the
+// generic UNKNOWN/UNK/N/A sentinels.
+const OEM_USER_PATTERN = /^(?:dell|hp|hewlett[-\s]*packard|lenovo|acer|asus|msi|samsung|toshiba|fujitsu|ibm|apple|microsoft|sony|panasonic|huawei|alienware|gigabyte|razer|surface)$/i;
+const PLACEHOLDER_USER_PATTERN = /^(?:user|users|admin|administrator|administrador|administrateur|usuario|usuari|utilisateur|utente|benutzer|nutzer|gebruiker|brugare|brukar|brukare|guest|gast|default|defaultuser|owner|operator|operador|home|family|familia|familie|public|publico|publik|test|tester|sample|demo|root|customer|kunde|cliente|client|none|null|undefined|unknown|unk|n[/\\-_]?a|nobody|anonymous|temp|tmp|pc|computer|laptop|notebook|workstation)$/i;
+const OS_NAME_USER_PATTERN = /^(?:windows\s*(?:\d+|xp|vista|7|8|10|11|server|home|pro|enterprise)?|win\s*\d+|microsoft\s*windows|macos|mac\s*os(?:\s*x)?|osx|linux|ubuntu|debian|fedora|arch|gentoo|centos|redhat|red\s*hat|suse|opensuse|kali|mint)$/i;
+
+function isPlaceholderUserName(value) {
+  const v = String(value || '').trim();
+  if (!v) return false;
+  return OEM_USER_PATTERN.test(v) || PLACEHOLDER_USER_PATTERN.test(v) || OS_NAME_USER_PATTERN.test(v);
+}
+
+function isValidCountryCode(value) {
+  return /^[A-Za-z]{2}$/.test(String(value || '').trim());
+}
+
+// Two-letter country prefix dropped into log filenames by resale markets:
+// `[PE]_…`, `_AU_…`, `[BR]_…`. Used as a fallback when sysinfo Country
+// fails IP-geo and lands as an IP literal or empty.
+function extractCountryFromFilename(name) {
+  const s = String(name || '');
+  const bracket = s.match(/\[([A-Z]{2})\]/);
+  if (bracket) return bracket[1];
+  const prefix = s.match(/^([A-Z]{2})[_-]/);
+  if (prefix) return prefix[1];
+  const underscore = s.match(/_([A-Z]{2})_/);
+  if (underscore) return underscore[1];
+  return null;
+}
+
 export {
   MAX_SEARCH_MATCHES_PER_FILE,
   SEARCH_BATCH_SIZE,
@@ -864,6 +896,9 @@ export {
   inferBrowserFromPath,
   inferProfileFromPath,
   inferServiceFromPath,
+  extractCountryFromFilename,
+  isPlaceholderUserName,
+  isValidCountryCode,
   normaliseTimeZone,
   parseSoftwareLine,
   parseTimestampValue,

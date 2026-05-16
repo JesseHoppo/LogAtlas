@@ -28,8 +28,11 @@ import {
   classifyAutofillEntries,
   extractDomain,
   extractBaseDomain,
+  extractCountryFromFilename,
   inferBrowserFromPath,
   inferServiceFromPath,
+  isPlaceholderUserName,
+  isValidCountryCode,
   normaliseTimeZone,
   parseSoftwareLine,
   parseTimestampValue,
@@ -70,6 +73,16 @@ async function decodeNodeText(node) {
 }
 
 // Credentials
+
+// Values stealers emit when no username was captured — RedLine in particular
+// writes `UNKNOWN` 5-25× per case. Skipped from topUsernames so they don't
+// outrank real accounts.
+const PLACEHOLDER_USERNAMES = new Set(['unknown', 'unk', 'n/a', 'none', 'null', '-', '?']);
+
+function isPlaceholderTopUsername(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return v === '' || PLACEHOLDER_USERNAMES.has(v);
+}
 
 // Emails are case-insensitive per RFC; lowercase them so case variants merge.
 // Non-email usernames keep their original casing.
@@ -155,7 +168,7 @@ async function analyseCredentials(nodes) {
             const base = host ? (extractBaseDomain(host) || host) : null;
             if (base) allDomains.push(base);
           }
-          if (user) allUsernames.push(userPart);
+          if (user && !isPlaceholderTopUsername(user)) allUsernames.push(userPart);
         }
       }
     } catch (err) {
@@ -361,7 +374,7 @@ async function analyseHistory(nodes) {
 
 // System info
 
-async function analyseSystemInfo(nodes) {
+async function analyseSystemInfo(nodes, rootZipName = '') {
   if (nodes.length === 0) {
     emit('analysis:sysinfo', null);
     return;
@@ -395,13 +408,41 @@ async function analyseSystemInfo(nodes) {
     return;
   }
 
-  // Reuse the already-decoded sysinfo text rather than re-loading and re-decoding.
+  const identityNotes = sanitiseIdentityEntries(merged, rootZipName);
   const combinedText = decoded.length > 0 ? decoded.join('\n') + '\n' : '';
 
-  emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText });
+  emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText, identityNotes });
 
-  // Extract inline software/process sections from sysinfo text
   extractInlineSections(combinedText);
+}
+
+// Strip placeholder / OEM / OS-name garbage from the identity-bearing sysinfo
+// fields and fall back where we can. `identityNotes` records every override
+// so the UI can still surface what the stealer originally captured.
+function sanitiseIdentityEntries(entries, rootZipName) {
+  const notes = [];
+
+  for (const key of ['User Name', 'UserName', 'User', 'username']) {
+    if (entries[key] && isPlaceholderUserName(entries[key])) {
+      notes.push({ field: key, rawValue: entries[key], reason: 'placeholder/oem/os-name' });
+      entries[key] = '';
+    }
+  }
+
+  for (const key of ['Country', 'country']) {
+    const raw = entries[key];
+    if (!raw || isValidCountryCode(raw)) continue;
+    const fromFilename = extractCountryFromFilename(rootZipName);
+    if (fromFilename) {
+      notes.push({ field: key, rawValue: raw, reason: 'invalid-code', resolvedTo: fromFilename, resolvedSource: 'filename' });
+      entries[key] = fromFilename;
+    } else {
+      notes.push({ field: key, rawValue: raw, reason: 'invalid-code' });
+      entries[key] = '';
+    }
+  }
+
+  return notes;
 }
 
 function extractInlineSections(text) {
@@ -1359,7 +1400,7 @@ function runAnalysis(fileTree, rootName) {
     analyseCredentials(buckets._passwordFileHint),
     analyseCookies(buckets._cookieFileHint),
     analyseHistory(buckets._historyHint),
-    analyseSystemInfo(buckets._sysInfoHint),
+    analyseSystemInfo(buckets._sysInfoHint, rootName),
     analyseAutofills(buckets._autofillHint),
     analyseNotes(buckets._notesHint),
     analyseBookmarks(buckets._bookmarkHint),
