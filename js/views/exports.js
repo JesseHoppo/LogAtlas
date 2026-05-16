@@ -43,6 +43,7 @@ import {
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 
 let sysinfoEntries = null;
+let sysinfoIocs = null;
 let fingerprintResult = null;
 let identityResult = null;
 
@@ -184,6 +185,7 @@ function gatherReportData() {
   return {
     archiveName: state.rootZipName || 'Unknown',
     sysinfoEntries,
+    sysinfoIocs,
     fingerprintResult,
     identityResult,
     bookmarks,
@@ -254,6 +256,18 @@ function buildLogSummaryHtml(data) {
         <div class="stat"><span class="stat-num">${es.uniqueEmails}</span> email addresses</div>
       </div>
       ${acctRows ? `<h3>Services with Active Sessions</h3><table><thead><tr><th>Domain</th><th>Linked Emails</th></tr></thead><tbody>${acctRows}</tbody></table>` : ''}
+    </section>`;
+  }
+
+  const infraIocs = (data.sysinfoIocs || []).filter(i => i.kind === 'stealer-infra');
+  if (infraIocs.length > 0) {
+    sections += `<section>
+      <h2>Stealer Infrastructure</h2>
+      <table><thead><tr><th>Label</th><th>Family</th><th>Value</th></tr></thead><tbody>${
+        infraIocs.map(ioc =>
+          `<tr><td>${e(ioc.label)}</td><td>${e(ioc.family || '')}</td><td>${e(ioc.value)}</td></tr>`
+        ).join('')
+      }</tbody></table>
     </section>`;
   }
 
@@ -672,7 +686,10 @@ async function exportParsedDataZip() {
 // Init
 
 function initExports() {
-  on('analysis:sysinfo', (data) => { sysinfoEntries = data ? data.entries : null; });
+  on('analysis:sysinfo', (data) => {
+    sysinfoEntries = data ? data.entries : null;
+    sysinfoIocs = data ? (data.iocs || null) : null;
+  });
   on('analysis:fingerprint', (data) => { fingerprintResult = data; });
   on('analysis:identity', (data) => { identityResult = data; });
 
@@ -731,6 +748,7 @@ function initExports() {
 
   on('reset', () => {
     sysinfoEntries = null;
+    sysinfoIocs = null;
     fingerprintResult = null;
     identityResult = null;
     document.getElementById('navExports').disabled = true;

@@ -2260,6 +2260,17 @@ body {
   flex-shrink: 0;
 }
 
+.dash-ioc-family {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
 .dash-ioc-value {
   font-family: var(--font-mono);
   font-size: 0.75rem;

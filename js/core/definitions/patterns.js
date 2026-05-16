@@ -114,7 +114,9 @@ export const CAPTURE_TIME_KEYS = [
   /^capture\s*date$/i,
 ];
 
-// IOC extraction from sysinfo
+// IOC extraction from sysinfo. `kind` routes the IOC to a dashboard panel:
+// 'victim' for identifiers, 'stealer-infra' for IR-pivot infrastructure
+// (panel URLs, loader staging paths, forum links). Default is 'victim'.
 
 export const IOC_KEY_MAP = [
   { label: 'IP Address', patterns: [/^ip$/i, /^ip\s*address$/i] },
@@ -126,7 +128,8 @@ export const IOC_KEY_MAP = [
   { label: 'User Name', patterns: [/^user\s*name$/i, /^username$/i, /^user$/i] },
   { label: 'Log ID', patterns: [/^lid$/i] },
   { label: 'OS', patterns: [/^os$/i, /^windows$/i, /^system\s*version$/i, /^os\s*version$/i, /^mac\s*os\s*version$/i] },
-  { label: 'Malware Path', patterns: [/^running\s*path$/i, /^execution\s*path$/i, /^path$/i, /^work\s*dir$/i] },
+  { label: 'Loader URL', kind: 'stealer-infra', patterns: [/^download\s*link$/i, /^drop\s*url$/i, /^panel\s*url$/i, /^c2\s*url$/i, /^panel$/i] },
+  { label: 'Loader Sample', kind: 'stealer-infra', patterns: [/^running\s*path$/i, /^execution\s*path$/i, /^path$/i, /^work\s*dir$/i, /^malware\s*path$/i] },
   { label: 'Build ID', patterns: [/^build$/i, /^build\s*id$/i, /^build\s*tag$/i, /^version\s*build$/i, /^version$/i, /^lummac2\s*build$/i, /^build\s*date$/i] },
   { label: 'Log Date', patterns: CAPTURE_TIME_KEYS },
   { label: 'Antivirus', patterns: [/^antivirus$/i, /^anti\s*virus$/i, /^av$/i, /^installed\s*av$/i] },
@@ -140,12 +143,26 @@ export const IOC_KEY_MAP = [
   { label: 'GPU', patterns: [/^video\s*card$/i, /^gpu$/i, /^graphics$/i, /^display\s*adapter$/i] },
 ];
 
-// Content-based IOC patterns (applied to raw sysinfo text)
+// Stealer-own infrastructure surfaced from sysinfo content. Scanned before
+// CONTENT_IOC_PATTERNS so the more specific label wins when both match.
+// `family` is shown as a chip when present.
+export const STEALER_INFRA_PATTERNS = [
+  { label: 'Stealer Panel', family: 'Vidar', pattern: /https?:\/\/(?:[a-z0-9-]+\.)*vidars\.[a-z]{2,6}\/[^\s"'<>]*/gi },
+  { label: 'Stealer Panel', family: 'Lumma', pattern: /(?:@?lummanowork|@?lummamarketplace_bot|lumma\s*market)/gi },
+  { label: 'Stealer Telegram', pattern: /t\.me\/\+[A-Za-z0-9_-]{8,}/g },
+  { label: 'Forum URL', pattern: /\b(?:xss\.is|forum\.exploit\.in|exploit\.in|bhf\.im)\/[^\s"'<>]*/gi },
+  { label: 'Loader URL', pattern: /https?:\/\/(?:[a-z0-9-]+\.)*(?:gofile|anonfiles|mediafire|transfer\.sh|file\.io|pixeldrain|catbox\.moe|temp\.sh|workupload)\.[a-z]{2,4}\/[^\s"'<>]+/gi },
+  { label: 'Loader Sample', pattern: /['"]?[A-Z]:\\Users\\[^\\'"<>\s]+\\AppData\\Local\\Temp\\[^\\'"<>\s]+\.(?:bat|ps1|exe|dll|cmd|vbs|hta)['"]?/gi },
+];
+
+// Content-based IOC patterns (applied to raw sysinfo text). Generic catch-all
+// for URLs / Telegram refs / malware signatures — anything matched by a more
+// specific STEALER_INFRA_PATTERNS entry is suppressed at extraction time.
 export const CONTENT_IOC_PATTERNS = [
-  { label: 'C2/Panel URL', pattern: /https?:\/\/[^\s"'<>]{5,}/gi },
-  { label: 'Telegram Contact', pattern: /(?<![a-zA-Z0-9._%+-])@[a-zA-Z_]\w{3,}/g },
-  { label: 'Telegram Channel', pattern: /t\.me\/[a-zA-Z_]\w{3,}/gi },
-  { label: 'Malware Signature', pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/gi },
+  { label: 'C2/Panel URL', kind: 'stealer-infra', pattern: /https?:\/\/[^\s"'<>]{5,}/gi },
+  { label: 'Telegram Contact', kind: 'stealer-infra', pattern: /(?<![a-zA-Z0-9._%+-])@[a-zA-Z_]\w{3,}/g },
+  { label: 'Telegram Channel', kind: 'stealer-infra', pattern: /t\.me\/[a-zA-Z_]\w{3,}/gi },
+  { label: 'Malware Signature', kind: 'stealer-infra', pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/gi },
 ];
 
 export const IGNORE_DATE_KEYS = [
@@ -178,6 +195,8 @@ export const LIMITS = {
   looksLikeTextSampleBytes: 4096,
   autoLoadMaxBytes: 500 * 1024 * 1024,
   iocMaxItems: 50,
+  stealerInfraMaxItems: 25,
+  stealerInfraValueScanBytes: 4000,
   searchMatchesPerFile: 5,
   searchBatchSize: 20,
 };

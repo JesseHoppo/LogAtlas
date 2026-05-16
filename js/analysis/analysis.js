@@ -44,7 +44,7 @@ import {
 } from '../core/shared.js';
 import { classifyCookie } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
-import { FIELD_PATTERNS, IOC_KEY_MAP, CONTENT_IOC_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
+import { FIELD_PATTERNS, IOC_KEY_MAP, CONTENT_IOC_PATTERNS, STEALER_INFRA_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
 
 // NUL: never present in real credential fields, so safe as a dedupe separator.
 const DEDUPE_KEY_SEP = '\u0000';
@@ -418,8 +418,9 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
 
   const identityNotes = sanitiseIdentityEntries(merged, rootZipName);
   const combinedText = decoded.length > 0 ? decoded.join('\n') + '\n' : '';
+  const iocs = extractIOCs(merged, combinedText) || [];
 
-  emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText, identityNotes });
+  emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText, identityNotes, iocs });
 
   extractInlineSections(combinedText);
 }
@@ -610,51 +611,94 @@ async function analyseClipboard(nodes) {
   emit('analysis:clipboard', { entries, fileCount, urlCount, commandCount, pathCount });
 }
 
+function isLoaderSampleValue(value) {
+  const s = String(value || '').trim();
+  if (!s) return false;
+  if (s.length > 400) return false;
+  if (s.includes(';')) return false;
+  if (!/[\\/]/.test(s)) return false;
+  if (/\.(?:exe|bat|ps1|dll|cmd|vbs|hta|scr|jar)$/i.test(s)) return true;
+  if (/AppData[\\/]+(?:Local|Roaming)[\\/]+Temp[\\/]/i.test(s)) return true;
+  return false;
+}
+
 function extractIOCs(sysinfoEntries, sysinfoText) {
   if (!sysinfoEntries) return null;
   const iocs = [];
   const seen = new Set();
+  const claimedStrings = new Set();
 
-  // Key-value IOC extraction
-  for (const { label, patterns } of IOC_KEY_MAP) {
+  function pushIoc(ioc) {
+    const k = `${ioc.label}:${ioc.value}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    iocs.push(ioc);
+    return true;
+  }
+
+  for (const { label, kind, patterns } of IOC_KEY_MAP) {
     for (const [key, value] of Object.entries(sysinfoEntries)) {
-      if (patterns.some(rx => rx.test(key))) {
-        // Canonicalise TZ encodings to `UTC±HH:MM` for display; keep the raw
-        // form on the IOC so exports can still reach the original string.
-        let displayValue = value;
-        let rawValue;
-        if (label === 'Timezone') {
-          const tz = normaliseTimeZone(value);
-          if (tz.offset != null || tz.source === 'unknown') {
-            displayValue = tz.label;
-            if (tz.label !== String(value).trim()) rawValue = String(value);
-          }
+      if (!patterns.some(rx => rx.test(key))) continue;
+      let displayValue = value;
+      let rawValue;
+      if (label === 'Timezone') {
+        const tz = normaliseTimeZone(value);
+        if (tz.offset != null || tz.source === 'unknown') {
+          displayValue = tz.label;
+          if (tz.label !== String(value).trim()) rawValue = String(value);
         }
-        const k = `${label}:${displayValue}`;
-        if (!seen.has(k)) {
-          seen.add(k);
-          const ioc = { label, value: displayValue };
-          if (rawValue) ioc.rawValue = rawValue;
-          iocs.push(ioc);
-        }
-        break;
+      }
+      if (label === 'Loader Sample' && !isLoaderSampleValue(displayValue)) continue;
+      const ioc = { label, value: displayValue };
+      if (kind) ioc.kind = kind;
+      if (rawValue) ioc.rawValue = rawValue;
+      if (pushIoc(ioc)) claimedStrings.add(String(displayValue));
+      break;
+    }
+  }
+
+  const infraCount = () => iocs.filter(i => i.kind === 'stealer-infra').length;
+
+  function scanWith(patterns, text) {
+    for (const { label, family, pattern } of patterns) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        if (infraCount() >= LIMITS.stealerInfraMaxItems) return;
+        const value = match[0].replace(/^["']|["']$/g, '');
+        const ioc = { label, value, kind: 'stealer-infra' };
+        if (family) ioc.family = family;
+        if (pushIoc(ioc)) claimedStrings.add(value);
       }
     }
   }
 
-  // Content-based IOC extraction. Labelled break enforces the global cap
-  // across all patterns; a plain break would only exit the inner while.
+  if (sysinfoText) scanWith(STEALER_INFRA_PATTERNS, sysinfoText);
+
+  for (const value of Object.values(sysinfoEntries)) {
+    if (infraCount() >= LIMITS.stealerInfraMaxItems) break;
+    const s = String(value || '');
+    if (!s || s.length > LIMITS.stealerInfraValueScanBytes) continue;
+    scanWith(STEALER_INFRA_PATTERNS, s);
+  }
+
   if (sysinfoText) {
-    outer: for (const { label, pattern } of CONTENT_IOC_PATTERNS) {
+    outer: for (const { label, kind, pattern } of CONTENT_IOC_PATTERNS) {
       pattern.lastIndex = 0;
       let match;
       while ((match = pattern.exec(sysinfoText)) !== null) {
         const value = match[0];
-        const k = `${label}:${value}`;
-        if (!seen.has(k)) {
-          seen.add(k);
-          iocs.push({ label, value });
+        if (claimedStrings.has(value)) continue;
+        if (label === 'C2/Panel URL') {
+          let claimedAsInfra = false;
+          for (const claimed of claimedStrings) {
+            if (claimed.length > 8 && value.includes(claimed)) { claimedAsInfra = true; break; }
+          }
+          if (claimedAsInfra) continue;
         }
+        const ioc = { label, value };
+        if (kind) ioc.kind = kind;
+        pushIoc(ioc);
         if (iocs.length >= LIMITS.iocMaxItems) break outer;
       }
     }

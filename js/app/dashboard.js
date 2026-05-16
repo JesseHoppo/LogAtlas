@@ -6,8 +6,6 @@ import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp } from '../
 import { CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
 import { escapeHtml, escapeAttr } from '../core/utils.js';
 import { formatDateTimeLabel } from '../pages/shared.js';
-import { extractIOCs } from '../analysis/analysis.js';
-
 let sysInfoSourcePath = null;
 let overviewScreenshotUrl = null;
 let sysinfoIocs = [];
@@ -199,11 +197,14 @@ function resolveSysInfoSourcePath(sourceFiles) {
 }
 
 function renderDashboardIocs() {
-  const section = document.getElementById('dashIOCs');
-  const body = document.getElementById('dashIOCBody');
-  if (!section || !body) return;
+  const victimSection = document.getElementById('dashIOCs');
+  const victimBody = document.getElementById('dashIOCBody');
+  const infraSection = document.getElementById('dashStealerInfra');
+  const infraBody = document.getElementById('dashStealerInfraBody');
+  if (!victimSection || !victimBody) return;
 
-  const items = [];
+  const victim = [];
+  const infra = [];
   const seen = new Set();
   for (const item of [...sysinfoIocs, ...clipboardIocs]) {
     const label = String(item?.label || '').trim();
@@ -212,23 +213,38 @@ function renderDashboardIocs() {
     const key = `${label}\u0000${value}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    items.push({ label, value });
+    const out = { label, value };
+    if (item.family) out.family = item.family;
+    (item?.kind === 'stealer-infra' ? infra : victim).push(out);
   }
 
-  if (items.length === 0) {
-    section.classList.add('hidden');
-    body.innerHTML = '';
-    return;
+  function renderItems(items) {
+    return items.map((ioc) => {
+      const family = ioc.family ? `<span class="dash-ioc-family">${escapeHtml(ioc.family)}</span>` : '';
+      return `<div class="dash-ioc-item">
+        <span class="dash-ioc-label">${escapeHtml(ioc.label)}</span>${family}
+        <span class="dash-ioc-value">${escapeHtml(ioc.value)}</span>
+        <button class="dash-ioc-copy" title="Copy" data-copy="${escapeAttr(ioc.value)}">Copy</button>
+      </div>`;
+    }).join('');
   }
 
-  section.classList.remove('hidden');
-  body.innerHTML = items.map((ioc) => `
-    <div class="dash-ioc-item">
-      <span class="dash-ioc-label">${escapeHtml(ioc.label)}</span>
-      <span class="dash-ioc-value">${escapeHtml(ioc.value)}</span>
-      <button class="dash-ioc-copy" title="Copy" data-copy="${escapeAttr(ioc.value)}">Copy</button>
-    </div>
-  `).join('');
+  if (victim.length === 0) {
+    victimSection.classList.add('hidden');
+    victimBody.innerHTML = '';
+  } else {
+    victimSection.classList.remove('hidden');
+    victimBody.innerHTML = renderItems(victim);
+  }
+
+  if (!infraSection || !infraBody) return;
+  if (infra.length === 0) {
+    infraSection.classList.add('hidden');
+    infraBody.innerHTML = '';
+  } else {
+    infraSection.classList.remove('hidden');
+    infraBody.innerHTML = renderItems(infra);
+  }
 }
 
 function renderTriageOverview() {
@@ -525,18 +541,21 @@ export { updateDashboardVisibility };
 
 export function initDashboard() {
   const loadingText = document.getElementById('loadingText');
-  const iocBody = document.getElementById('dashIOCBody');
 
-  iocBody?.addEventListener('click', (event) => {
-    const btn = event.target.closest('.dash-ioc-copy');
-    if (!btn) return;
-    copyToClipboard(btn.dataset.copy).then((ok) => {
-      if (ok) {
-        btn.textContent = 'Copied';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
-      }
+  function bindCopy(node) {
+    node?.addEventListener('click', (event) => {
+      const btn = event.target.closest('.dash-ioc-copy');
+      if (!btn) return;
+      copyToClipboard(btn.dataset.copy).then((ok) => {
+        if (ok) {
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+        }
+      });
     });
-  });
+  }
+  bindCopy(document.getElementById('dashIOCBody'));
+  bindCopy(document.getElementById('dashStealerInfraBody'));
 
   on('loading', () => {
     loadingText.textContent = state.loadingText;
@@ -642,7 +661,7 @@ export function initDashboard() {
       openBtn.textContent = 'View Source';
     }
 
-    sysinfoIocs = extractIOCs(data.entries, data.sysinfoText) || [];
+    sysinfoIocs = data.iocs || [];
     renderDashboardIocs();
   });
 
