@@ -5,6 +5,20 @@ import { inferServiceFromPath } from './serviceRegistry.js';
 
 // Shared UTF-8 decoder reused across modules.
 const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
+const WIN1252_TEXT_DECODER = new TextDecoder('windows-1252');
+
+// Some logs (Stealc and a few Rhadamanthys builds) ship sysinfo / software
+// lists encoded as Windows-1252 instead of UTF-8 — the unmarked ü/'/ñ bytes
+// land as U+FFFD when decoded as UTF-8. When the UTF-8 attempt contains
+// replacement chars, fall back to Windows-1252 and keep whichever has fewer.
+function decodeBufferWithFallback(buffer) {
+  const utf8 = SHARED_TEXT_DECODER.decode(buffer);
+  if (!utf8.includes('�')) return utf8;
+  const win = WIN1252_TEXT_DECODER.decode(buffer);
+  const utf8Bad = (utf8.match(/�/g) || []).length;
+  const winBad = (win.match(/�/g) || []).length;
+  return winBad < utf8Bad ? win : utf8;
+}
 
 const MAX_SEARCH_MATCHES_PER_FILE = 5;
 const SEARCH_BATCH_SIZE = 20;
@@ -203,14 +217,14 @@ function inferProfileFromPath(pathText) {
 
 function normaliseAutofillValue(value) {
   return String(value || '')
-    .replace(/^value\s*:\s*/i, '')
+    .replace(/^(?:value|val)\s*:\s*/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function normaliseAutofillFieldName(name) {
   return normaliseAutofillValue(name)
-    .replace(/^(?:name|field|label)\s*:\s*/i, '')
+    .replace(/^(?:name|field|label|form|key)\s*:\s*/i, '')
     .trim();
 }
 
@@ -235,7 +249,12 @@ function isLikelyAutofillPhone(value) {
 function canonicaliseAutofillPhone(value) {
   const digits = normaliseAutofillValue(value).replace(/\D/g, '');
   if (digits.length < 7 || digits.length > 15) return '';
-  return digits;
+  // Drop trunk-zero(s) and any country-code prefix so `+61491570156` and
+  // `0491570156` collapse to the same key. Eight trailing digits is enough
+  // signal to dedup within a single victim's autofill set without colliding
+  // across distinct numbers.
+  const stripped = digits.replace(/^0+/, '');
+  return stripped.length > 8 ? stripped.slice(-8) : stripped || digits;
 }
 
 function normaliseAutofillLetters(value) {
@@ -888,7 +907,10 @@ export {
   MAX_SEARCH_MATCHES_PER_FILE,
   SEARCH_BATCH_SIZE,
   SHARED_TEXT_DECODER,
+  decodeBufferWithFallback,
+  canonicaliseAutofillPhone,
   classifyAutofillEntries,
+  isLikelyAutofillPhone,
   collectHintedNodes,
   collectFileNodes,
   extractDomain,

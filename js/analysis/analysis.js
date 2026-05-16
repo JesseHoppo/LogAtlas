@@ -24,13 +24,15 @@ import { isPromotionalNoiseLine, stripLeadingNoiseLines } from '../transforms/sh
 import { parseWalletArtifact } from './walletArtifacts.js';
 import { parseNoteArtifact, summariseNotes, classifyGrabbedFile, summariseGrabbedFiles } from './contextArtifacts.js';
 import {
-  SHARED_TEXT_DECODER,
+  canonicaliseAutofillPhone,
   classifyAutofillEntries,
+  decodeBufferWithFallback,
   extractDomain,
   extractBaseDomain,
   extractCountryFromFilename,
   inferBrowserFromPath,
   inferServiceFromPath,
+  isLikelyAutofillPhone,
   isPlaceholderUserName,
   isValidCountryCode,
   normaliseTimeZone,
@@ -69,7 +71,7 @@ function bucketHintedNodes(fileTree, rootName) {
 async function decodeNodeText(node) {
   const content = await loadFileContent(node);
   if (!content) return null;
-  return SHARED_TEXT_DECODER.decode(content);
+  return decodeBufferWithFallback(content);
 }
 
 // Credentials
@@ -85,10 +87,17 @@ function isPlaceholderTopUsername(value) {
 }
 
 // Emails are case-insensitive per RFC; lowercase them so case variants merge.
-// Non-email usernames keep their original casing.
+// Phone-shaped usernames (e.g. `+61491570156` and `0491570156`) collapse to
+// their trunk-stripped 8-digit suffix so format variants dedup. Everything
+// else passes through unchanged.
 function normaliseUsername(value) {
   const v = String(value || '');
-  return v.includes('@') ? v.toLowerCase() : v;
+  if (v.includes('@')) return v.toLowerCase();
+  if (isLikelyAutofillPhone(v)) {
+    const canonical = canonicaliseAutofillPhone(v);
+    if (canonical) return `+${canonical}`;
+  }
+  return v;
 }
 
 async function analyseCredentials(nodes) {

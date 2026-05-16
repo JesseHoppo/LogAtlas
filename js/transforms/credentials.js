@@ -247,13 +247,24 @@ const AUTOFILL_BLOCK_MAX_LINES = 6;
 const AUTOFILL_BLOCK_MAX_VALUE_LENGTH = 500;
 const AUTOFILL_SPACED_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _.$\-[\]]{0,80}?)\s*:\s+(.+)$/;
 const AUTOFILL_TOKEN_VALUE_PATTERN = /^([A-Za-z_$][A-Za-z0-9_.$:[\]-]*(?:\[[^\]\n]+\])*)\s+(.+)$/;
-const AUTOFILL_RECORD_LABEL_KEYS = new Set(['browser', 'profile', 'name', 'field', 'key', 'label', 'value']);
-const AUTOFILL_RECORD_NAME_KEYS = new Set(['name', 'field', 'key', 'label']);
+const AUTOFILL_RECORD_LABEL_KEYS = new Set(['browser', 'profile', 'name', 'field', 'key', 'label', 'value', 'form']);
+const AUTOFILL_RECORD_NAME_KEYS = new Set(['name', 'field', 'key', 'label', 'form']);
 const AUTOFILL_RECORD_VALUE_KEYS = new Set(['value']);
-const AUTOFILL_INLINE_EXCLUDED_KEYS = new Set(['browser', 'profile', 'value']);
+const AUTOFILL_INLINE_EXCLUDED_KEYS = new Set(['browser', 'profile', 'value', 'form']);
 
 function normaliseAutofillFieldName(name) {
-  return String(name || '').replace(/:+$/, '').replace(/\s+/g, ' ').trim();
+  return String(name || '')
+    .replace(/^(?:form|field|key|label|name)\s*:\s*/i, '')
+    .replace(/:+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normaliseAutofillValue(value) {
+  return String(value || '')
+    .replace(/^(?:value|val)\s*:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function isLikelyAutofillFieldName(name) {
@@ -340,7 +351,7 @@ function parseAutofillBlocks(clean) {
     if (block.length < 2 || block.length > AUTOFILL_BLOCK_MAX_LINES) continue;
 
     const name = normaliseAutofillFieldName(block[0]);
-    const value = block.slice(1).join(' ').trim();
+    const value = normaliseAutofillValue(block.slice(1).join(' '));
     if (!isLikelyAutofillFieldName(name) || !isLikelyAutofillFieldValue(value)) continue;
 
     rows.push([name, value]);
