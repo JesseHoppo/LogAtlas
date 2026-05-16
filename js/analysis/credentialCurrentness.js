@@ -1,4 +1,4 @@
-import { extractBaseDomain, extractDomain, classifyAutofillEntries, parseTimestampValue } from '../core/shared.js';
+import { extractBaseDomain, extractDomain, classifyAutofillEntries, parseTimestampValue, parseArchiveTimestamp } from '../core/shared.js';
 import { EMAIL_REGEX, SCAN_EMAIL_REGEX, CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
 import { classifySiteDomain } from '../core/domainCategories.js';
 
@@ -365,34 +365,6 @@ function isLikelyWebHost(host) {
   if (normalised === 'localhost' || normalised.endsWith('.local')) return false;
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalised)) return true;
   return normalised.includes('.') && /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(normalised);
-}
-
-function parseArchiveTimestamp(name) {
-  const source = String(name || '');
-  if (!source) return null;
-
-  const separated = source.match(/(?:^|[^0-9])(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
-  if (separated) {
-    const [, year, month, day, hour = '0', minute = '0', second = '0'] = separated;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
-  }
-
-  const dmySeparated = source.match(/(?:^|[^0-9])(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
-  if (dmySeparated) {
-    const [, day, month, year, hour = '0', minute = '0', second = '0'] = dmySeparated;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
-  }
-
-  const compact = source.match(/(?:^|[^0-9])(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})(?:$|[^0-9])/);
-  if (compact) {
-    const [, year, month, day, hour, minute, second] = compact;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
-  }
-
-  return null;
 }
 
 function inferCaptureContext({ sysinfoEntries, rootZipName, sourceLastModified, historyMaxDate }) {

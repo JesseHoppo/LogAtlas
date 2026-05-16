@@ -609,6 +609,39 @@ function parseTimestampValue(value) {
   return null;
 }
 
+// Archive-filename timestamps
+
+// `\b` doesn't fire between `_` and a digit in JS regex (underscore is a
+// word char), so the `_2025-10-21` form that most stealer drops use needs
+// a non-digit anchor instead.
+function parseArchiveTimestamp(name) {
+  const source = String(name || '');
+  if (!source) return null;
+
+  const ymd = source.match(/(?:^|[^0-9])(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
+  if (ymd) {
+    const [, year, month, day, hour = '0', minute = '0', second = '0'] = ymd;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  const dmy = source.match(/(?:^|[^0-9])(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
+  if (dmy) {
+    const [, day, month, year, hour = '0', minute = '0', second = '0'] = dmy;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  const compact = source.match(/(?:^|[^0-9])(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})(?:$|[^0-9])/);
+  if (compact) {
+    const [, year, month, day, hour, minute, second] = compact;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  return null;
+}
+
 // Cookie validity
 
 function checkCookieValidity(expiresValue) {
@@ -945,6 +978,7 @@ export {
   normaliseTimeZone,
   parseSoftwareLine,
   parseTimestampValue,
+  parseArchiveTimestamp,
   checkCookieValidity,
   downloadBlob,
   topN,

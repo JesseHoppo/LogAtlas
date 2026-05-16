@@ -2,7 +2,8 @@
 
 import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
-import { copyToClipboard, parseTimestampValue } from '../core/shared.js';
+import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp } from '../core/shared.js';
+import { CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
 import { escapeHtml, escapeAttr } from '../core/utils.js';
 import { extractIOCs } from '../analysis/analysis.js';
 
@@ -56,36 +57,8 @@ function formatInsightDate(date) {
   });
 }
 
-function parseArchiveTimestamp(name) {
-  const source = String(name || '');
-  if (!source) return null;
-
-  const separated = source.match(/\b(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?\b/);
-  if (separated) {
-    const [, year, month, day, hour = '0', minute = '0', second = '0'] = separated;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
-  }
-
-  const compact = source.match(/\b(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})\b/);
-  if (compact) {
-    const [, year, month, day, hour, minute, second] = compact;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
-  }
-
-  return null;
-}
-
 function inferLikelyExfilDate(sysinfo) {
-  const sysinfoDate = findSysinfoValue(sysinfo, [
-    /^local time$/i,
-    /^time$/i,
-    /^date$/i,
-    /^collected(?: at| on)?$/i,
-    /^log(?:ged)? time$/i,
-    /^build time$/i,
-  ]);
+  const sysinfoDate = findSysinfoValue(sysinfo, CAPTURE_TIME_KEYS);
   const parsedSysinfoDate = parseTimestampValue(sysinfoDate);
   if (parsedSysinfoDate) return { date: parsedSysinfoDate, source: 'sysinfo' };
 
