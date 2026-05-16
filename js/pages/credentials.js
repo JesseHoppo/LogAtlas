@@ -849,6 +849,15 @@ function initCredentials() {
   const notesSearch = document.getElementById('notesSearch');
   bindDebouncedInput(notesSearch, (value) => renderNotesPage(value));
 
+  for (const [id, handler] of Object.entries({
+    exportPasswordsCsv: exportPasswordsCSV,
+    exportCookiesCsv: exportCookiesCSV,
+    exportAutofillsCsv: exportAutofillsCSV,
+    exportNotesCsv: exportNotesCSV,
+  })) {
+    document.getElementById(id)?.addEventListener('click', handler);
+  }
+
   return {
     load: [loadPasswordsData, loadCookiesData, loadAutofillsData, loadNotesData],
     render: {
@@ -856,12 +865,6 @@ function initCredentials() {
       cookies: () => renderCookiesPage(cookiesValidOnly?.checked || false, cookiesSessionOnly?.checked || false, cookiesSearch?.value || ''),
       autofills: () => renderAutofillsPage(autofillsSearch?.value || ''),
       notes: () => renderNotesPage(notesSearch?.value || ''),
-    },
-    exports: {
-      exportPasswordsCsv: exportPasswordsCSV,
-      exportCookiesCsv: exportCookiesCSV,
-      exportAutofillsCsv: exportAutofillsCSV,
-      exportNotesCsv: exportNotesCSV,
     },
     showMore: handleShowMore,
     reset: () => {
