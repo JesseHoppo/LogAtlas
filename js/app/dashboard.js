@@ -625,6 +625,9 @@ export function initDashboard() {
           summaryHtml += ` (<span class="cookie-auth-valid">${data.validSessionTokens.toLocaleString()} valid</span>)`;
         }
       }
+      if (data.trackingTokens > 0) {
+        summaryHtml += ` &mdash; <span class="cookie-session">${data.trackingTokens.toLocaleString()} ad-tracking token${data.trackingTokens !== 1 ? 's' : ''}</span>`;
+      }
       summaryEl.innerHTML = summaryHtml;
       renderCookieBarList(document.getElementById('dashTopCookieDomains'), data.topDomains);
     } else {

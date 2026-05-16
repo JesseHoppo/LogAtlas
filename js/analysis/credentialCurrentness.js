@@ -978,7 +978,7 @@ function buildSiteIndexes({ cookies, history, notes, downloads, bookmarks }) {
       const summary = map.get(key);
       if (entry.validityStatus === 'valid') {
         summary.validCookies += 1;
-        if (entry.sessionType) summary.validSessions += 1;
+        if (entry.sessionType === 'auth' || entry.sessionType === 'session') summary.validSessions += 1;
       } else if (entry.validityStatus === 'expired') {
         summary.expiredCookies += 1;
       }

@@ -526,7 +526,10 @@ async function exportParsedDataZip() {
 
     if (cookies.rows.length > 0) {
       await addCsvFile('cookies.csv', [...cookies.headers, 'Status', 'Session Type'], cookies.rows.map(({ row, validity, sessionType }) => {
-        const typeLabel = sessionType === 'auth' ? 'Auth' : sessionType === 'session' ? 'Session' : '';
+        const typeLabel = sessionType === 'auth' ? 'Auth'
+          : sessionType === 'session' ? 'Session'
+          : sessionType === 'tracking' ? 'Tracking'
+          : '';
         return [...row, validity.label, typeLabel];
       }));
     }

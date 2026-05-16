@@ -233,6 +233,7 @@ async function loadCookiesData(fileTree, rootName) {
   const headers = includeSubDomain ? COOKIE_HEADERS : COOKIE_HEADERS_NO_SUBDOMAIN;
   const expiresIdx = headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
   const nameIdx = headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
+  const domainIdx = headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
   const rows = [];
 
   for (const { parsed, columnMap } of parsedFiles) {
@@ -240,10 +241,11 @@ async function loadCookiesData(fileTree, rootName) {
       const normalisedRow = normaliseCookieRow(row, columnMap, includeSubDomain);
       const expiresVal = expiresIdx >= 0 ? normalisedRow[expiresIdx] : null;
       const cookieName = nameIdx >= 0 ? normalisedRow[nameIdx] : '';
+      const cookieDomain = domainIdx >= 0 ? normalisedRow[domainIdx] : '';
       rows.push({
         row: normalisedRow,
         validity: checkCookieValidity(expiresVal),
-        sessionType: classifyCookie(cookieName),
+        sessionType: classifyCookie(cookieName, cookieDomain),
         headers,
       });
     }
@@ -514,7 +516,7 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
   const authTokenCount = filtered.filter(r => r.sessionType === 'auth').length;
   const sessionTokenCount = filtered.filter(r => r.sessionType === 'session').length;
   const totalSessionTokens = authTokenCount + sessionTokenCount;
-  const validSessionCount = filtered.filter(r => r.sessionType && r.validity.status === 'valid').length;
+  const validSessionCount = filtered.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
 
   const totalCookies = cookiesData.rows.length;
   const showingFiltered = filtered.length !== totalCookies;

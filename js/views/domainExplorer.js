@@ -225,7 +225,10 @@ function renderDomainDetail(data, baseDomain) {
     html += '<table class="domain-detail-table"><thead><tr><th>Host</th><th>Name</th><th>Status</th><th>Type</th></tr></thead><tbody>';
     const showCookies = data.cookies.slice(0, 20);
     for (const c of showCookies) {
-      const typeLabel = c.sessionType === 'auth' ? 'Auth' : c.sessionType === 'session' ? 'Session' : '';
+      const typeLabel = c.sessionType === 'auth' ? 'Auth'
+        : c.sessionType === 'session' ? 'Session'
+        : c.sessionType === 'tracking' ? 'Tracking'
+        : '';
       html += `<tr><td>${escapeHtml(c.host)}</td><td>${escapeHtml(c.name)}</td>`;
       html += `<td><span class="validity-badge validity-badge-${c.validity.status}">${escapeHtml(c.validity.label)}</span></td>`;
       html += `<td>${typeLabel ? `<span class="session-badge session-badge-${c.sessionType}">${typeLabel}</span>` : ''}</td></tr>`;

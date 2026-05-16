@@ -549,13 +549,34 @@ function parseTimestampValue(value) {
     }
   }
 
+  // Dot-separated dates (Vidar / Lumma / Meduza all use `DD.MM.YYYY` /
+  // `DD.MM.YYYY HH:MM:SS`). Run these ahead of `new Date()` so V8's US-default
+  // doesn't flip the day and month.
+  const dotDmyTime = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (dotDmyTime) {
+    let year = Number(dotDmyTime[3]);
+    if (year < 100) year += 2000;
+    const date = new Date(year, Number(dotDmyTime[2]) - 1, Number(dotDmyTime[1]), Number(dotDmyTime[4]), Number(dotDmyTime[5]), Number(dotDmyTime[6] || 0));
+    if (!isNaN(date.getTime())) return date;
+  }
+  const dotDmy = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+  if (dotDmy) {
+    let year = Number(dotDmy[3]);
+    if (year < 100) year += 2000;
+    const date = new Date(year, Number(dotDmy[2]) - 1, Number(dotDmy[1]));
+    if (!isNaN(date.getTime())) return date;
+  }
+
   const normalised = str.includes('T') ? str : str.replace(' ', 'T');
   const native = new Date(normalised);
   if (!isNaN(native.getTime()) && native.getFullYear() > 1970 && native.getFullYear() < 3000) {
     return native;
   }
 
-  const dmyTime = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  // Slash/dash-separated — V8 already handles US MM/DD/YYYY via `new Date()`
+  // above. These fallback regexes catch the slash forms where the first
+  // slot > 12 (forcing DD/MM interpretation).
+  const dmyTime = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (dmyTime) {
     let year = Number(dmyTime[3]);
     if (year < 100) year += 2000;
@@ -563,7 +584,7 @@ function parseTimestampValue(value) {
     if (!isNaN(date.getTime())) return date;
   }
 
-  const dmy = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (dmy) {
     let year = Number(dmy[3]);
     if (year < 100) year += 2000;
@@ -910,7 +931,6 @@ export {
   decodeBufferWithFallback,
   canonicaliseAutofillPhone,
   classifyAutofillEntries,
-  isLikelyAutofillPhone,
   collectHintedNodes,
   collectFileNodes,
   extractDomain,
@@ -919,6 +939,7 @@ export {
   inferProfileFromPath,
   inferServiceFromPath,
   extractCountryFromFilename,
+  isLikelyAutofillPhone,
   isPlaceholderUserName,
   isValidCountryCode,
   normaliseTimeZone,

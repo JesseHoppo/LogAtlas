@@ -52,6 +52,22 @@ export const SESSION_PATTERNS = [
   /^login[_-]token/i,
 ];
 
+// Ad-tech / RTB / analytics hosts whose `session_id`-shaped cookies are
+// tracking IDs, not login sessions. Used to demote SESSION_PATTERNS matches
+// when the cookie's domain is in this set so the dashboard's
+// "session tokens detected" line stays honest.
+export const AD_TRACKER_DOMAINS = new Set([
+  '3lift.com', 'adnxs.com', 'aniview.com', 'casalemedia.com',
+  'contextweb.com', 'creativecdn.com', 'criteo.com', 'criteo.net',
+  'doubleclick.net', 'google-analytics.com', 'googleadservices.com',
+  'googlesyndication.com', 'googletagmanager.com', 'html-load.com',
+  'intentiq.com', 'lijit.com', 'mediavine.com', 'openx.net',
+  'outbrain.com', 'pubmatic.com', 'quantserve.com', 'rubiconproject.com',
+  'scorecardresearch.com', 'servenobid.com', 'sharethrough.com',
+  'smaato.com', 'sonobi.com', 'sparteo.com', 'stickyadstv.com',
+  'taboola.com', 'tremorhub.com', 'yieldmo.com',
+]);
+
 
 // Field name patterns
 

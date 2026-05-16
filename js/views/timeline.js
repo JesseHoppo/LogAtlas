@@ -143,7 +143,7 @@ function extractCookieEvents(cookiesData) {
 
     if (validity.status === 'valid') entry.valid++;
     else if (validity.status === 'expired') entry.expired++;
-    if (sessionType && validity.status === 'valid') entry.validSessions++;
+    if ((sessionType === 'auth' || sessionType === 'session') && validity.status === 'valid') entry.validSessions++;
 
     // Parse expiration date
     const expiresDate = parseTimestampValue(getCookieField(rowData, FIELD_PATTERNS.expires));
@@ -338,7 +338,7 @@ function renderStats(events) {
   // Valid session count
   const cookies = getCookiesData();
   if (cookies.rows.length > 0) {
-    const validSessions = cookies.rows.filter(r => r.sessionType && r.validity.status === 'valid').length;
+    const validSessions = cookies.rows.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
     if (validSessions > 0) {
       html += `<div class="data-page-stat"><div class="data-page-stat-value cookie-auth-valid">${validSessions}</div><div class="data-page-stat-label">Active Sessions</div></div>`;
     }
