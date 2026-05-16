@@ -277,7 +277,7 @@ export function parseSystemInfoFile(text, fileName = '') {
         };
       }
     } catch {
-      // fall back to text parsing
+      /* not JSON */
     }
   }
 
@@ -649,7 +649,7 @@ export function parseBookmarkFile(text) {
         return { headers: ['URL', 'Title', 'Folder'], rows };
       }
     } catch {
-      // try text fallbacks
+      /* not JSON */
     }
   }
 
@@ -706,7 +706,7 @@ export function parseBrowserMetadataFile(text) {
         .filter(([, value]) => value);
       if (rows.length > 0) return { headers: ['Key', 'Value'], rows };
     } catch {
-      // fall through
+      /* not JSON */
     }
   }
 
@@ -927,7 +927,7 @@ export function parseServiceArtifactFile(text) {
         .filter(([, , value]) => value);
       if (rows.length > 0) return { headers: ['Section', 'Key', 'Value'], rows };
     } catch {
-      // fall through
+      /* not JSON */
     }
   }
 

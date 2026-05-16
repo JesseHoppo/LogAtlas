@@ -48,9 +48,7 @@
   src: url('../fonts/outfit-600.ttf') format('truetype');
 }
 
-/* ------------------------------------------------------------------ */
-/* Reset & tokens                                                      */
-/* ------------------------------------------------------------------ */
+/* Reset & tokens */
 
 * {
   margin: 0;
@@ -152,9 +150,7 @@ body {
   line-height: 1.5;
 }
 
-/* ------------------------------------------------------------------ */
-/* App layout (sidebar + main content)                                 */
-/* ------------------------------------------------------------------ */
+/* App layout (sidebar + main content) */
 
 .app-layout {
   display: flex;
@@ -324,9 +320,7 @@ body {
   padding: 2rem 2.5rem;
 }
 
-/* ------------------------------------------------------------------ */
-/* Pages                                                               */
-/* ------------------------------------------------------------------ */
+/* Pages */
 
 .page {
   display: none;
@@ -342,9 +336,7 @@ body {
   margin-bottom: 1.75rem;
 }
 
-/* ------------------------------------------------------------------ */
-/* Drop zone                                                           */
-/* ------------------------------------------------------------------ */
+/* Drop zone */
 
 .drop-zone {
   border: 2px dashed var(--border);
@@ -398,9 +390,7 @@ body {
   margin-bottom: 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* Reset zone (current file bar)                                       */
-/* ------------------------------------------------------------------ */
+/* Reset zone (current file bar) */
 
 .reset-zone {
   display: none;
@@ -451,9 +441,7 @@ body {
   color: white;
 }
 
-/* ------------------------------------------------------------------ */
-/* Loading spinner                                                     */
-/* ------------------------------------------------------------------ */
+/* Loading spinner */
 
 .loading {
   display: none;
@@ -485,9 +473,7 @@ body {
   font-family: var(--font-mono);
 }
 
-/* ------------------------------------------------------------------ */
-/* Results                                                             */
-/* ------------------------------------------------------------------ */
+/* Results */
 
 .results {
   display: none;
@@ -496,9 +482,7 @@ body {
   display: block;
 }
 
-/* ------------------------------------------------------------------ */
-/* Dashboard sections (Overview + System Info pages)                    */
-/* ------------------------------------------------------------------ */
+/* Dashboard sections (Overview + System Info pages) */
 
 .dash-section {
   background: var(--bg-primary);
@@ -764,17 +748,6 @@ body {
   line-height: 1.5;
 }
 
-.dash-list-item-brief {
-  padding-left: 0;
-  color: var(--text-primary);
-  font-size: 0.82rem;
-  line-height: 1.6;
-}
-
-.dash-list-item-brief::before {
-  display: none;
-}
-
 .dash-list-item::before {
   content: '';
   position: absolute;
@@ -786,9 +759,7 @@ body {
   background: var(--accent);
 }
 
-/* ------------------------------------------------------------------ */
-/* Panel (file browser)                                                */
-/* ------------------------------------------------------------------ */
+/* Panel (file browser) */
 
 .panel {
   background: var(--bg-primary);
@@ -848,9 +819,7 @@ body {
   color: var(--text-muted);
 }
 
-/* ------------------------------------------------------------------ */
-/* File browser                                                        */
-/* ------------------------------------------------------------------ */
+/* File browser */
 
 .file-browser {
   min-height: 400px;
@@ -1095,15 +1064,6 @@ body {
   color: var(--text-primary);
   font-family: var(--font-mono);
 }
-.file-list-path {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin-top: 0.1rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .file-list-meta {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -1136,9 +1096,7 @@ body {
   background: var(--warning);
 }
 
-/* ------------------------------------------------------------------ */
-/* File selection                                                      */
-/* ------------------------------------------------------------------ */
+/* File selection */
 
 /* Grid view checkbox */
 .file-item .file-select-cb {
@@ -1234,9 +1192,7 @@ body {
   border-color: var(--error-border);
 }
 
-/* ------------------------------------------------------------------ */
-/* File preview modal                                                  */
-/* ------------------------------------------------------------------ */
+/* File preview modal */
 
 .preview-overlay {
   display: none;
@@ -1613,9 +1569,7 @@ body {
   margin-bottom: 0.5rem;
 }
 
-/* ------------------------------------------------------------------ */
-/* CSV transform                                                        */
-/* ------------------------------------------------------------------ */
+/* CSV transform */
 
 .preview-btn-transform {
   background: var(--accent);
@@ -1760,9 +1714,7 @@ body {
   font-family: var(--font-mono);
 }
 
-/* ------------------------------------------------------------------ */
-/* Export actions                                                       */
-/* ------------------------------------------------------------------ */
+/* Export actions */
 
 .export-actions {
   display: flex;
@@ -1802,9 +1754,7 @@ body {
   border-color: var(--accent-hover);
 }
 
-/* ------------------------------------------------------------------ */
-/* Error list                                                          */
-/* ------------------------------------------------------------------ */
+/* Error list */
 
 .error-list {
   display: none;
@@ -1833,9 +1783,7 @@ body {
   font-family: var(--font-mono);
 }
 
-/* ------------------------------------------------------------------ */
-/* Password modal                                                      */
-/* ------------------------------------------------------------------ */
+/* Password modal */
 
 .modal-overlay {
   display: none;
@@ -1999,9 +1947,7 @@ body {
   display: block;
 }
 
-/* ------------------------------------------------------------------ */
-/* In-page notification                                                */
-/* ------------------------------------------------------------------ */
+/* In-page notification */
 
 .notification {
   position: fixed;
@@ -2034,9 +1980,7 @@ body {
   opacity: 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* No-data state                                                       */
-/* ------------------------------------------------------------------ */
+/* No-data state */
 
 .no-data {
   padding: 2rem;
@@ -2045,9 +1989,7 @@ body {
   font-size: 0.85rem;
 }
 
-/* ------------------------------------------------------------------ */
-/* Screenshot (Overview)                                               */
-/* ------------------------------------------------------------------ */
+/* Screenshot (Overview) */
 
 .dash-screenshot-body {
   margin-top: 0.75rem;
@@ -2091,9 +2033,7 @@ body {
   box-shadow: var(--shadow-float);
 }
 
-/* ------------------------------------------------------------------ */
-/* Stealer fingerprint badge (Overview)                                */
-/* ------------------------------------------------------------------ */
+/* Stealer fingerprint badge (Overview) */
 
 .dash-fingerprint-body {
   display: flex;
@@ -2185,9 +2125,7 @@ body {
   border-left: 2px solid var(--border);
 }
 
-/* ------------------------------------------------------------------ */
-/* Victim Profile / Identity Graph (Overview)                          */
-/* ------------------------------------------------------------------ */
+/* Victim Profile / Identity Graph (Overview) */
 
 .identity-grid {
   display: grid;
@@ -2292,9 +2230,7 @@ body {
 }
 
 
-/* ------------------------------------------------------------------ */
-/* IOC grid (Overview)                                                 */
-/* ------------------------------------------------------------------ */
+/* IOC grid (Overview) */
 
 .dash-ioc-grid {
   display: grid;
@@ -2350,9 +2286,7 @@ body {
   border-color: var(--accent);
 }
 
-/* ------------------------------------------------------------------ */
-/* Autofill categories (Overview)                                      */
-/* ------------------------------------------------------------------ */
+/* Autofill categories (Overview) */
 
 .dash-autofill-categories {
   display: grid;
@@ -2383,9 +2317,7 @@ body {
   color: var(--text-muted);
 }
 
-/* ------------------------------------------------------------------ */
-/* Search page                                                         */
-/* ------------------------------------------------------------------ */
+/* Search page */
 
 .search-page-bar {
   display: flex;
@@ -2501,9 +2433,7 @@ body {
   border-radius: 2px;
 }
 
-/* ------------------------------------------------------------------ */
-/* Data Analysis Pages (Passwords, Cookies, Autofills, History)        */
-/* ------------------------------------------------------------------ */
+/* Data Analysis Pages (Passwords, Cookies, Autofills, History) */
 
 .data-page-header {
   display: flex;
@@ -2645,34 +2575,6 @@ body {
 
 .table-action-btn:last-child {
   margin-right: 0;
-}
-
-.sensitivity-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 64px;
-  padding: 0.18rem 0.4rem;
-  border-radius: 999px;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  background: var(--bg-secondary);
-}
-
-.sensitivity-badge-high {
-  color: var(--error);
-  border-color: var(--error-border);
-  background: var(--error-dim);
-}
-
-.sensitivity-badge-medium {
-  color: var(--warning);
-  border-color: rgba(217, 119, 6, 0.25);
-  background: rgba(217, 119, 6, 0.08);
 }
 
 .data-page-content {
@@ -3114,9 +3016,7 @@ body {
   text-align: right;
 }
 
-/* ------------------------------------------------------------------ */
-/* Responsive                                                          */
-/* ------------------------------------------------------------------ */
+/* Responsive */
 
 /* Sidebar toggle button */
 .sidebar-toggle {
@@ -3178,9 +3078,7 @@ body {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* File type selection modal                                           */
-/* ------------------------------------------------------------------ */
+/* File type selection modal */
 
 .modal-filetype {
   max-width: 560px;
@@ -3270,9 +3168,7 @@ body {
   font-family: var(--font-mono);
 }
 
-/* ------------------------------------------------------------------ */
-/* Paste text modal                                                    */
-/* ------------------------------------------------------------------ */
+/* Paste text modal */
 
 .modal-paste-text {
   max-width: 520px;
@@ -3372,9 +3268,7 @@ body {
   background: var(--accent-dim);
 }
 
-/* ------------------------------------------------------------------ */
-/* Column mapper modal                                                 */
-/* ------------------------------------------------------------------ */
+/* Column mapper modal */
 
 .modal-column-mapper {
   max-width: 720px;
@@ -3559,9 +3453,7 @@ body {
   color: var(--accent);
 }
 
-/* ------------------------------------------------------------------ */
-/* Add More Files button                                               */
-/* ------------------------------------------------------------------ */
+/* Add More Files button */
 
 .current-file-actions {
   display: flex;
@@ -3587,9 +3479,7 @@ body {
   color: white;
 }
 
-/* ------------------------------------------------------------------ */
-/* Data table "Show more" button                                       */
-/* ------------------------------------------------------------------ */
+/* Data table "Show more" button */
 
 .data-show-more {
   display: block;
@@ -3618,9 +3508,7 @@ body {
   outline-offset: 2px;
 }
 
-/* ------------------------------------------------------------------ */
-/* Exports page                                                        */
-/* ------------------------------------------------------------------ */
+/* Exports page */
 
 .export-cards {
   display: grid;
@@ -3885,9 +3773,7 @@ body {
   margin-right: 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* Currentness Lab                                                      */
-/* ------------------------------------------------------------------ */
+/* Currentness Lab */
 
 .lab-hero {
   display: flex;
@@ -4176,7 +4062,7 @@ body {
 .lab-bucket-dot.lab-bucket-review { background: var(--warning); }
 .lab-bucket-dot.lab-bucket-weak { background: var(--text-muted); }
 
-/* Actionability — what the analyst really wants to scan for */
+/* Actionability: what the analyst really wants to scan for */
 .lab-action-dot.lab-action-live {
   background: var(--error);
   box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.18);
@@ -4295,11 +4181,11 @@ body {
   font-size: 0.78rem;
   line-height: 1.35;
 }
-.lab-detail-empty {
+.lab-detail-evidence li.lab-detail-empty {
   font-style: italic;
-  color: var(--text-muted) !important;
-  background: transparent !important;
-  border: none !important;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
 }
 
 .lab-tag {

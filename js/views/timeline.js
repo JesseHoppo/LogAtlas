@@ -1,11 +1,9 @@
-// Timeline
-
 import { state, on } from '../core/state.js';
-import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
+import { bindDebouncedInput, downloadCsvRows, formatDateLabel, formatDateTimeLabel, getFieldByPattern } from '../pages/shared.js';
 import { getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData } from '../pages/browser.js';
 import { getGrabbedFilesData, getScreenshotsData } from '../pages/activity.js';
-import { extractBaseDomain, extractDomain, collectFileNodes, normaliseTimeZone, parseTimestampValue } from '../core/shared.js';
+import { extractBaseDomain, baseDomainFromUrl, collectFileNodes, normaliseTimeZone, parseTimestampValue } from '../core/shared.js';
 import { escapeHtml } from '../core/utils.js';
 import { CAPTURE_TIME_KEYS, IGNORE_DATE_KEYS, FIELD_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
 
@@ -23,29 +21,14 @@ const CATEGORIES = {
   screenshots: { label: 'Screenshots', badgeClass: 'timeline-event-badge-history' },
 };
 
-function getCookieField({ row, headers }, pattern) {
-  const index = headers.findIndex(h => pattern.test(h));
-  return index >= 0 ? (row[index] || '') : '';
-}
-
-function formatDate(date) {
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function formatDateTime(date) {
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
 function dateKey(date) {
-  return date.toISOString().slice(0, 10); // YYYY-MM-DD for grouping
+  return date.toISOString().slice(0, 10);
 }
-
 
 function extractStealerEvents(entries) {
   if (!entries) return [];
   const events = [];
 
-  // Look for timezone to annotate capture time
   let timezone = '';
   for (const [key, value] of Object.entries(entries)) {
     if (/^(time\s*zone|timezone|utc)$/i.test(key) && value) {
@@ -99,25 +82,24 @@ function extractFileEvents(fileTree, rootName) {
   const lateDate = new Date(latest);
 
   if (dateKey(earlyDate) === dateKey(lateDate)) {
-    // Same day = single event
     events.push({
       time: earlyDate,
       category: 'file',
       title: `${count} files modified`,
-      detail: formatDate(earlyDate),
+      detail: formatDateLabel(earlyDate),
     });
   } else {
     events.push({
       time: earlyDate,
       category: 'file',
       title: `Earliest file modification`,
-      detail: `${count} files span ${formatDate(earlyDate)} to ${formatDate(lateDate)}`,
+      detail: `${count} files span ${formatDateLabel(earlyDate)} to ${formatDateLabel(lateDate)}`,
     });
     events.push({
       time: lateDate,
       category: 'file',
       title: `Latest file modification`,
-      detail: `${count} files span ${formatDate(earlyDate)} to ${formatDate(lateDate)}`,
+      detail: `${count} files span ${formatDateLabel(earlyDate)} to ${formatDateLabel(lateDate)}`,
     });
   }
 
@@ -127,12 +109,11 @@ function extractFileEvents(fileTree, rootName) {
 function extractCookieEvents(cookiesData) {
   if (!cookiesData || cookiesData.rows.length === 0) return [];
 
-  // Group by base domain
   const domainMap = {};
 
   for (const rowData of cookiesData.rows) {
     const { validity, sessionType } = rowData;
-    const domain = getCookieField(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase();
+    const domain = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase();
     const baseDomain = extractBaseDomain(domain) || domain;
     if (!baseDomain) continue;
 
@@ -146,7 +127,7 @@ function extractCookieEvents(cookiesData) {
     if ((sessionType === 'auth' || sessionType === 'session') && validity.status === 'valid') entry.validSessions++;
 
     // Parse expiration date
-    const expiresDate = parseTimestampValue(getCookieField(rowData, FIELD_PATTERNS.expires));
+    const expiresDate = parseTimestampValue(getFieldByPattern(rowData, FIELD_PATTERNS.expires));
     if (expiresDate && (!entry.latestExpiry || expiresDate > entry.latestExpiry)) {
       entry.latestExpiry = expiresDate;
     }
@@ -165,7 +146,7 @@ function extractCookieEvents(cookiesData) {
       detail += ` - ${stats.validSessions} active session token${stats.validSessions !== 1 ? 's' : ''}`;
     }
     if (stats.latestExpiry) {
-      detail += ` - latest expiry: ${formatDate(stats.latestExpiry)}`;
+      detail += ` - latest expiry: ${formatDateLabel(stats.latestExpiry)}`;
     }
     events.push({
       time: stats.latestExpiry,
@@ -200,7 +181,7 @@ function extractHistoryEvents(historyData) {
       dayMap[key] = { date: entry._date, domains: {}, count: 0 };
     }
     dayMap[key].count++;
-    const domain = extractBaseDomain(extractDomain(entry.url)) || 'unknown';
+    const domain = baseDomainFromUrl(entry.url) || 'unknown';
     dayMap[key].domains[domain] = (dayMap[key].domains[domain] || 0) + 1;
   }
 
@@ -324,7 +305,7 @@ function renderStats(events) {
   }
 
   const span = latest !== -Infinity && earliest !== Infinity
-    ? `${formatDate(new Date(earliest))} - ${formatDate(new Date(latest))}`
+    ? `${formatDateLabel(new Date(earliest))} - ${formatDateLabel(new Date(latest))}`
     : '';
 
   let html = '';
@@ -332,7 +313,7 @@ function renderStats(events) {
   // Log capture time
   const captureEvent = events.find(e => e.category === 'stealer');
   if (captureEvent) {
-    html += `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:1.3rem;color:var(--error)">${formatDateTime(captureEvent.time)}</div><div class="data-page-stat-label">Log Captured</div></div>`;
+    html += `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:1.3rem;color:var(--error)">${formatDateTimeLabel(captureEvent.time)}</div><div class="data-page-stat-label">Log Captured</div></div>`;
   }
 
   // Valid session count
@@ -377,7 +358,7 @@ function renderVisualTimeline(events) {
   let currentGroup = '';
 
   for (const ev of events) {
-    const group = formatDate(ev.time);
+    const group = formatDateLabel(ev.time);
     if (group !== currentGroup) {
       currentGroup = group;
       html += `<div class="timeline-date-group">${escapeHtml(group)}</div>`;
@@ -388,7 +369,7 @@ function renderVisualTimeline(events) {
     html += `<div class="timeline-event-header">`;
     html += `<span class="timeline-event-badge ${info.badgeClass}">${info.label}</span>`;
     html += `<span class="timeline-event-title">${escapeHtml(ev.title)}</span>`;
-    html += `<span class="timeline-event-time">${formatDateTime(ev.time)}</span>`;
+    html += `<span class="timeline-event-time">${formatDateTimeLabel(ev.time)}</span>`;
     html += `</div>`;
     if (ev.detail) {
       html += `<div class="timeline-event-detail">${escapeHtml(ev.detail)}</div>`;
@@ -413,7 +394,7 @@ function renderTable(events) {
   for (const ev of events) {
     const info = CATEGORIES[ev.category] || CATEGORIES.file;
     html += '<tr>';
-    html += `<td>${escapeHtml(formatDateTime(ev.time))}</td>`;
+    html += `<td>${escapeHtml(formatDateTimeLabel(ev.time))}</td>`;
     html += `<td><span class="timeline-event-badge ${info.badgeClass}">${info.label}</span></td>`;
     html += `<td title="${escapeHtml(ev.title)}">${escapeHtml(ev.title)}</td>`;
     html += `<td title="${escapeHtml(ev.detail || '')}">${escapeHtml(ev.detail || '')}</td>`;

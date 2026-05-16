@@ -210,7 +210,7 @@ export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
     }
   }
 
-  // Username: column with >40% email-like values (lower threshold — many usernames aren't emails)
+  // Username: column with >40% email-like values (lower threshold, many usernames aren't emails)
   for (let i = 0; i < stats.length; i++) {
     if (i === urlCol) continue;
     if (stats[i].total > 0 && stats[i].emailLike / stats[i].total > 0.4) {
@@ -283,7 +283,7 @@ export function detectFormat(text) {
     return { type: 'block', headers: [...headersSeen] };
   }
 
-  // Delimited detection — try each delimiter in priority order
+  // Delimited detection: try each delimiter in priority order
   const nonBlankLines = sample.filter(l => l.trim() !== '');
   const delimiters = ['\t', ',', '|', ';'];
 

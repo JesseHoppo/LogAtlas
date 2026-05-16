@@ -10,7 +10,7 @@ export const FILE_TYPE_PATTERNS = {
       /^credentials?\.(txt|tsv|csv)$/i,
       /^browser[_\s]?passwords?\.(txt|tsv|csv)$/i,
     ],
-    // Aggregate summary files — only promoted when no per-profile file exists,
+    // Aggregate summary files. Only promoted when no per-profile file exists,
     // otherwise they'd double-count. See reconcileAggregatePasswordFiles.
     aggregatePatterns: [
       /^(?:all|unique|icloud)[\s_-]*passwords?(?:\([^)]+\))?\.(txt|tsv|csv)$/i,

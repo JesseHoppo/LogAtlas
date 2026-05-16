@@ -1,17 +1,10 @@
-// Identity graph
-
 import { on, emit } from '../core/state.js';
-import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
+import { bindDebouncedInput, downloadCsvRows, getFieldByPattern } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData } from '../pages/credentials.js';
 import { getAccountTokensData } from '../pages/assets.js';
-import { extractDomain, extractBaseDomain } from '../core/shared.js';
+import { extractBaseDomain, baseDomainFromUrl } from '../core/shared.js';
 import { escapeHtml } from '../core/utils.js';
 import { FIELD_PATTERNS, EMAIL_REGEX, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
-
-function getCookieField({ row, headers }, pattern) {
-  const index = headers.findIndex(h => pattern.test(h));
-  return index >= 0 ? (row[index] || '') : '';
-}
 
 function extractEmails(passwordsData, autofillEmails) {
   const emailMap = new Map();
@@ -25,7 +18,7 @@ function extractEmails(passwordsData, autofillEmails) {
     if (user && EMAIL_REGEX.test(user)) {
       const lower = user.toLowerCase();
       if (!emailMap.has(lower)) emailMap.set(lower, new Set());
-      const domain = extractBaseDomain(extractDomain(url));
+      const domain = baseDomainFromUrl(url);
       if (domain) emailMap.get(lower).add(domain);
     }
   }
@@ -44,7 +37,7 @@ function buildCookieLookup(cookiesData) {
   const lookup = new Map();
   for (const rowData of cookiesData.rows) {
     const { validity, sessionType } = rowData;
-    const domain = extractBaseDomain(getCookieField(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase());
+    const domain = extractBaseDomain(getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase());
     if (!domain) continue;
     if (!lookup.has(domain)) lookup.set(domain, { hasValidSession: false, hasValidCookies: false });
     const entry = lookup.get(domain);
@@ -199,7 +192,7 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
     const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
     if (!user && !pass) continue;
     const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
-    const domain = extractBaseDomain(extractDomain(url));
+    const domain = baseDomainFromUrl(url);
     if (domain) {
       if (!domainUsernames.has(domain)) domainUsernames.set(domain, new Set());
       if (user) domainUsernames.get(domain).add(user);

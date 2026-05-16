@@ -5,6 +5,7 @@ import { loadFileContent } from '../files/extractor.js';
 import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp } from '../core/shared.js';
 import { CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
 import { escapeHtml, escapeAttr } from '../core/utils.js';
+import { formatDateTimeLabel } from '../pages/shared.js';
 import { extractIOCs } from '../analysis/analysis.js';
 
 let sysInfoSourcePath = null;
@@ -44,17 +45,6 @@ function joinNaturalList(values, conjunction = 'and') {
   if (items.length === 1) return items[0];
   if (items.length === 2) return `${items[0]} ${conjunction} ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, ${conjunction} ${items[items.length - 1]}`;
-}
-
-function formatInsightDate(date) {
-  if (!(date instanceof Date) || isNaN(date.getTime())) return '';
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function inferLikelyExfilDate(sysinfo) {
@@ -113,7 +103,7 @@ function buildCaseBriefing({
 }) {
   const introParts = [];
   if (exfilInfo?.date) {
-    introParts.push(`Likely exfil around ${formatInsightDate(exfilInfo.date)}`);
+    introParts.push(`Likely exfil around ${formatDateTimeLabel(exfilInfo.date)}`);
   } else {
     introParts.push('This case appears to be a single victim log');
   }

@@ -1,16 +1,12 @@
-// Shared helpers used across modules.
-
 import { EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
 import { inferServiceFromPath } from './serviceRegistry.js';
 
-// Shared UTF-8 decoder reused across modules.
 const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
 const WIN1252_TEXT_DECODER = new TextDecoder('windows-1252');
 
-// Some logs (Stealc and a few Rhadamanthys builds) ship sysinfo / software
-// lists encoded as Windows-1252 instead of UTF-8 — the unmarked ü/'/ñ bytes
-// land as U+FFFD when decoded as UTF-8. When the UTF-8 attempt contains
-// replacement chars, fall back to Windows-1252 and keep whichever has fewer.
+// Some logs ship sysinfo / software lists as Windows-1252 instead of UTF-8;
+// the unmarked accented bytes land as U+FFFD. If the UTF-8 attempt contains
+// replacement chars, retry as Windows-1252 and keep whichever has fewer.
 function decodeBufferWithFallback(buffer) {
   const utf8 = SHARED_TEXT_DECODER.decode(buffer);
   if (!utf8.includes('�')) return utf8;
@@ -20,8 +16,6 @@ function decodeBufferWithFallback(buffer) {
   return winBad < utf8Bad ? win : utf8;
 }
 
-const MAX_SEARCH_MATCHES_PER_FILE = 5;
-const SEARCH_BATCH_SIZE = 20;
 const CHROME_EPOCH_OFFSET = 11644473600000000n;
 const AUTOFILL_LATIN_VOWEL_PATTERN = /[aeiouy]/i;
 const BROWSER_PATH_PATTERNS = [
@@ -92,8 +86,6 @@ const AUTOFILL_NAME_ENTITY_FIELD_TOKENS = new Set([
   'username',
 ]);
 
-// Tree walking
-
 function collectHintedNodes(node, hint, path, results) {
   if (!node) return;
   if (node[hint]) results.push({ node, path });
@@ -114,15 +106,13 @@ function collectFileNodes(node, path, results) {
   }
 }
 
-// Domain extraction
-
 function normaliseDomain(hostname) {
   const normalised = String(hostname || '').toLowerCase().replace(/^www\./, '');
   if (!normalised || normalised === 'localhost') return null;
   return normalised;
 }
 
-// Reverse-DNS Android package (e.g. `com.roblox.client`). Treat as opaque so
+// Reverse-DNS Android packages (e.g. `com.roblox.client`); treat as opaque so
 // extractBaseDomain doesn't strip parts off the package name.
 const ANDROID_PACKAGE_PATTERN = /^(?:com|org)\.[a-z][a-z0-9_]*(?:\.[a-z0-9_][a-z0-9_]*)+$/i;
 
@@ -130,9 +120,8 @@ const HOSTED_SCHEMES = new Set([
   'smtp', 'smtps', 'imap', 'imaps', 'pop3', 'pop3s', 'oauth', 'ftp', 'sftp',
 ]);
 
-// Browser-internal URLs: settings pages, extension storage, about: pages.
-// Useless in topDomains lists — drop entirely rather than bucket under the
-// scheme name.
+// Browser-internal schemes (settings, extension storage, about: pages). Drop
+// them entirely rather than bucket them under the scheme name.
 const BROWSER_INTERNAL_SCHEMES = new Set([
   'chrome', 'chrome-extension', 'chrome-search', 'chrome-untrusted',
   'edge', 'edge-extension',
@@ -146,8 +135,8 @@ function extractDomain(url) {
   const raw = String(url).trim();
   if (!raw) return null;
 
-  // Non-HTTP schemes — without this branch the fallback below prefixes
-  // `https://` and the URL parser swallows the scheme as the hostname.
+  // Non-HTTP schemes need their own branch. Without it the fallback below
+  // prefixes `https://` and the parser swallows the scheme as the hostname.
   const schemeMatch = raw.match(/^([a-z][a-z0-9+.-]*):/i);
   if (schemeMatch) {
     const scheme = schemeMatch[1].toLowerCase();
@@ -194,6 +183,18 @@ function extractBaseDomain(domain) {
     return parts.slice(-3).join('.');
   }
   return parts.slice(-2).join('.');
+}
+
+function baseDomainFromUrl(url) {
+  const host = extractDomain(url);
+  return host ? (extractBaseDomain(host) || host) : null;
+}
+
+// Same as baseDomainFromUrl but falls back to the raw URL when nothing parses.
+// Use for dedupe keys where unparseable URLs should still group themselves.
+function dedupeDomainKey(url) {
+  if (!url) return '';
+  return (baseDomainFromUrl(url) || url).toLowerCase();
 }
 
 function inferBrowserFromPath(pathText) {
@@ -517,8 +518,6 @@ function classifyAutofillEntries(entries, maxOther = 20) {
   };
 }
 
-// Timestamp parsing
-
 function parseTimestampValue(value) {
   if (value instanceof Date) {
     return !isNaN(value.getTime()) ? value : null;
@@ -545,13 +544,12 @@ function parseTimestampValue(value) {
         return date;
       }
     } catch {
-      // fall through to string parsing
+      // fall through
     }
   }
 
-  // Dot-separated dates (Vidar / Lumma / Meduza all use `DD.MM.YYYY` /
-  // `DD.MM.YYYY HH:MM:SS`). Run these ahead of `new Date()` so V8's US-default
-  // doesn't flip the day and month.
+  // Dot-separated dates: run these ahead of `new Date()` so V8's US-default
+  // doesn't flip day and month on `DD.MM.YYYY`.
   const dotDmyTime = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (dotDmyTime) {
     let year = Number(dotDmyTime[3]);
@@ -573,9 +571,8 @@ function parseTimestampValue(value) {
     return native;
   }
 
-  // Slash/dash-separated — V8 already handles US MM/DD/YYYY via `new Date()`
-  // above. These fallback regexes catch the slash forms where the first
-  // slot > 12 (forcing DD/MM interpretation).
+  // Slash/dash-separated DD/MM. V8 handles MM/DD via `new Date()` above; this
+  // catches the slash forms where the first slot is > 12.
   const dmyTime = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (dmyTime) {
     let year = Number(dmyTime[3]);
@@ -609,11 +606,8 @@ function parseTimestampValue(value) {
   return null;
 }
 
-// Archive-filename timestamps
-
-// `\b` doesn't fire between `_` and a digit in JS regex (underscore is a
-// word char), so the `_2025-10-21` form that most stealer drops use needs
-// a non-digit anchor instead.
+// `\b` doesn't fire between `_` and a digit (underscore is a word char), so
+// `_2025-10-21` needs a non-digit anchor instead.
 function parseArchiveTimestamp(name) {
   const source = String(name || '');
   if (!source) return null;
@@ -641,8 +635,6 @@ function parseArchiveTimestamp(name) {
 
   return null;
 }
-
-// Cookie validity
 
 function checkCookieValidity(expiresValue) {
   if (!expiresValue || expiresValue === '0' || String(expiresValue).toLowerCase() === 'session') {
@@ -693,8 +685,6 @@ function randomPassword(length = 16) {
   return out.join('');
 }
 
-// Download helper
-
 function downloadBlob(content, filename, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -718,8 +708,6 @@ function topN(arr, n) {
     .map(([value, count]) => ({ value, count }));
 }
 
-// Toast notification
-
 function showNotification(message, type = 'info') {
   const existing = document.getElementById('notification');
   if (existing) existing.remove();
@@ -735,8 +723,6 @@ function showNotification(message, type = 'info') {
     el.addEventListener('transitionend', () => el.remove());
   }, 4000);
 }
-
-// Clipboard
 
 async function copyToClipboard(text) {
   try {
@@ -808,12 +794,9 @@ function summariseList(values, limit = 2) {
   return `${items.slice(0, limit).join(', ')} +${items.length - limit} more`;
 }
 
-// Stealer families store the victim's TimeZone in several different shapes:
-// signed integer hour offset, unsigned 32-bit overflow (Vidar v17), Windows
-// display string `(UTC±HH:MM) Region`, or pre-formatted `UTC±HH:MM`. Returns
-// `{ offset, label, source, raw }` where `offset` is in minutes (null when
-// unparseable) and `label` falls back to the original string so the UI always
-// has something to render.
+// TimeZone arrives in four shapes: signed integer hour offset, unsigned 32-bit
+// overflow, Windows display string `(UTC±HH:MM) Region`, or `UTC±HH:MM`.
+// Returns `{ offset (minutes, null if unparseable), label, source, raw }`.
 function normaliseTimeZone(raw) {
   const out = { offset: null, label: '', source: 'absent', raw };
   if (raw == null) return out;
@@ -822,7 +805,7 @@ function normaliseTimeZone(raw) {
   out.raw = s;
   out.label = s;
 
-  // "(UTC-05:00) Bogotá, Lima, Quito" — Windows display string.
+  // "(UTC-05:00) Bogotá, Lima, Quito" Windows display string.
   const winMatch = s.match(/^\(UTC(?:([+-])(\d{1,2})(?::(\d{2}))?)?\)\s*(.*)$/i);
   if (winMatch) {
     const sign = winMatch[1] === '-' ? -1 : 1;
@@ -848,8 +831,8 @@ function normaliseTimeZone(raw) {
     return out;
   }
 
-  // Pure integer — Vidar v17. Negative offsets often arrive as unsigned 32-bit
-  // overflow (e.g. 4294967293 = -3), positive offsets as small ints (e.g. 8 = UTC+8).
+  // Integer hour offset. Some builds write negative offsets as unsigned 32-bit
+  // overflow (4294967293 = -3); positives arrive as small ints.
   if (/^-?\d{1,10}$/.test(s)) {
     let n = Number(s);
     let overflowed = false;
@@ -872,10 +855,9 @@ function normaliseTimeZone(raw) {
   return out;
 }
 
-// Stealers write installed-software entries in a handful of shapes:
-// `Name [version] - vendor`, `Name (version)`, `Name - version`, `Name v1.2.3`.
-// Patterns are tried in order — the bracket form runs first so Vidar v17's
-// `[16.0.18229.20208] - Microsoft Corp` tail doesn't trip the dash form.
+// Installed-software entries arrive as `Name [version] - vendor`,
+// `Name (version)`, `Name - version`, or `Name v1.2.3`. The bracket form runs
+// first so a trailing `- vendor` doesn't get pulled into the dash form.
 const SOFTWARE_PATTERNS = [
   /^(.+?)\s*\[(\d[\w.+-]*)\]\s*(?:[-–]\s*.*)?$/,
   /^(.+?)\s*\((v?\d+(?:\.\d+)+[\w.+-]*)\)\s*$/i,
@@ -885,8 +867,8 @@ const SOFTWARE_PATTERNS = [
 
 function parseSoftwareLine(rawLine) {
   if (!rawLine) return null;
-  // Vidar v1.5 occasionally truncates entries mid-suffix
-  // (`Mozilla Firefox (x64 en`) — drop the dangling open-paren tail.
+  // Some logs truncate entries mid-suffix (`Mozilla Firefox (x64 en`); drop
+  // the dangling open-paren tail.
   let line = String(rawLine).trim()
     .replace(/^[-_\s]+/, '')
     .replace(/[-_\s]+$/, '')
@@ -958,8 +940,6 @@ function extractCountryFromFilename(name) {
 }
 
 export {
-  MAX_SEARCH_MATCHES_PER_FILE,
-  SEARCH_BATCH_SIZE,
   SHARED_TEXT_DECODER,
   decodeBufferWithFallback,
   canonicaliseAutofillPhone,
@@ -968,6 +948,8 @@ export {
   collectFileNodes,
   extractDomain,
   extractBaseDomain,
+  baseDomainFromUrl,
+  dedupeDomainKey,
   inferBrowserFromPath,
   inferProfileFromPath,
   inferServiceFromPath,

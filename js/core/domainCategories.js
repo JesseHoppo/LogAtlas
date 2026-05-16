@@ -48,8 +48,8 @@ const SITE_CATEGORY_PRIORITY = [
   'airline',         // Wikidata Q46970 direct
   'news',            // Wikidata Q1110794 direct
   'university',      // Wikidata Q3918 direct
-  'retailer',        // Wikidata Q4830453 — broad, used as a last-resort label
-  'popular',         // Tranco — generic "consumer site" fallback
+  'retailer',        // Wikidata Q4830453, broad, used as a last-resort label
+  'popular',         // Tranco, generic "consumer site" fallback
 ];
 
 const sets = {};
@@ -58,7 +58,7 @@ let loaded = false;
 
 // Index each entry verbatim (lowercased, www-stripped). The lookup walks up
 // labels, so a list entry like `gemini.google.com` matches `gemini.google.com`
-// but NOT plain `google.com` — that's the right semantics for sub-product
+// but NOT plain `google.com`, which is the right semantics for sub-product
 // taxonomies (Matomo lists Gemini as AI, but google.com itself shouldn't be).
 function indexLines(text) {
   const set = new Set();

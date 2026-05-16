@@ -10,7 +10,7 @@ import {
 import {
   collectHintedNodes,
   extractDomain,
-  extractBaseDomain,
+  baseDomainFromUrl,
   inferBrowserFromPath,
   inferProfileFromPath,
   parseTimestampValue,
@@ -225,7 +225,7 @@ function renderHistoryPage(searchQuery = '') {
 
   const domainCounts = {};
   for (const { url } of historyData.entries) {
-    const domain = extractBaseDomain(extractDomain(url));
+    const domain = baseDomainFromUrl(url);
     if (!domain) continue;
     domainCounts[domain] = (domainCounts[domain] || 0) + 1;
   }

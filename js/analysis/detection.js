@@ -1,27 +1,17 @@
-// File classification
-
 import { FILE_TYPE_PATTERNS, TEXT_EXTENSIONS } from '../core/definitions/fileTypes.js';
 import { normalisePath } from '../core/shared.js';
-
-// Credits/copyright files
 
 function isLikelyCreditsFile(name) {
   return FILE_TYPE_PATTERNS.credits.filePatterns.some(rx => rx.test(name));
 }
 
-// Installed software files
-
 function isLikelySoftwareFile(name) {
   return FILE_TYPE_PATTERNS.software.filePatterns.some(rx => rx.test(name));
 }
 
-// Process list files
-
 function isLikelyProcessListFile(name) {
   return FILE_TYPE_PATTERNS.processList.filePatterns.some(rx => rx.test(name));
 }
-
-// Password files
 
 function isLikelyPasswordFilename(name, parentDir, fullPath = '') {
   const trimmedName = String(name || '').trim();
@@ -34,16 +24,13 @@ function isLikelyPasswordFilename(name, parentDir, fullPath = '') {
   return FILE_TYPE_PATTERNS.password.patterns.some(rx => rx.test(trimmedName));
 }
 
-// Aggregate / summary password files (`All Passwords.txt`,
-// `unique_passwords.txt`). Promoted to a real password file only when no
-// per-profile file exists — see reconcileAggregatePasswordFiles.
+// `All Passwords.txt`-style files. Only promoted to a real password file
+// when no per-profile file is present (see reconcileAggregatePasswordFiles).
 function isLikelyAggregatePasswordFile(name) {
   const trimmedName = String(name || '').trim();
   const patterns = FILE_TYPE_PATTERNS.password.aggregatePatterns || [];
   return patterns.some(rx => rx.test(trimmedName));
 }
-
-// Cookie files
 
 function isLikelyCookieFile(name, parentDir) {
   const c = FILE_TYPE_PATTERNS.cookie;
@@ -55,15 +42,11 @@ function isLikelyCookieFile(name, parentDir) {
   return false;
 }
 
-// System info files
-
 function isLikelySystemInfoFile(name, parentDir) {
   if (FILE_TYPE_PATTERNS.sysinfo.filePatterns.some(rx => rx.test(name))) return true;
   if (parentDir && FILE_TYPE_PATTERNS.sysinfo.dirPatterns.some(rx => rx.test(parentDir)) && /\.(?:txt|json)$/i.test(name)) return true;
   return false;
 }
-
-// Autofill files
 
 function isLikelyAutofillFile(name, parentDir) {
   const a = FILE_TYPE_PATTERNS.autofill;
@@ -71,15 +54,11 @@ function isLikelyAutofillFile(name, parentDir) {
   return a.filePatterns.some(rx => rx.test(name));
 }
 
-// History files
-
 function isLikelyHistoryFile(name, parentDir) {
   const h = FILE_TYPE_PATTERNS.history;
   if (parentDir && h.folderPattern.test(parentDir) && TEXT_EXTENSIONS.test(name)) return true;
   return h.filePatterns.some(rx => rx.test(name));
 }
-
-// Bookmark files
 
 function isLikelyBookmarkFile(name, parentDir, fullPath) {
   const b = FILE_TYPE_PATTERNS.bookmark;
@@ -88,8 +67,6 @@ function isLikelyBookmarkFile(name, parentDir, fullPath) {
   if (normalisedPath && /(^|\/)bookmarks?\//i.test(normalisedPath) && TEXT_EXTENSIONS.test(name)) return true;
   return b.filePatterns.some(rx => rx.test(name));
 }
-
-// Browser metadata / debug files
 
 function isLikelyBrowserMetadataFile(name, parentDir, fullPath) {
   const bm = FILE_TYPE_PATTERNS.browserMetadata;
@@ -103,13 +80,9 @@ function isLikelyBrowserMetadataFile(name, parentDir, fullPath) {
   return bm.pathPatterns.some(rx => rx.test(normalisedPath));
 }
 
-// Screenshots
-
 function isLikelyScreenshot(name) {
   return FILE_TYPE_PATTERNS.screenshot.namePattern.test(name) && FILE_TYPE_PATTERNS.screenshot.extensions.test(name);
 }
-
-// Credit card files
 
 function isLikelyCreditCardFile(name, parentDir) {
   const cc = FILE_TYPE_PATTERNS.creditCard;
@@ -118,8 +91,6 @@ function isLikelyCreditCardFile(name, parentDir) {
   return false;
 }
 
-// Download history files
-
 function isLikelyDownloadFile(name, parentDir) {
   const d = FILE_TYPE_PATTERNS.downloadHistory;
   if (d.filePatterns.some(rx => rx.test(name))) return true;
@@ -127,20 +98,14 @@ function isLikelyDownloadFile(name, parentDir) {
   return false;
 }
 
-// Browser plugin/extension files
-
 function isLikelyBrowserPluginFile(name, parentDir) {
   if (!parentDir) return false;
   return FILE_TYPE_PATTERNS.browserPlugin.folderPatterns.some(rx => rx.test(parentDir));
 }
 
-// Domain detect files
-
 function isLikelyDomainDetectFile(name) {
   return FILE_TYPE_PATTERNS.domainDetect.filePatterns.some(rx => rx.test(name));
 }
-
-// Crypto wallet data
 
 function isLikelyCryptoWalletFile(name, parentDir, fullPath) {
   const cw = FILE_TYPE_PATTERNS.cryptoWallet;
@@ -150,8 +115,6 @@ function isLikelyCryptoWalletFile(name, parentDir, fullPath) {
   if (cw.pathPatterns && cw.pathPatterns.some(rx => rx.test(normalisedPath))) return true;
   return false;
 }
-
-// Account token files
 
 function isLikelyAccountTokenFile(name, parentDir, fullPath) {
   const at = FILE_TYPE_PATTERNS.accountToken;
@@ -163,8 +126,6 @@ function isLikelyAccountTokenFile(name, parentDir, fullPath) {
     /^(?:restore_|googletokens?|discordtokens?|discord\.txt|token_eaab\.txt|ids?\.txt|tokens?\.txt)/i.test(name)
   );
 }
-
-// Service / messenger configuration artifacts
 
 function isLikelyServiceArtifactFile(name, parentDir, fullPath) {
   const sa = FILE_TYPE_PATTERNS.serviceArtifact;
@@ -180,8 +141,6 @@ function isLikelyServiceArtifactFile(name, parentDir, fullPath) {
   return sa.filePatterns.some(rx => rx.test(name)) && /(telegram|outlook|anydesk|discord)/i.test(normalisedPath);
 }
 
-// Legacy messenger / token files
-
 function isLikelyMessengerFile(name, parentDir, fullPath) {
   const m = FILE_TYPE_PATTERNS.messenger;
   if (isLikelyAccountTokenFile(name, parentDir, fullPath) || isLikelyServiceArtifactFile(name, parentDir, fullPath)) {
@@ -190,13 +149,9 @@ function isLikelyMessengerFile(name, parentDir, fullPath) {
   return m.filePatterns.some(rx => rx.test(name));
 }
 
-// Clipboard files
-
 function isLikelyClipboardFile(name) {
   return FILE_TYPE_PATTERNS.clipboard.filePatterns.some(rx => rx.test(name));
 }
-
-// Notes
 
 function isLikelyNoteFile(name, parentDir, fullPath) {
   const notes = FILE_TYPE_PATTERNS.notes;
@@ -206,8 +161,6 @@ function isLikelyNoteFile(name, parentDir, fullPath) {
   return notes.pathPatterns.some(rx => rx.test(normalisedPath)) && TEXT_EXTENSIONS.test(name);
 }
 
-// Grabbed files / important documents
-
 function isLikelyGrabbedFile(name, parentDir, fullPath) {
   const grabbed = FILE_TYPE_PATTERNS.grabbedFiles;
   const normalisedPath = normalisePath(fullPath);
@@ -215,7 +168,6 @@ function isLikelyGrabbedFile(name, parentDir, fullPath) {
   return grabbed.pathPatterns.some(rx => rx.test(normalisedPath));
 }
 
-// Apply all hints to a node. Returns true if anything was detected.
 function applyDetectionHints(node, name, parentDir, fullPath = '') {
   let detected = false;
   if (isLikelyPasswordFilename(name, parentDir, fullPath)) { node._passwordFileHint = true; detected = true; }
@@ -244,9 +196,9 @@ function applyDetectionHints(node, name, parentDir, fullPath = '') {
   return detected;
 }
 
-// Run after the file walk to fold the aggregate-password hint into the real
-// one. If any per-profile password file is present, drop aggregates (they'd
-// double-count); otherwise promote them so credentials still get extracted.
+// Fold the aggregate-password hint into the real one after the file walk: if
+// any per-profile password file exists, drop aggregates (they'd double-count);
+// otherwise promote them so credentials still get extracted.
 function reconcileAggregatePasswordFiles(tree) {
   if (!tree) return;
   let hasIndividual = false;

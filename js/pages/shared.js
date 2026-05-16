@@ -32,6 +32,13 @@ export function buildShowMoreButton(remaining, pageId) {
   return `<button class="data-show-more" data-page="${pageId}">Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)</button>`;
 }
 
+// Look up a cell value in a row by matching the column header against a regex.
+// Tabular data shapes here are always `{ row, headers }`.
+export function getFieldByPattern({ row, headers }, pattern) {
+  const index = headers.findIndex((header) => pattern.test(header));
+  return index >= 0 ? (row[index] || '') : '';
+}
+
 export function buildRowsHtml(rowBuilder, items, start, end) {
   let html = '';
   const limit = Math.min(end, items.length);
@@ -43,6 +50,28 @@ export function buildRowsHtml(rowBuilder, items, start, end) {
 
 export function formatOptionalDate(value) {
   return value instanceof Date && !isNaN(value.getTime()) ? value.toLocaleString() : '';
+}
+
+function isValidDate(value) {
+  return value instanceof Date && !isNaN(value.getTime());
+}
+
+// Date only, e.g. "Mar 5, 2026".
+export function formatDateLabel(value) {
+  if (!isValidDate(value)) return '';
+  return value.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+// Date + time, e.g. "Mar 5, 2026, 02:30 PM".
+export function formatDateTimeLabel(value) {
+  if (!isValidDate(value)) return '';
+  return value.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function resolveSourcePathSegments(sourcePath) {
@@ -66,16 +95,7 @@ export function openSourcePreview(sourcePath) {
   });
 }
 
-export function formatTimestampDisplay(date) {
-  if (!date) return '';
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+export const formatTimestampDisplay = formatDateTimeLabel;
 
 export function getImageMimeFromName(name) {
   const ext = getFileExtension(name);

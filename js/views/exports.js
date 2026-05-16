@@ -7,14 +7,14 @@ import {
   classifyAutofillEntries,
   downloadBlob,
   copyToClipboard,
-  extractDomain,
-  extractBaseDomain,
+  baseDomainFromUrl,
   randomPassword,
   showNotification,
 } from '../core/shared.js';
 import {
   buildCsvText,
   downloadCsvRows,
+  getFieldByPattern,
 } from '../pages/shared.js';
 import {
   getPasswordsData,
@@ -47,11 +47,6 @@ let fingerprintResult = null;
 let identityResult = null;
 
 const DEDUPE_KEY_SEP = '\u0000';
-
-function getCookieField({ row, headers }, pattern) {
-  const index = headers.findIndex(h => pattern.test(h));
-  return index >= 0 ? (row[index] || '') : '';
-}
 
 function maskPassword(pw) {
   if (!pw || pw.length === 0) return '****';
@@ -127,7 +122,7 @@ function gatherReportData() {
       const user = userIdx >= 0 ? (row[userIdx] || '') : '';
       const pass = passIdx >= 0 ? (row[passIdx] || '') : '';
       seen.add(url + DEDUPE_KEY_SEP + user + DEDUPE_KEY_SEP + pass);
-      const domain = extractBaseDomain(extractDomain(url));
+      const domain = baseDomainFromUrl(url);
       if (domain) domainCounts[domain] = (domainCounts[domain] || 0) + 1;
     }
     credStats = {
@@ -147,7 +142,7 @@ function gatherReportData() {
     const validSessionTokens = cookies.rows.filter(r => r.sessionType && r.validity.status === 'valid').length;
     const domainCounts = {};
     for (const rowData of cookies.rows) {
-      const d = getCookieField(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase();
+      const d = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase();
       if (d) domainCounts[d] = (domainCounts[d] || 0) + 1;
     }
     cookStats = {
@@ -175,7 +170,7 @@ function gatherReportData() {
   if (history.entries.length > 0) {
     const domainCounts = {};
     for (const { url } of history.entries) {
-      const domain = extractBaseDomain(extractDomain(url));
+      const domain = baseDomainFromUrl(url);
       if (domain) domainCounts[domain] = (domainCounts[domain] || 0) + 1;
     }
     histStats = {

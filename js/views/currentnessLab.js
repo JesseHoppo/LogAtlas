@@ -1,6 +1,6 @@
 import { state, on } from '../core/state.js';
 import { escapeHtml, escapeAttr } from '../core/utils.js';
-import { bindDebouncedInput, buildShowMoreButton, buildRowsHtml, downloadCsvRows, PAGE_SIZE } from '../pages/shared.js';
+import { bindDebouncedInput, buildShowMoreButton, buildRowsHtml, downloadCsvRows, formatDateTimeLabel, getFieldByPattern, PAGE_SIZE } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData, getAutofillsData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData, getBookmarksData } from '../pages/browser.js';
 import { getDownloadsData, getClipboardData } from '../pages/activity.js';
@@ -18,7 +18,7 @@ let currentnessActiveFilter = 'all';
 const CURRENTNESS_FILTERS = [
   { key: 'all', label: 'All Credentials', predicate: () => true },
   { key: 'priority', label: 'Priority Queue', predicate: (row) => row.isPriority },
-  { key: 'uncategorised', label: 'Uncategorised (likely corporate)', predicate: (row) => row.categoryKey === 'unknown' },
+  { key: 'uncategorised', label: 'Uncategorised', predicate: (row) => row.categoryKey === 'unknown' },
   { key: 'active', label: 'Likely Current', predicate: (row) => row.bucket === 'likely-current' },
   { key: 'aligned', label: 'Corroborated Employer', predicate: (row) => row.identityFitKey === 'aligned-corroborated' || row.identityFitKey === 'corroborated' },
   { key: 'legacy', label: 'Legacy Employer', predicate: (row) => row.dispositionKey === 'legacy-employer' },
@@ -28,17 +28,12 @@ const CURRENTNESS_FILTERS = [
   { key: 'personal', label: 'Personal Email', predicate: (row) => row.identityFitKey === 'public' },
 ];
 
-// Order categories by analyst usefulness — "unknown" first (priority bucket),
+// Order categories by analyst usefulness: "unknown" first (priority bucket),
 // then specific consumer categories, popular last (broadest/least informative).
 const CATEGORY_BREAKDOWN_ORDER = [
   'unknown', 'bank', 'socialMedia', 'searchEngine', 'aiAssistant',
   'airline', 'news', 'university', 'retailer', 'popular',
 ];
-
-function getCookieField(rowData, pattern) {
-  const index = rowData.headers.findIndex((header) => pattern.test(header));
-  return index >= 0 ? (rowData.row[index] || '') : '';
-}
 
 function getCredentialIndex(headers, matcher) {
   return headers.findIndex((header) => matcher.test(header));
@@ -65,8 +60,8 @@ function normaliseCookies() {
   if (!data?.rows?.length) return [];
 
   return data.rows.map((entry) => ({
-    host: getCookieField(entry, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').trim().toLowerCase(),
-    name: getCookieField(entry, FIELD_PATTERNS.cookieName).trim(),
+    host: getFieldByPattern(entry, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').trim().toLowerCase(),
+    name: getFieldByPattern(entry, FIELD_PATTERNS.cookieName).trim(),
     validityStatus: entry.validity?.status || '',
     validityLabel: entry.validity?.label || '',
     sessionType: entry.sessionType || '',
@@ -150,13 +145,6 @@ function buildSearchText(row) {
   ].join(' ').toLowerCase();
 }
 
-function formatCaptureDate(date) {
-  if (!(date instanceof Date)) return '';
-  return date.toLocaleString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
-
 function buildHeroLine(summary) {
   const id = summary.primaryIdentity || { kind: 'unknown', label: '', domain: '' };
 
@@ -179,7 +167,7 @@ function buildHeroLine(summary) {
     id.country ? `country ${escapeHtml(id.country)}` : '',
   ].filter(Boolean).join(' · ');
 
-  // Live evidence — the most actionable summary on the page.
+  // Live evidence: the most actionable summary on the page.
   const liveBits = [
     summary.liveCount > 0
       ? `<span class="lab-hero-live"><strong>${summary.liveCount}</strong> takeover-ready</span>`
@@ -190,8 +178,8 @@ function buildHeroLine(summary) {
   ].filter(Boolean);
 
   const captureBit = summary.captureDate
-    ? `Captured ${escapeHtml(formatCaptureDate(summary.captureDate))} <span class="lab-hero-tag-muted">(${escapeHtml(summary.captureSource || '')})</span>`
-    : `<span class="lab-hero-warn">No capture anchor — recency disabled</span>`;
+    ? `Captured ${escapeHtml(formatDateTimeLabel(summary.captureDate))} <span class="lab-hero-tag-muted">(${escapeHtml(summary.captureSource || '')})</span>`
+    : `<span class="lab-hero-warn">No capture anchor; recency disabled</span>`;
 
   return `
     <div class="lab-hero">
@@ -401,7 +389,7 @@ function currentnessRowBuilder(row) {
 
   const catKey = row.categoryKey || 'unknown';
   const catBadge = catKey === 'unknown'
-    ? '<span class="lab-cat-tag lab-cat-unknown" title="Not in any reference list — likely corporate or niche">Uncategorised</span>'
+    ? '<span class="lab-cat-tag lab-cat-unknown" title="Not in any reference list">Uncategorised</span>'
     : `<span class="lab-cat-tag" title="Matched data/site-domains/${escapeAttr(catKey)}.txt">${escapeHtml(getCategoryLabel(catKey))}</span>`;
 
   return `<tr class="lab-cred${priorityClass}" tabindex="0" aria-expanded="false">

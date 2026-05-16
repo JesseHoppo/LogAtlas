@@ -1,8 +1,6 @@
-// Domain explorer page.
-
 import { on } from '../core/state.js';
 import { escapeHtml } from '../core/utils.js';
-import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
+import { bindDebouncedInput, downloadCsvRows, getFieldByPattern } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData, getBookmarksData } from '../pages/browser.js';
 import { getDownloadsData, getDomainDetectionsData } from '../pages/activity.js';
@@ -24,11 +22,6 @@ const DOMAIN_PAGE_INPUTS = {
   detections: 'detectionsSearch',
   notes: 'notesSearch',
 };
-
-function getCookieField({ row, headers }, pattern) {
-  const index = headers.findIndex(h => pattern.test(h));
-  return index >= 0 ? (row[index] || '') : '';
-}
 
 function buildDomainIndex() {
   const index = new Map();
@@ -75,14 +68,14 @@ function buildDomainIndex() {
   if (ck && ck.rows.length > 0) {
     for (const rowData of ck.rows) {
       const { validity, sessionType } = rowData;
-      const host = getCookieField(rowData, FIELD_PATTERNS.cookieDomain);
+      const host = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain);
       if (!host) continue;
       const cleanHost = host.replace(/^\./, '');
       const base = extractBaseDomain(cleanHost) || cleanHost;
       const entry = getEntry(base);
       entry.cookies.push({
         host: cleanHost,
-        name: getCookieField(rowData, FIELD_PATTERNS.cookieName),
+        name: getFieldByPattern(rowData, FIELD_PATTERNS.cookieName),
         validity,
         sessionType,
       });

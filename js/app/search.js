@@ -1,7 +1,8 @@
 import { state, emit } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
-import { collectFileNodes, MAX_SEARCH_MATCHES_PER_FILE, SEARCH_BATCH_SIZE, SHARED_TEXT_DECODER } from '../core/shared.js';
+import { collectFileNodes, SHARED_TEXT_DECODER } from '../core/shared.js';
 import { escapeHtml, isTextFile, looksLikeText } from '../core/utils.js';
+import { LIMITS } from '../core/definitions/patterns.js';
 import { navigateTo } from '../files/browser.js';
 
 export function initSearch(navigateToPage) {
@@ -40,7 +41,7 @@ export function initSearch(navigateToPage) {
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].toLowerCase().includes(lowerQuery)) continue;
       matches.push({ lineNum: i + 1, line: lines[i] });
-      if (matches.length >= MAX_SEARCH_MATCHES_PER_FILE) break;
+      if (matches.length >= LIMITS.searchMatchesPerFile) break;
     }
     return matches;
   }
@@ -71,8 +72,7 @@ export function initSearch(navigateToPage) {
     const matches = [];
     let searched = 0;
 
-    // Process files in batches for better performance
-    const BATCH = SEARCH_BATCH_SIZE;
+    const BATCH = LIMITS.searchBatchSize;
     for (let batchStart = 0; batchStart < allNodes.length; batchStart += BATCH) {
       if (runId !== searchRunId) return;
       const batch = allNodes.slice(batchStart, batchStart + BATCH);

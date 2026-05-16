@@ -97,10 +97,8 @@ export const JWT_TOKEN_PATTERN = new RegExp(`^${JWT_TOKEN_PATTERN_SOURCE}$`);
 export const JWT_SCAN_REGEX = new RegExp(`\\b${JWT_TOKEN_PATTERN_SOURCE}\\b`, 'g');
 
 
-// Sysinfo keys that hold the malware-capture timestamp. Used by Timeline,
-// Currentness Lab capture-anchor inference, and the IOC `Log Date` panel.
-// Family variants: Vidar `Date` / `Local Time`, Lumma `Local Date`,
-// RedLine `Log date`, Meduza `System time`.
+// Sysinfo keys that hold the malware-capture timestamp. Different builds
+// label it variously: `Date`, `Local Time`, `Log date`, `System time`, etc.
 export const CAPTURE_TIME_KEYS = [
   /^date$/i,
   /^log\s*date$/i,
@@ -180,4 +178,6 @@ export const LIMITS = {
   looksLikeTextSampleBytes: 4096,
   autoLoadMaxBytes: 500 * 1024 * 1024,
   iocMaxItems: 50,
+  searchMatchesPerFile: 5,
+  searchBatchSize: 20,
 };

@@ -1,5 +1,5 @@
 import { getFileExtension, formatBytes } from '../core/utils.js';
-import { extractBaseDomain, extractDomain, parseTimestampValue, normalisePath, truncateText, collectUniqueMatches } from '../core/shared.js';
+import { baseDomainFromUrl, parseTimestampValue, normalisePath, truncateText, collectUniqueMatches } from '../core/shared.js';
 import { URL_REGEX, SCAN_EMAIL_REGEX, SCAN_PHONE_REGEX } from '../core/definitions/patterns.js';
 
 const CREDENTIAL_HINT_REGEX = /(password|passcode|passphrase|pwd\b|username|login|credential|account|token|backup code|recovery code|密码|用户名|账号|登录名|登陆名|口令)/gi;
@@ -53,7 +53,7 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
   const walletHints = countMatches(clean, WALLET_HINT_REGEX);
   const domains = [];
   for (const url of urls) {
-    const domain = extractBaseDomain(extractDomain(url));
+    const domain = baseDomainFromUrl(url);
     if (domain && !domains.includes(domain)) domains.push(domain);
   }
 

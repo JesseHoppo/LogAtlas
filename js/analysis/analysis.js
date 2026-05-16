@@ -27,8 +27,9 @@ import {
   canonicaliseAutofillPhone,
   classifyAutofillEntries,
   decodeBufferWithFallback,
-  extractDomain,
   extractBaseDomain,
+  baseDomainFromUrl,
+  dedupeDomainKey,
   extractCountryFromFilename,
   inferBrowserFromPath,
   inferServiceFromPath,
@@ -74,11 +75,8 @@ async function decodeNodeText(node) {
   return decodeBufferWithFallback(content);
 }
 
-// Credentials
-
-// Values stealers emit when no username was captured — RedLine in particular
-// writes `UNKNOWN` 5-25× per case. Skipped from topUsernames so they don't
-// outrank real accounts.
+// Sentinels stealers emit when no username was captured. Filtered from
+// topUsernames so they don't outrank real accounts.
 const PLACEHOLDER_USERNAMES = new Set(['unknown', 'unk', 'n/a', 'none', 'null', '-', '?']);
 
 function isPlaceholderTopUsername(value) {
@@ -86,10 +84,9 @@ function isPlaceholderTopUsername(value) {
   return v === '' || PLACEHOLDER_USERNAMES.has(v);
 }
 
-// Emails are case-insensitive per RFC; lowercase them so case variants merge.
-// Phone-shaped usernames (e.g. `+61491570156` and `0491570156`) collapse to
-// their trunk-stripped 8-digit suffix so format variants dedup. Everything
-// else passes through unchanged.
+// Lowercase emails so case variants merge. Phone-shaped usernames collapse
+// to their trunk-stripped 8-digit suffix so `+61491570156` and `0491570156`
+// dedupe to the same key.
 function normaliseUsername(value) {
   const v = String(value || '');
   if (v.includes('@')) return v.toLowerCase();
@@ -153,8 +150,8 @@ async function analyseCredentials(nodes) {
         const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
         const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
 
-        // Chrome's saved-URL index leaks rows with no credentials into Vidar's
-        // password dump. Bucket them separately so they don't inflate counts.
+        // Some logs include rows from the saved-URL index that have no user
+        // or password; track those separately so they don't inflate counts.
         if (!user && !pass) {
           urlsWithoutCredentials++;
           continue;
@@ -163,20 +160,14 @@ async function analyseCredentials(nodes) {
         totalCredentials++;
 
         // Dedupe on (base domain, username, password) so the same credential
-        // saved across profiles or under sibling subdomains collapses to one row.
-        const domainPart = url
-          ? (extractBaseDomain(extractDomain(url) || '') || extractDomain(url) || url).toLowerCase()
-          : '';
+        // saved across profiles or sibling subdomains collapses to one row.
         const userPart = normaliseUsername(user);
-        const key = domainPart + DEDUPE_KEY_SEP + userPart + DEDUPE_KEY_SEP + pass;
+        const key = dedupeDomainKey(url) + DEDUPE_KEY_SEP + userPart + DEDUPE_KEY_SEP + pass;
         if (!seen.has(key)) {
           seen.add(key);
           uniqueCredentials++;
-          if (url) {
-            const host = extractDomain(url);
-            const base = host ? (extractBaseDomain(host) || host) : null;
-            if (base) allDomains.push(base);
-          }
+          const base = baseDomainFromUrl(url);
+          if (base) allDomains.push(base);
           if (user && !isPlaceholderTopUsername(user)) allUsernames.push(userPart);
         }
       }
@@ -277,8 +268,8 @@ async function analyseCookies(nodes) {
     totalUnknown += stats.unknown;
   }
 
-  // Roll up per-host stats to eTLD+1 for the headline list. Per-host detail
-  // is still available on the cookies page via the underlying row data.
+  // Roll per-host stats up to eTLD+1 for the headline list; per-host detail
+  // stays available on the cookies page.
   const baseStats = {};
   for (const [host, stats] of Object.entries(domainStats)) {
     const base = extractBaseDomain(host) || host;
@@ -354,7 +345,7 @@ async function analyseHistory(nodes) {
         const visitCount = visitsIdx >= 0 ? (parseInt(row[visitsIdx], 10) || 1) : 1;
         const lastVisit = lastIdx >= 0 ? (row[lastIdx] || '').trim() : '';
         const lastVisitDate = parseTimestampValue(lastVisit);
-        const domain = extractBaseDomain(extractDomain(url)) || '';
+        const domain = baseDomainFromUrl(url);
         if (domain) domains.push(domain);
         entries.push({ url, title, visitCount, lastVisit, lastVisitDate });
       }
@@ -433,9 +424,9 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
   extractInlineSections(combinedText);
 }
 
-// Strip placeholder / OEM / OS-name garbage from the identity-bearing sysinfo
-// fields and fall back where we can. `identityNotes` records every override
-// so the UI can still surface what the stealer originally captured.
+// Strip placeholder / OEM / OS-name garbage from identity-bearing sysinfo
+// fields and substitute fallbacks where we can. Every override is logged to
+// `identityNotes` so the UI can still surface the stealer's original value.
 function sanitiseIdentityEntries(entries, rootZipName) {
   const notes = [];
 
@@ -544,8 +535,8 @@ function extractInlineSections(text) {
 
       let name = cleaned;
       let pid = null;
-      // Vidar v1.5 writes `[pid] name`; other families write `name [pid]` /
-      // `name (pid)`.
+      // Some logs format process entries as `[pid] name`, others as
+      // `name [pid]` or `name (pid)`.
       const bracketPrefix = cleaned.match(/^\[(\d+)\]\s+(.+)$/);
       if (bracketPrefix) {
         pid = bracketPrefix[1];
@@ -624,12 +615,12 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
   const iocs = [];
   const seen = new Set();
 
-  // Key-value based IOC extraction
+  // Key-value IOC extraction
   for (const { label, patterns } of IOC_KEY_MAP) {
     for (const [key, value] of Object.entries(sysinfoEntries)) {
       if (patterns.some(rx => rx.test(key))) {
-        // Canonicalise Vidar / RedLine TZ encodings to `UTC±HH:MM`; keep the
-        // raw form on the IOC so exports can still reach the original string.
+        // Canonicalise TZ encodings to `UTC±HH:MM` for display; keep the raw
+        // form on the IOC so exports can still reach the original string.
         let displayValue = value;
         let rawValue;
         if (label === 'Timezone') {
@@ -651,8 +642,8 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
     }
   }
 
-  // Content-based IOC extraction. The labelled break enforces the global cap
-  // — a plain break would only exit the inner while.
+  // Content-based IOC extraction. Labelled break enforces the global cap
+  // across all patterns; a plain break would only exit the inner while.
   if (sysinfoText) {
     outer: for (const { label, pattern } of CONTENT_IOC_PATTERNS) {
       pattern.lastIndex = 0;
@@ -907,8 +898,7 @@ async function analyseBookmarks(nodes) {
       for (const row of parsed.rows) {
         const url = (row[0] || '').trim();
         if (!url) continue;
-        const host = extractDomain(url);
-        const base = host ? (extractBaseDomain(host) || host) : null;
+        const base = baseDomainFromUrl(url);
         if (base) allDomains.push(base);
       }
     } catch {
@@ -1135,13 +1125,11 @@ async function analyseDownloads(nodes) {
       parsedCount++;
       totalDownloads += parsed.rows.length;
 
-      // Extract domains from URL column
       const urlIdx = parsed.headers.findIndex(h => /url/i.test(h));
       for (const row of parsed.rows) {
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : (row[1] || '').trim();
         if (!url) continue;
-        const host = extractDomain(url);
-        const base = host ? (extractBaseDomain(host) || host) : null;
+        const base = baseDomainFromUrl(url);
         if (base) allDomains.push(base);
       }
     } catch {

@@ -11,8 +11,7 @@ import { parseNoteArtifact, summariseNotes } from '../analysis/contextArtifacts.
 import {
   collectHintedNodes,
   checkCookieValidity,
-  extractDomain,
-  extractBaseDomain,
+  baseDomainFromUrl,
   SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import { classifyCookie } from '../analysis/sessionCookies.js';
@@ -406,7 +405,7 @@ function renderPasswordsPage(searchQuery = '') {
 
   if (passwordsData.rows.length === 0) {
     summary.textContent = failedFiles.length > 0
-      ? `No passwords found — ${failedFiles.length.toLocaleString()} candidate file(s) skipped`
+      ? `No passwords found (${failedFiles.length.toLocaleString()} candidate file(s) skipped)`
       : 'No passwords found';
     addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
     stats.innerHTML = '';
@@ -431,7 +430,7 @@ function renderPasswordsPage(searchQuery = '') {
     ? `Showing ${showing.toLocaleString()} of ${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`
     : `${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`;
   summary.textContent = failedFiles.length > 0
-    ? `${baseSummary} — ${failedFiles.length.toLocaleString()} file(s) skipped`
+    ? `${baseSummary} (${failedFiles.length.toLocaleString()} file(s) skipped)`
     : baseSummary;
 
   addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
@@ -445,7 +444,7 @@ function renderPasswordsPage(searchQuery = '') {
   for (const { row } of passwordsData.rows) {
     if (passwordColumnIdx >= 0 && row[passwordColumnIdx]) withPasswords++;
     if (urlIdx >= 0) {
-      const domain = extractBaseDomain(extractDomain(row[urlIdx] || ''));
+      const domain = baseDomainFromUrl(row[urlIdx] || '');
       if (domain) domains.add(domain);
     }
     if (userIdx >= 0 && row[userIdx]) usernames.add(row[userIdx].trim().toLowerCase());

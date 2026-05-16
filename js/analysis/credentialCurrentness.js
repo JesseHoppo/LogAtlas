@@ -1,4 +1,4 @@
-import { extractBaseDomain, extractDomain, classifyAutofillEntries, parseTimestampValue, parseArchiveTimestamp } from '../core/shared.js';
+import { extractBaseDomain, extractDomain, dedupeDomainKey, classifyAutofillEntries, parseTimestampValue, parseArchiveTimestamp } from '../core/shared.js';
 import { EMAIL_REGEX, SCAN_EMAIL_REGEX, CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
 import { classifySiteDomain } from '../core/domainCategories.js';
 
@@ -274,7 +274,7 @@ const CONSUMER_SITE_BASE_DOMAINS = new Set([
   'grubhub.com',
 ]);
 
-// Passwords this short or this generic shouldn't count for reuse analysis —
+// Passwords this short or this generic shouldn't count for reuse analysis;
 // the same string showing up on 3 sites by coincidence is meaningless.
 const COMMON_WEAK_PASSWORDS = new Set([
   'password', 'password1', 'password!', 'p@ssword', 'p@ssw0rd',
@@ -290,14 +290,14 @@ const COMMON_WEAK_PASSWORDS = new Set([
 // SaaS hosts where multiple tenants share a base domain (`*.atlassian.net`,
 // `*.sharepoint.com` etc). Cookies/history for one tenant must NOT spill into
 // another's currentness score. The engine already classifies these as 'tenant'
-// providers — this set just gates the per-host vs per-base lookup.
+// providers; this set just gates the per-host vs per-base lookup.
 const TENANT_FULL_HOST_PROVIDER_KEYS = new Set([
   'atlassian', 'slack', 'salesforce', 'okta', 'auth0', 'onelogin',
   'duo', 'ping', 'jumpcloud', 'zendesk', 'freshdesk',
   'microsoft', // sharepoint.com, onmicrosoft.com tenants
 ]);
 
-// CAPTURE_TIME_KEYS comes from definitions/patterns.js — single source of
+// CAPTURE_TIME_KEYS comes from definitions/patterns.js; single source of
 // truth shared with the Timeline view and IOC_KEY_MAP[Log Date].
 
 const LOGIN_HINT_PATTERN = /(login|log in|signin|sign in|auth|sso|oauth|account|portal|dashboard|mail|webmail|workspace|okta|adfs|saml|office|outlook)/i;
@@ -383,9 +383,9 @@ function inferCaptureContext({ sysinfoEntries, rootZipName, sourceLastModified, 
     if (fallback) return { date: fallback, source: 'source-last-modified' };
   }
 
-  // Lower-bound: credentials cannot have been exfiltrated before the last
-  // browsing event the log captured. Useful for Rhadamanthys and stripped
-  // logs that don't carry a sysinfo timestamp.
+  // Lower bound from history: credentials cannot have been exfiltrated before
+  // the last browsing event in the log. Used when the log lacks a sysinfo
+  // timestamp.
   if (historyMaxDate instanceof Date && !Number.isNaN(historyMaxDate.getTime())) {
     return { date: historyMaxDate, source: 'history-derived' };
   }
@@ -420,8 +420,8 @@ function emailLocalTokens(local) {
     .filter((token) => token.length >= 4);
 }
 
-// Strip all separators and trailing digits — matches 'tobias.schimps' to
-// 'tobiasschimps' and 'tschimps21' to 'tschimps'.
+// Strip all separators and trailing digits, so 'tobias.schimps' matches
+// 'tobiasschimps' and 'tschimps21' matches 'tschimps'.
 function canonicaliseEmailLocal(local) {
   return normaliseEmailLocal(local).replace(/[._-]/g, '');
 }
@@ -612,7 +612,7 @@ function buildIdentityFitMeta({ usernameDomain, targetIdentityDomain, dominant, 
 }
 
 function buildDispositionMeta(result) {
-  // Legacy employer first — a competing dominant domain is a stronger signal
+  // Legacy employer first: a competing dominant domain is a stronger signal
   // than the consumer-site reuse pattern, and the latter only matters once
   // we've already disambiguated the user's current employer.
   if (result.conflictDomain) {
@@ -629,7 +629,7 @@ function buildDispositionMeta(result) {
     return {
       key: 'corp-on-consumer',
       label: 'Corp email on consumer service',
-      note: `${result.usernameDomain} credential reused on ${result.siteDomain || 'a consumer site'} — possible password-reuse or shadow-IT signal.`,
+      note: `${result.usernameDomain} credential reused on ${result.siteDomain || 'a consumer site'}; possible password-reuse or shadow-IT signal.`,
       tone: 'warning',
       priority: true,
     };
@@ -773,7 +773,7 @@ function summariseIdentityDomainRows(identityDomains, rows) {
 }
 
 // Map password -> Set of distinct base domains it's used on (>=2 sites).
-// Reuse signals active use of a password — typing it on multiple services is
+// Reuse signals active use of a password: typing it on multiple services is
 // strong evidence the user remembers it and uses it currently.
 function buildPasswordReuseMap(credentials) {
   const usage = new Map();
@@ -1388,9 +1388,8 @@ function scoreCredential(entry, context) {
   }
 
   if (isCorporateEmailDomain(usernameDomain) && result.score < 12 && !result.conflictDomain) {
-    // Used to be -10 (drove orphan corp creds into negative scores). A small
-    // nudge keeps them ranked low without erasing them — analysts often still
-    // want to see a thin-evidence corp credential.
+    // Small nudge so thin-evidence corp credentials stay visible but ranked
+    // low.
     addScore(result, -3, `${usernameDomain} has little corroborating evidence beyond the credential row`, 'competition');
   }
 
@@ -1437,7 +1436,7 @@ function scoreCredential(entry, context) {
   result.displayLabel = shortDispositionLabel(result);
 
   // Domain category from the vendored Tranco / Wikidata / Matomo lists.
-  // `unknown` here is the analyst-priority bucket (likely corporate).
+  // `unknown` here is the analyst-priority bucket.
   const cat = classifySiteDomain(result.siteHost || result.siteDomain);
   result.categoryKey = cat.primaryKey || 'unknown';
   result.categoryLabel = cat.primaryLabel || 'Uncategorised';
@@ -1452,7 +1451,7 @@ const ACTIONABILITY_RANK = { live: 0, recent: 1, stored: 2, legacy: 3 };
 
 // Live = the credential's site is provably accessible right now (cookie session
 // or app-stored). A token email match is identity-level evidence and feeds the
-// score, but doesn't make a non-token site "live" — having a Google token
+// score, but doesn't make a non-token site "live": having a Google token
 // doesn't mean the user is signed in to Netflix.
 function classifyActionability(result) {
   if (result.conflictDomain) return 'legacy';
@@ -1471,8 +1470,8 @@ function shortDispositionLabel(result) {
     case 'aligned-review': return 'Aligned';
     case 'corp-on-consumer': return 'Reused on consumer site';
     case 'legacy-employer': return 'Legacy employer';
-    case 'personal-active': return 'Personal — active';
-    case 'personal-review': return 'Personal — recent';
+    case 'personal-active': return 'Personal, active';
+    case 'personal-review': return 'Personal, recent';
     case 'corporate-review': return 'Possibly current';
     case 'manual-review': return 'Mixed signals';
     case 'likely-historical': return 'Historical';
@@ -1531,7 +1530,7 @@ function buildPrimaryIdentity({ rows, identityDomains, identitySets, sysinfoEntr
     };
   }
 
-  // No corp identity — fall back to most-frequent personal email
+  // No corp identity: fall back to most-frequent personal email
   const personalCounts = new Map();
   for (const row of rows) {
     if (!row.usernameDomain) continue;
@@ -1610,8 +1609,8 @@ function countReuseGroups(rows) {
   for (const r of rows) {
     if (r.reuseCount && r.reuseCount >= 2) {
       // Group key is the password itself, but we don't expose passwords; use
-      // a stable proxy (first 6 chars of base64-ish hash isn't worth it — just
-      // count distinct reuseSites signatures).
+      // a stable proxy (first 6 chars of base64-ish hash isn't worth it),
+      // so just count distinct reuseSites signatures.
       const sig = (r.reuseSites || []).slice().sort().join('|');
       groups.add(sig);
     }
@@ -1634,9 +1633,7 @@ function dedupeCredentials(credentials) {
 
     if (!user && !pass) continue;
 
-    const domainPart = url
-      ? (extractBaseDomain(extractDomain(url) || '') || extractDomain(url) || url).toLowerCase()
-      : '';
+    const domainPart = dedupeDomainKey(url);
     const userPart = user.includes('@') ? user.toLowerCase() : user;
     const key = domainPart + SEP + userPart + SEP + pass;
 
