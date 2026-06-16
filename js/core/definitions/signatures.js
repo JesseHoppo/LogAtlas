@@ -394,6 +394,7 @@ export const SIGNATURES = {
   Raccoon: {
     selfId: [
       { pattern: /raccoon\s+stealer/i, label: 'Self-ID: Raccoon stealer' },
+      { pattern: /\(\s*O\s*\|\s*T\s*\|\s*T\s*\|\s*O\s*\|\s*M\s*\|\s*A\s*\|\s*N\s*\)/i, label: 'Self-ID: OTTOMAN banner' },
     ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -661,8 +662,9 @@ export const SIGNATURES = {
   Meduza: {
     selfId: [
       { pattern: /meduza\s+stealer/i, label: 'Self-ID: Meduza stealer' },
+      { pattern: /⚡️?\s*NEW\s*LOG\s*\(NOT\s*ENCRYPTED\)/i, label: 'Self-ID: Meduza NEW LOG banner' },
     ],
-    sysinfoFile: { pattern: /^UserInfo\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoFile: { pattern: /^(?:UserInfo|Information|PC_info)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
       { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
       { pattern: /^Log Date$/i, label: 'Sysinfo key: Log Date' },
@@ -683,6 +685,9 @@ export const SIGNATURES = {
       { pattern: /Meduza/i, label: 'Sysinfo content: Meduza branding' },
       { pattern: /^HWID:\s*[0-9a-f]{40}$/mi, label: 'Sysinfo content: 40-char hex HWID' },
       { pattern: /^Log Date:\s*\d{2}-\d{2}-\d{4},\s*\d{2}:\d{2}:\d{2}$/mi, label: 'Sysinfo content: DD-MM-YYYY, HH:MM:SS date format' },
+      { pattern: /^(?:🔗\uFE0F?)?\s*Download link\s*:/m, label: 'Sysinfo content: 🔗 Download link section' },
+      { pattern: /^🖥\uFE0F?\s*(?:General information|Computer info)/m, label: 'Sysinfo content: 🖥 Computer info section' },
+      { pattern: /^📡\uFE0F?\s*Whois/m, label: 'Sysinfo content: 📡 Whois section' },
     ],
     folders: [
       { pattern: /^Browser$/i, label: 'Folder: Browser/' },

@@ -2088,6 +2088,19 @@ body {
   background: var(--text-muted);
 }
 
+.dash-fingerprint-source {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border: 1px dashed var(--text-muted);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: help;
+}
+
 .dash-fingerprint-signals {
   margin-top: 0.75rem;
 }

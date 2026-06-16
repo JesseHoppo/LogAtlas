@@ -18,13 +18,17 @@ function scoreFamily(familyName, sig, ctx) {
     structure: 0,
   };
 
-  // 1. Self-identification (stealer names itself explicitly)
+  // 1. Self-identification (stealer names itself explicitly).
+  // SELF_ID + ASCII banners are case-global signals — pull from
+  // `combinedSysinfoText` (all candidates joined) so multi-file cases
+  // don't lose evidence when the per-candidate `sysinfoText` doesn't
+  // happen to include the banner.
+  const globalText = [ctx.combinedSysinfoText || ctx.sysinfoText, ctx.creditsText, ctx.passwordHeaderText, ctx.clipboardText].filter(Boolean).join('\n');
   if (sig.selfId && sig.selfId.length > 0) {
     maxScore += W.SELF_ID;
-    const allText = [ctx.sysinfoText, ctx.creditsText, ctx.passwordHeaderText].filter(Boolean).join('\n');
-    if (allText) {
+    if (globalText) {
       for (const si of sig.selfId) {
-        if (si.pattern.test(allText)) {
+        if (si.pattern.test(globalText)) {
           score += W.SELF_ID;
           matched.push(si.label);
           matchedCounts.selfId++;
@@ -67,9 +71,8 @@ function scoreFamily(familyName, sig, ctx) {
   // 5. ASCII banners (whitespace-normalised comparison)
   if (sig.asciiBanners && sig.asciiBanners.length > 0) {
     maxScore += W.ASCII_BANNER;
-    const allText = [ctx.sysinfoText, ctx.creditsText, ctx.passwordHeaderText].filter(Boolean).join('\n');
-    if (allText) {
-      const normText = allText.replace(/[ \t]+/g, ' ');
+    if (globalText) {
+      const normText = globalText.replace(/[ \t]+/g, ' ');
       for (const banner of sig.asciiBanners) {
         const normBanner = banner.replace(/[ \t]+/g, ' ');
         if (normText.includes(normBanner)) {
@@ -147,11 +150,64 @@ function collectContext(node, basePath, ctx) {
       if (child._creditsFileHint || FILE_TYPE_PATTERNS.credits.filePatterns.some(rx => rx.test(child.name))) {
         ctx.creditsNodes.push(child);
       }
+      if (child._clipboardHint || FILE_TYPE_PATTERNS.clipboard.filePatterns.some(rx => rx.test(child.name))) {
+        ctx.clipboardNodes.push(child);
+      }
       if (child._passwordFileHint || /^(?:passwords?|unique[\s_-]*passwords?)\.txt$/i.test(child.name)) {
         if (!ctx.passwordNode) ctx.passwordNode = child;
       }
     }
   }
+}
+
+function scoreStructureOnly(familyName, sig, ctx) {
+  let score = 0;
+  let maxScore = 0;
+  const matched = [];
+  const matchedCounts = {
+    selfId: 0,
+    sysinfoFile: 0,
+    sysinfoKey: 0,
+    sysinfoContent: 0,
+    asciiBanner: 0,
+    folder: 0,
+    file: 0,
+    structure: 0,
+  };
+
+  for (const f of sig.folders || []) {
+    maxScore += W.FOLDER;
+    if (ctx.dirs.some(d => f.pattern.test(d))) {
+      score += W.FOLDER;
+      matched.push(f.label);
+      matchedCounts.folder++;
+    }
+  }
+  for (const fp of sig.files || []) {
+    maxScore += W.FILE_PATTERN;
+    if (ctx.files.some(f => fp.pattern.test(f))) {
+      score += W.FILE_PATTERN;
+      matched.push(fp.label);
+      matchedCounts.file++;
+    }
+  }
+  for (const s of sig.structures || []) {
+    maxScore += W.STRUCTURE;
+    if (s.test(ctx.dirs, ctx.files)) {
+      score += W.STRUCTURE;
+      matched.push(s.label);
+      matchedCounts.structure++;
+    }
+  }
+
+  // Same gates as the full pass. With no sysinfo evidence here, families that
+  // require it (or that exclude on structure) stay out instead of matching on
+  // layout alone.
+  const signalState = { ctx, matchedCounts, matched };
+  if (sig.exclusions && sig.exclusions.some(rule => rule.test(signalState))) return null;
+  if (sig.require && !sig.require(signalState)) return null;
+
+  return { family: familyName, score, maxScore, matched };
 }
 
 function fingerprintStealer(ctx) {
@@ -186,22 +242,45 @@ function fingerprintStealer(ctx) {
   results.sort((a, b) => b.score - a.score || b.pct - a.pct);
 
   const best = results[0];
-  if (!best || best.pct < CONFIDENCE_THRESHOLDS.min) {
-    return null;
+  if (best && best.pct >= CONFIDENCE_THRESHOLDS.min) {
+    let confidence;
+    if (best.selfIdMatched) confidence = 'high';
+    else if (best.pct >= CONFIDENCE_THRESHOLDS.high) confidence = 'high';
+    else if (best.pct >= CONFIDENCE_THRESHOLDS.medium) confidence = 'medium';
+    else confidence = 'low';
+
+    return {
+      family: best.family,
+      confidence,
+      score: Math.round(best.pct * 100) / 100,
+      matchedSignals: best.matched,
+    };
   }
 
-  let confidence;
-  if (best.selfIdMatched) confidence = 'high';
-  else if (best.pct >= CONFIDENCE_THRESHOLDS.high) confidence = 'high';
-  else if (best.pct >= CONFIDENCE_THRESHOLDS.medium) confidence = 'medium';
-  else confidence = 'low';
+  // Structure-only fallback: no sysinfo/SELF_ID lined up, but folder + file
+  // layout may still betray a stealer family. Conservative threshold so
+  // a lone `Autofill/` folder doesn't fire.
+  const structureResults = [];
+  for (const [family, sig] of Object.entries(SIGNATURES)) {
+    const r = scoreStructureOnly(family, sig, ctx);
+    if (!r || r.maxScore <= 0) continue;
+    if (r.score < W.FOLDER * 2 && r.score < W.STRUCTURE) continue;
+    r.pct = r.score / r.maxScore;
+    structureResults.push(r);
+  }
+  structureResults.sort((a, b) => b.score - a.score || b.pct - a.pct);
+  const structBest = structureResults[0];
+  if (structBest) {
+    return {
+      family: structBest.family,
+      confidence: 'low',
+      score: Math.round(structBest.pct * 100) / 100,
+      matchedSignals: structBest.matched,
+      source: 'structure-only',
+    };
+  }
 
-  return {
-    family: best.family,
-    confidence,
-    score: Math.round(best.pct * 100) / 100,
-    matchedSignals: best.matched,
-  };
+  return null;
 }
 
 export { collectContext, fingerprintStealer };

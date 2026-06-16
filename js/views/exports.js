@@ -219,11 +219,15 @@ function buildLogSummaryHtml(data) {
   if (data.fingerprintResult) {
     const fp = data.fingerprintResult;
     const confColor = fp.confidence === 'high' ? '#16a34a' : fp.confidence === 'medium' ? '#d97706' : '#8c919c';
+    const structureNote = fp.source === 'structure-only'
+      ? `<div class="stat" style="font-size:0.8rem;color:#8c919c;">Inferred from folder/file layout; no sysinfo present.</div>`
+      : '';
     sections += `<section>
       <h2>Stealer Identification</h2>
       <div class="stat-row">
         <div class="stat" style="font-size:0.95rem;"><strong style="color:${confColor}">${e(fp.family)}</strong></div>
         <div class="stat">${e(fp.confidence.charAt(0).toUpperCase() + fp.confidence.slice(1))} confidence (${Math.round(fp.score * 100)}%)</div>
+        ${structureNote}
       </div>
     </section>`;
   }

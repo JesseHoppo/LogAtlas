@@ -1230,7 +1230,7 @@ function findScreenshot(nodes) {
 // Stealer fingerprinting
 
 async function runFingerprint(fileTree, rootName) {
-  const ctx = { dirs: [], files: [], sysinfoNodes: [], sysinfoCandidates: [], creditsNodes: [], creditsText: null, passwordNode: null, passwordHeaderText: null };
+  const ctx = { dirs: [], files: [], sysinfoNodes: [], sysinfoCandidates: [], creditsNodes: [], creditsText: null, clipboardNodes: [], clipboardText: null, passwordNode: null, passwordHeaderText: null };
 
   // If the archive has a single top-level dir, start inside it so paths match signatures
   let startNode = fileTree;
@@ -1243,10 +1243,12 @@ async function runFingerprint(fileTree, rootName) {
   collectContext(startNode, '', ctx);
 
   if (ctx.sysinfoNodes.length > 0) {
+    const allTexts = [];
     for (const node of ctx.sysinfoNodes) {
       try {
         const text = await decodeNodeText(node);
         if (text == null) continue;
+        allTexts.push(text);
         const parsed = parseSystemInfoFile(text, node.name);
         ctx.sysinfoCandidates.push({
           sysinfoFilename: node.name,
@@ -1257,6 +1259,7 @@ async function runFingerprint(fileTree, rootName) {
         // skip unreadable sysinfo candidates
       }
     }
+    if (allTexts.length > 0) ctx.combinedSysinfoText = allTexts.join('\n');
   }
 
   // Load credits/copyright files for ASCII banner detection
@@ -1272,6 +1275,28 @@ async function runFingerprint(fileTree, rootName) {
     }
     if (creditsTexts.length > 0) {
       ctx.creditsText = creditsTexts.join('\n');
+    }
+  }
+
+  // Clipboard text — some families paste a self-id banner (e.g. Raccoon
+  // OTTOMAN) as their calling card. Cap to keep memory bounded.
+  if (ctx.clipboardNodes.length > 0) {
+    const clipTexts = [];
+    let budget = 8192;
+    for (const node of ctx.clipboardNodes) {
+      if (budget <= 0) break;
+      try {
+        const text = await decodeNodeText(node);
+        if (text == null) continue;
+        const slice = text.slice(0, budget);
+        clipTexts.push(slice);
+        budget -= slice.length;
+      } catch {
+        // skip
+      }
+    }
+    if (clipTexts.length > 0) {
+      ctx.clipboardText = clipTexts.join('\n');
     }
   }
 

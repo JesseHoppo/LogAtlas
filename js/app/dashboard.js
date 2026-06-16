@@ -763,6 +763,9 @@ export function initDashboard() {
 
     const confidenceLabel = data.confidence.charAt(0).toUpperCase() + data.confidence.slice(1) + ' confidence';
     const signalsId = 'fingerprintSignals_' + Date.now();
+    const structureOnly = data.source === 'structure-only'
+      ? `<span class="dash-fingerprint-source" title="No sysinfo file present; family inferred from folder/file layout only.">structure-only</span>`
+      : '';
 
     body.innerHTML = `
     <div>
@@ -772,6 +775,7 @@ export function initDashboard() {
           <span class="dash-fingerprint-dot dash-fingerprint-dot-${data.confidence}"></span>
           ${escapeHtml(confidenceLabel)}
         </span>
+        ${structureOnly}
       </div>
       <div class="dash-fingerprint-signals">
         <button class="dash-fingerprint-toggle" id="${signalsId}Btn">&#9656; Matched signals (${data.matchedSignals.length})</button>
