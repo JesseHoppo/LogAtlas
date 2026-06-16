@@ -23,7 +23,7 @@ Example Logs/
 reports/
 scripts/
 processed examples/
-OVERVIEW.md
 
-# Internal review docs (audit findings, batch plans, sweep harness).
+# Internal docs (architecture, backlog, audit, review history) + sweep harness.
+docs/
 reviews/
