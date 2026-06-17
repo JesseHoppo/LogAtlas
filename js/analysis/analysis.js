@@ -551,17 +551,15 @@ function extractInlineSections(text) {
       }
       if (!name) continue;
 
-      const key = name.toLowerCase();
+      const key = [name, pid || ''].join(' ').toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
         entries.push({ name, pid });
-      } else if (pid) {
-        const existing = entries.find((entry) => entry.name.toLowerCase() === key);
-        if (existing && !existing.pid) existing.pid = pid;
       }
     }
     if (entries.length > 0) {
-      emit('analysis:processList', { fileCount: 1, entries, uniqueCount: entries.length, inline: true });
+      const uniqueCount = new Set(entries.map(e => e.name.toLowerCase())).size;
+      emit('analysis:processList', { fileCount: 1, entries, totalCount: entries.length, uniqueCount, inline: true });
     }
   }
 }
@@ -1435,14 +1433,9 @@ async function analyseProcessList(nodes) {
         name = name.replace(/^[-*•]\s+/, '').trim();
         if (!name || name.length > 200) continue;
 
-        const key = name.toLowerCase();
+        const key = [name, pid || '', sessionId || '', commandLine].join(' ').toLowerCase();
         if (!entryMap.has(key)) {
           entryMap.set(key, { name, pid, sessionId, commandLine });
-        } else {
-          const existing = entryMap.get(key);
-          if (!existing.pid && pid) existing.pid = pid;
-          if (!existing.sessionId && sessionId) existing.sessionId = sessionId;
-          if (!existing.commandLine && commandLine) existing.commandLine = commandLine;
         }
         found = true;
       }
@@ -1459,7 +1452,8 @@ async function analyseProcessList(nodes) {
     return;
   }
 
-  emit('analysis:processList', { fileCount: parsedCount, entries, uniqueCount: entries.length });
+  const uniqueCount = new Set(entries.map(e => e.name.toLowerCase())).size;
+  emit('analysis:processList', { fileCount: parsedCount, entries, totalCount: entries.length, uniqueCount });
 }
 
 // Kick off all analyses. Returns a promise resolved once every task settles;

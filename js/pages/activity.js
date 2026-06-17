@@ -42,6 +42,8 @@ let grabbedFilesData = { entries: [] };
 let screenshotsData = { entries: [], totalBytes: 0 };
 let softwareData = { entries: [], fileCount: 0 };
 let processListData = { entries: [], fileCount: 0 };
+let softwareSlots = { inline: null, file: null };
+let processListSlots = { inline: null, file: null };
 
 let downloadsFiltered = [];
 let downloadsShown = 0;
@@ -134,6 +136,7 @@ const pageRegistry = createPagedCollectionRegistry({
     isEmpty: () => softwareData.entries.length === 0,
     reset: () => {
       softwareData = { entries: [], fileCount: 0 };
+      softwareSlots = { inline: null, file: null };
       softwareFiltered = [];
       softwareShown = 0;
     },
@@ -147,6 +150,7 @@ const pageRegistry = createPagedCollectionRegistry({
     isEmpty: () => processListData.entries.length === 0,
     reset: () => {
       processListData = { entries: [], fileCount: 0 };
+      processListSlots = { inline: null, file: null };
       processesFiltered = [];
       processesShown = 0;
     },
@@ -1007,27 +1011,58 @@ export function reset() {
   pageRegistry.reset();
 }
 
+function mergeSoftware(slots) {
+  const seen = new Set();
+  const entries = [];
+  let fileCount = 0;
+  for (const slot of [slots.file, slots.inline]) {
+    if (!slot) continue;
+    fileCount += slot.fileCount || 0;
+    for (const e of slot.entries) {
+      const key = e.name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      entries.push(e);
+    }
+  }
+  return { entries, fileCount };
+}
+
+function mergeProcessList(slots) {
+  const map = new Map();
+  let fileCount = 0;
+  for (const slot of [slots.file, slots.inline]) {
+    if (!slot) continue;
+    fileCount += slot.fileCount || 0;
+    for (const e of slot.entries) {
+      const key = [e.name, e.pid || '', e.sessionId || '', e.commandLine || ''].join(' ').toLowerCase();
+      if (!map.has(key)) map.set(key, { ...e });
+    }
+  }
+  return { entries: [...map.values()], fileCount };
+}
+
 export function setSoftwareData(data) {
+  const slot = data === null ? 'file' : (data.inline ? 'inline' : 'file');
   const hasEntries = Array.isArray(data?.entries) && data.entries.length > 0;
-  softwareData = hasEntries
-    ? { entries: data.entries, fileCount: data.fileCount || 0 }
-    : { entries: [], fileCount: 0 };
+  softwareSlots[slot] = hasEntries ? { entries: data.entries, fileCount: data.fileCount || 0 } : null;
+  softwareData = mergeSoftware(softwareSlots);
 
   const nav = document.getElementById('navSoftware');
-  if (nav) nav.disabled = !hasEntries;
+  if (nav) nav.disabled = softwareData.entries.length === 0;
   if (document.getElementById('pageSoftware')?.classList.contains('active')) {
     renderSoftwarePage(document.getElementById('softwareSearch')?.value || '');
   }
 }
 
 export function setProcessListData(data) {
+  const slot = data === null ? 'file' : (data.inline ? 'inline' : 'file');
   const hasEntries = Array.isArray(data?.entries) && data.entries.length > 0;
-  processListData = hasEntries
-    ? { entries: data.entries, fileCount: data.fileCount || 0 }
-    : { entries: [], fileCount: 0 };
+  processListSlots[slot] = hasEntries ? { entries: data.entries, fileCount: data.fileCount || 0 } : null;
+  processListData = mergeProcessList(processListSlots);
 
   const nav = document.getElementById('navProcesses');
-  if (nav) nav.disabled = !hasEntries;
+  if (nav) nav.disabled = processListData.entries.length === 0;
   if (document.getElementById('pageProcesses')?.classList.contains('active')) {
     renderProcessesPage(document.getElementById('processesSearch')?.value || '');
   }
