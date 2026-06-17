@@ -246,7 +246,7 @@ function finaliseAutofillDataset(parsed) {
 const AUTOFILL_BLOCK_MAX_LINES = 6;
 const AUTOFILL_BLOCK_MAX_VALUE_LENGTH = 500;
 const AUTOFILL_SPACED_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _.$\-[\]]{0,80}?)\s*:\s+(.+)$/;
-const AUTOFILL_TOKEN_VALUE_PATTERN = /^([A-Za-z_$][A-Za-z0-9_.$:[\]-]*(?:\[[^\]\n]+\])*)\s+(.+)$/;
+const AUTOFILL_TOKEN_VALUE_PATTERN = /^([A-Za-z_$][A-Za-z0-9_.$:-]*(?:\[[^\]\n]+\])*)\s+(.+)$/;
 const AUTOFILL_RECORD_LABEL_KEYS = new Set(['browser', 'profile', 'name', 'field', 'key', 'label', 'value', 'form']);
 const AUTOFILL_RECORD_NAME_KEYS = new Set(['name', 'field', 'key', 'label', 'form']);
 const AUTOFILL_RECORD_VALUE_KEYS = new Set(['value']);

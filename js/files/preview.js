@@ -535,7 +535,7 @@ function renderPdfPreview(data, fileName) {
   const url = URL.createObjectURL(blob);
   trackBlobUrl(url);
   return `<div class="preview-pdf-container">` +
-    `<iframe src="${url}" class="preview-pdf-frame" title="${escapeHtml(fileName)}"></iframe></div>`;
+    `<iframe src="${url}" class="preview-pdf-frame" sandbox title="${escapeHtml(fileName)}"></iframe></div>`;
 }
 
 function attachShowAllLinesHandler() {
