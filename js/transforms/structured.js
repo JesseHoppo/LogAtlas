@@ -30,23 +30,25 @@ import {
   parseBlocks,
   parseWithConfig,
 } from './delimited.js';
+import { LIMITS } from '../core/definitions/patterns.js';
 
-function flattenObjectEntries(value, prefix = '', out = []) {
+function flattenObjectEntries(value, prefix = '', out = [], depth = 0) {
   if (value == null) return out;
+  if (depth > LIMITS.flattenMaxDepth || out.length >= LIMITS.flattenMaxEntries) return out;
 
   if (Array.isArray(value)) {
     if (value.every(item => item == null || typeof item !== 'object')) {
       out.push([prefix || 'Value', value.map(item => item == null ? '' : String(item)).join(', ')]);
       return out;
     }
-    value.forEach((item, index) => flattenObjectEntries(item, prefix ? `${prefix}[${index}]` : `[${index}]`, out));
+    value.forEach((item, index) => flattenObjectEntries(item, prefix ? `${prefix}[${index}]` : `[${index}]`, out, depth + 1));
     return out;
   }
 
   if (typeof value === 'object') {
     for (const [key, child] of Object.entries(value)) {
       const nextPrefix = prefix ? `${prefix}.${key}` : key;
-      flattenObjectEntries(child, nextPrefix, out);
+      flattenObjectEntries(child, nextPrefix, out, depth + 1);
     }
     return out;
   }
@@ -262,6 +264,7 @@ export function parseSystemInfoFile(text, fileName = '') {
 
   if (/\.json$/i.test(fileName)) {
     try {
+      if (clean.length > LIMITS.jsonParseMaxBytes) throw new Error('json too large');
       const entries = {};
       for (const [key, value] of flattenObjectEntries(JSON.parse(clean))) {
         const normalisedKey = String(key || '').trim();
@@ -641,7 +644,7 @@ export function parseBookmarkFile(text) {
   const clean = normaliseSeparators(normaliseText(text)).trim();
   if (!clean) return null;
 
-  if (clean.startsWith('{') || clean.startsWith('[')) {
+  if ((clean.startsWith('{') || clean.startsWith('[')) && clean.length <= LIMITS.jsonParseMaxBytes) {
     try {
       const obj = JSON.parse(clean);
       const rows = parseBookmarkJson(obj);
@@ -698,7 +701,7 @@ export function parseBrowserMetadataFile(text) {
   const clean = normaliseText(text).trim();
   if (!clean) return null;
 
-  if (clean.startsWith('{') || clean.startsWith('[')) {
+  if ((clean.startsWith('{') || clean.startsWith('[')) && clean.length <= LIMITS.jsonParseMaxBytes) {
     try {
       const obj = JSON.parse(clean);
       const rows = flattenObjectEntries(obj)
@@ -919,7 +922,7 @@ export function parseServiceArtifactFile(text) {
   const clean = removePromotionalNoise(normaliseText(text)).trim();
   if (!clean) return null;
 
-  if (clean.startsWith('{') || clean.startsWith('[')) {
+  if ((clean.startsWith('{') || clean.startsWith('[')) && clean.length <= LIMITS.jsonParseMaxBytes) {
     try {
       const obj = JSON.parse(clean);
       const rows = flattenObjectEntries(obj)

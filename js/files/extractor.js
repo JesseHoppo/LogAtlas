@@ -11,8 +11,31 @@ import {
 import { promptForPassword, isRememberChecked } from './password.js';
 import { applyDetectionHints, reconcileAggregatePasswordFiles } from '../analysis/detection.js';
 import { HINT_KEYS, FILE_TYPE_TO_HINT } from './fileTypeRegistry.js';
+import { LIMITS } from '../core/definitions/patterns.js';
 
 const MAX_DEPTH = 10;
+
+let _bytesUsed = 0;
+let _entriesUsed = 0;
+let _budgetReported = false;
+
+function resetExtractionBudget() {
+  _bytesUsed = 0;
+  _entriesUsed = 0;
+  _budgetReported = false;
+}
+
+function withinBudget(extraBytes) {
+  if (_entriesUsed >= LIMITS.maxEntries) return false;
+  if (_bytesUsed + (extraBytes || 0) > LIMITS.maxDecompressedBytes) return false;
+  return true;
+}
+
+function reportBudgetExceeded(path) {
+  if (_budgetReported) return;
+  _budgetReported = true;
+  addError(`Extraction limit reached (${Math.round(LIMITS.maxDecompressedBytes / (1024 * 1024))} MB / ${LIMITS.maxEntries} entries); remaining contents left unexpanded near: ${path}`);
+}
 
 // Lazy-load libarchive so it doesn't break the ZIP path if it fails
 let _Archive = null;
@@ -164,6 +187,14 @@ async function extractIntoTree(root, zipData, basePath, depth) {
         continue;
       }
 
+      const entryBytes = entry.uncompressedSize || 0;
+      if (!withinBudget(entryBytes)) {
+        reportBudgetExceeded(basePath + '/' + entry.filename);
+        break;
+      }
+      _bytesUsed += entryBytes;
+      _entriesUsed += 1;
+
       const isZip = isZipFile(leafName);
       const isArchive = isArchiveFile(leafName);
 
@@ -230,6 +261,15 @@ function walkExtractedFiles(obj, depth, root, parentPath) {
     const value = obj[key];
     if (isMacOSMetadata(key)) continue;
     if (isJunkFile(key.toLowerCase())) continue;
+
+    if (value instanceof File) {
+      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); return; }
+      _bytesUsed += value.size || 0;
+      _entriesUsed += 1;
+    } else if (value && typeof value === 'object') {
+      if (!withinBudget(0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); return; }
+      _entriesUsed += 1;
+    }
 
     const segments = parentPath.concat(key);
 
@@ -386,6 +426,7 @@ async function extractFile(file) {
   state.rootZipName = file.name;
   state.sourceFile = file;
   setLoading('Reading archive...');
+  resetExtractionBudget();
 
   const root = createNode(file.name, { type: 'directory', depth: 0 });
 
@@ -461,6 +502,7 @@ function applyManualType(node, fileType) {
 }
 
 async function addFilesToTree(files) {
+  resetExtractionBudget();
   if (!state.fileTree) {
     state.fileTree = createNode(state.virtualContainerName || 'Uploaded Files', {
       type: 'directory',

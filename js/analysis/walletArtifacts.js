@@ -1,5 +1,5 @@
 import { inferBrowserFromPath, inferProfileFromPath, normalisePath, collectUniqueMatches, uniqueLimited, summariseList } from '../core/shared.js';
-import { URL_REGEX, SCAN_EMAIL_REGEX, JWT_SCAN_REGEX } from '../core/definitions/patterns.js';
+import { URL_REGEX, SCAN_EMAIL_REGEX, JWT_SCAN_REGEX, LIMITS } from '../core/definitions/patterns.js';
 import { inferStoreService } from '../core/serviceRegistry.js';
 
 const ETH_ADDRESS_REGEX = /\b0x[a-fA-F0-9]{40}\b/g;
@@ -62,11 +62,12 @@ function detectArtifactType(fileName, sourcePath, storeType) {
 }
 
 
-function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: [], tokenCount: 0, seedHints: 0 }) {
+function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: [], tokenCount: 0, seedHints: 0 }, depth = 0) {
   if (value == null) return results;
+  if (depth > LIMITS.flattenMaxDepth) return results;
 
   if (Array.isArray(value)) {
-    for (const item of value) collectJsonFieldValues(item, results);
+    for (const item of value) collectJsonFieldValues(item, results, depth + 1);
     return results;
   }
 
@@ -78,7 +79,7 @@ function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: []
       if (/(?:email|mail)/.test(lowerKey) && typeof child === 'string') results.emails.push(child);
       if (/(?:url|server|vault|api|identity)/.test(lowerKey) && typeof child === 'string') results.urls.push(child);
       if (/(?:id|uuid)/.test(lowerKey) && typeof child === 'string' && UUID_REGEX.test(child)) results.ids.push(child);
-      collectJsonFieldValues(child, results);
+      collectJsonFieldValues(child, results, depth + 1);
     }
     return results;
   }
@@ -116,7 +117,7 @@ function parseWalletArtifact(content, fileName, sourcePath) {
   const artifactType = detectArtifactType(fileName, normalisedPath, storeType);
 
   let jsonSignals = { emails: [], urls: [], ids: [], tokenCount: 0, seedHints: 0 };
-  if (text && /\.json$/i.test(fileName)) {
+  if (text && /\.json$/i.test(fileName) && text.length <= LIMITS.jsonParseMaxBytes) {
     try {
       jsonSignals = collectJsonFieldValues(JSON.parse(text), jsonSignals);
     } catch {

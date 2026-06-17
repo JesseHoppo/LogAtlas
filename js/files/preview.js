@@ -114,16 +114,22 @@ function collectXmlText(node) {
   return decodeXmlEntities(text);
 }
 
-async function readZipEntryText(entry) {
+async function readZipEntryText(entry, budgetState) {
+  const size = entry.uncompressedSize || 0;
+  if (size > LIMITS.ooxmlInnerMemberMaxBytes) return null;
+  if (budgetState && budgetState.totalDecoded + size > LIMITS.ooxmlTotalMaxBytes) return null;
   const data = await entry.getData(new zip.Uint8ArrayWriter());
+  if (budgetState) budgetState.totalDecoded += size;
   return SHARED_TEXT_DECODER.decode(data);
 }
 
-async function extractWordOpenXmlPreview(entryMap) {
+async function extractWordOpenXmlPreview(entryMap, budgetState) {
   const mainEntry = entryMap.get('word/document.xml');
   if (!mainEntry) return '';
 
-  const doc = parseXmlDocument(await readZipEntryText(mainEntry));
+  const text = await readZipEntryText(mainEntry, budgetState);
+  if (text === null) return '';
+  const doc = parseXmlDocument(text);
   if (!doc) return '';
 
   const paragraphs = Array.from(doc.getElementsByTagNameNS('*', 'p'));
@@ -136,7 +142,7 @@ async function extractWordOpenXmlPreview(entryMap) {
   return blocks.join('\n\n');
 }
 
-async function extractSlideOpenXmlPreview(entryMap) {
+async function extractSlideOpenXmlPreview(entryMap, budgetState) {
   const slideEntries = Array.from(entryMap.entries())
     .filter(([name]) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
     .sort((a, b) => {
@@ -147,7 +153,9 @@ async function extractSlideOpenXmlPreview(entryMap) {
 
   const blocks = [];
   for (const [name, entry] of slideEntries) {
-    const doc = parseXmlDocument(await readZipEntryText(entry));
+    const text = await readZipEntryText(entry, budgetState);
+    if (text === null) return '';
+    const doc = parseXmlDocument(text);
     if (!doc) continue;
 
     const textNodes = Array.from(doc.getElementsByTagNameNS('*', 't'))
@@ -241,15 +249,20 @@ function extractWorksheetValues(sheetText, sharedStrings) {
   return values;
 }
 
-async function extractSheetOpenXmlPreview(entryMap) {
+async function extractSheetOpenXmlPreview(entryMap, budgetState) {
   const workbookEntry = entryMap.get('xl/workbook.xml');
   if (!workbookEntry) return '';
 
-  const workbookText = await readZipEntryText(workbookEntry);
+  const workbookText = await readZipEntryText(workbookEntry, budgetState);
+  if (workbookText === null) return '';
+
   const relsEntry = entryMap.get('xl/_rels/workbook.xml.rels');
-  const relMap = relsEntry ? readWorkbookRelationships(await readZipEntryText(relsEntry)) : new Map();
+  const relsText = relsEntry ? await readZipEntryText(relsEntry, budgetState) : null;
+  const relMap = relsText === null ? new Map() : readWorkbookRelationships(relsText);
+
   const sharedStringsEntry = entryMap.get('xl/sharedStrings.xml');
-  const sharedStrings = sharedStringsEntry ? extractSharedStrings(await readZipEntryText(sharedStringsEntry)) : [];
+  const sharedStringsText = sharedStringsEntry ? await readZipEntryText(sharedStringsEntry, budgetState) : null;
+  const sharedStrings = sharedStringsText === null ? [] : extractSharedStrings(sharedStringsText);
 
   let sheets = readWorkbookSheets(workbookText, relMap);
   if (sheets.length === 0) {
@@ -264,7 +277,9 @@ async function extractSheetOpenXmlPreview(entryMap) {
     const entry = entryMap.get(sheet.target);
     if (!entry) continue;
 
-    const values = extractWorksheetValues(await readZipEntryText(entry), sharedStrings);
+    const sheetText = await readZipEntryText(entry, budgetState);
+    if (sheetText === null) return '';
+    const values = extractWorksheetValues(sheetText, sharedStrings);
     if (values.length === 0) continue;
     blocks.push(`${sheet.name}\n${values.join('\n')}`);
   }
@@ -278,10 +293,11 @@ async function extractOfficeOpenXmlPreview(content, fileName) {
   try {
     const entries = await reader.getEntries();
     const entryMap = new Map(entries.filter(entry => !entry.directory).map(entry => [entry.filename, entry]));
+    const budgetState = { totalDecoded: 0 };
 
-    if (WORD_OPEN_XML_EXTENSIONS.has(ext)) return extractWordOpenXmlPreview(entryMap);
-    if (SHEET_OPEN_XML_EXTENSIONS.has(ext)) return extractSheetOpenXmlPreview(entryMap);
-    if (SLIDE_OPEN_XML_EXTENSIONS.has(ext)) return extractSlideOpenXmlPreview(entryMap);
+    if (WORD_OPEN_XML_EXTENSIONS.has(ext)) return extractWordOpenXmlPreview(entryMap, budgetState);
+    if (SHEET_OPEN_XML_EXTENSIONS.has(ext)) return extractSheetOpenXmlPreview(entryMap, budgetState);
+    if (SLIDE_OPEN_XML_EXTENSIONS.has(ext)) return extractSlideOpenXmlPreview(entryMap, budgetState);
     return '';
   } finally {
     try {

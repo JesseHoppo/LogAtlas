@@ -199,4 +199,11 @@ export const LIMITS = {
   stealerInfraValueScanBytes: 4000,
   searchMatchesPerFile: 5,
   searchBatchSize: 20,
+  maxDecompressedBytes: 2 * 1024 * 1024 * 1024,
+  maxEntries: 200000,
+  jsonParseMaxBytes: 8 * 1024 * 1024,
+  flattenMaxDepth: 32,
+  flattenMaxEntries: 50000,
+  ooxmlInnerMemberMaxBytes: 50 * 1024 * 1024,
+  ooxmlTotalMaxBytes: 100 * 1024 * 1024,
 };
