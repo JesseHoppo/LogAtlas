@@ -186,7 +186,7 @@ export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
   const sample = dataLines.filter(l => l.trim()).slice(0, 50);
   if (sample.length === 0) return { columnMap: {}, confidence: 'low' };
 
-  const colCount = splitFn(sample[0]).length;
+  const colCount = mostCommon(sample.map(l => splitFn(l).length));
   const stats = Array.from({ length: colCount }, () => ({ urlLike: 0, emailLike: 0, total: 0 }));
 
   for (const line of sample) {
