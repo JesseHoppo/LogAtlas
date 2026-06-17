@@ -39,6 +39,8 @@ function convertCookieTimestamp(raw) {
       const bigVal = BigInt(trimmed);
       const unixMicro = bigVal - CHROME_EPOCH_OFFSET;
       ms = Number(unixMicro / 1000n);
+    } else if (num > 1e15) {
+      ms = Number(BigInt(trimmed) / 1000n); // Unix microseconds (Firefox places.sqlite)
     } else if (num > 1e12) {
       ms = num; // already milliseconds
     } else {

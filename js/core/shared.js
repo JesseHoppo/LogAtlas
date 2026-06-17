@@ -518,6 +518,14 @@ function classifyAutofillEntries(entries, maxOther = 20) {
   };
 }
 
+function buildLocalDate(year, month, day, hour = 0, minute = 0, second = 0) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(year, month - 1, day, hour, minute, second);
+  if (isNaN(date.getTime())) return null;
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
 function parseTimestampValue(value) {
   if (value instanceof Date) {
     return !isNaN(value.getTime()) ? value : null;
@@ -534,6 +542,8 @@ function parseTimestampValue(value) {
       if (num > 13000000000000000n) {
         // Chrome/WebKit epoch microseconds since 1601-01-01.
         ms = Number((num - CHROME_EPOCH_OFFSET) / 1000n);
+      } else if (num > 1000000000000000n) {
+        ms = Number(num / 1000n); // Unix microseconds (Firefox places.sqlite)
       } else if (num > 1000000000000n) {
         ms = Number(num); // already ms
       } else {
@@ -554,15 +564,15 @@ function parseTimestampValue(value) {
   if (dotDmyTime) {
     let year = Number(dotDmyTime[3]);
     if (year < 100) year += 2000;
-    const date = new Date(year, Number(dotDmyTime[2]) - 1, Number(dotDmyTime[1]), Number(dotDmyTime[4]), Number(dotDmyTime[5]), Number(dotDmyTime[6] || 0));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(year, Number(dotDmyTime[2]), Number(dotDmyTime[1]), Number(dotDmyTime[4]), Number(dotDmyTime[5]), Number(dotDmyTime[6] || 0));
+    if (date) return date;
   }
   const dotDmy = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
   if (dotDmy) {
     let year = Number(dotDmy[3]);
     if (year < 100) year += 2000;
-    const date = new Date(year, Number(dotDmy[2]) - 1, Number(dotDmy[1]));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(year, Number(dotDmy[2]), Number(dotDmy[1]));
+    if (date) return date;
   }
 
   const normalised = str.includes('T') ? str : str.replace(' ', 'T');
@@ -577,22 +587,22 @@ function parseTimestampValue(value) {
   if (dmyTime) {
     let year = Number(dmyTime[3]);
     if (year < 100) year += 2000;
-    const date = new Date(year, Number(dmyTime[2]) - 1, Number(dmyTime[1]), Number(dmyTime[4]), Number(dmyTime[5]), Number(dmyTime[6] || 0));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(year, Number(dmyTime[2]), Number(dmyTime[1]), Number(dmyTime[4]), Number(dmyTime[5]), Number(dmyTime[6] || 0));
+    if (date) return date;
   }
 
   const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (dmy) {
     let year = Number(dmy[3]);
     if (year < 100) year += 2000;
-    const date = new Date(year, Number(dmy[2]) - 1, Number(dmy[1]));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(year, Number(dmy[2]), Number(dmy[1]));
+    if (date) return date;
   }
 
   const ymd = str.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
   if (ymd) {
-    const date = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), Number(ymd[4] || 0), Number(ymd[5] || 0), Number(ymd[6] || 0));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]), Number(ymd[4] || 0), Number(ymd[5] || 0), Number(ymd[6] || 0));
+    if (date) return date;
   }
 
   const dMonY = str.match(/^(\d{1,2})\s+(\w{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
