@@ -655,7 +655,7 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
       let displayValue = value;
       let rawValue;
       if (label === 'Timezone') {
-        const tz = normaliseTimeZone(value);
+        const tz = normaliseTimeZone(value, sysinfoEntries.Country || sysinfoEntries.country);
         if (tz.offset != null || tz.source === 'unknown') {
           displayValue = tz.label;
           if (tz.label !== String(value).trim()) rawValue = String(value);

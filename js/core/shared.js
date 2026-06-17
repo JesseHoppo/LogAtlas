@@ -837,16 +837,46 @@ function summariseList(values, limit = 2) {
   return `${items.slice(0, limit).join(', ')} +${items.length - limit} more`;
 }
 
+const COUNTRY_OFFSET_RANGES = {
+  US: [-600, -240], CA: [-480, -150], MX: [-480, -360], BR: [-300, -120],
+  AR: [-180, -180], CL: [-360, -180], CO: [-300, -300], PE: [-300, -300],
+  GB: [0, 60], IE: [0, 60], PT: [-60, 60], ES: [0, 120], FR: [0, 60],
+  DE: [60, 120], NL: [60, 120], BE: [60, 120], IT: [60, 120], CH: [60, 120],
+  PL: [60, 120], SE: [60, 120], NO: [60, 120], DK: [60, 120], AT: [60, 120],
+  CZ: [60, 120], FI: [120, 180], GR: [120, 180], RO: [120, 180], UA: [120, 180],
+  TR: [180, 180], RU: [120, 720], SA: [180, 180], AE: [240, 240], IL: [120, 180],
+  IN: [330, 330], PK: [300, 300], BD: [360, 360], TH: [420, 420], VN: [420, 420],
+  ID: [420, 540], CN: [480, 480], SG: [480, 480], MY: [480, 480], PH: [480, 480],
+  HK: [480, 480], TW: [480, 480], JP: [540, 540], KR: [540, 540],
+  AU: [480, 660], NZ: [720, 780], ZA: [120, 120], EG: [120, 180], NG: [60, 60]
+};
+
+function isOffsetPlausibleForCountry(offset, country) {
+  if (offset == null) return null;
+  const code = String(country || '').trim().toUpperCase();
+  const range = COUNTRY_OFFSET_RANGES[code];
+  if (!range) return null;
+  return offset >= range[0] && offset <= range[1];
+}
+
 // TimeZone arrives in four shapes: signed integer hour offset, unsigned 32-bit
 // overflow, Windows display string `(UTC±HH:MM) Region`, or `UTC±HH:MM`.
 // Returns `{ offset (minutes, null if unparseable), label, source, raw }`.
-function normaliseTimeZone(raw) {
-  const out = { offset: null, label: '', source: 'absent', raw };
+function normaliseTimeZone(raw, country) {
+  const out = { offset: null, label: '', source: 'absent', countryMismatch: false, raw };
   if (raw == null) return out;
   const s = String(raw).trim();
   if (!s) return out;
   out.raw = s;
   out.label = s;
+
+  function flagCountry() {
+    const plausible = isOffsetPlausibleForCountry(out.offset, country);
+    if (plausible === false) {
+      out.countryMismatch = true;
+      out.label = `${out.label} (offset implausible for ${String(country).trim().toUpperCase()})`;
+    }
+  }
 
   // "(UTC-05:00) Bogotá, Lima, Quito" Windows display string.
   const winMatch = s.match(/^\(UTC(?:([+-])(\d{1,2})(?::(\d{2}))?)?\)\s*(.*)$/i);
@@ -858,6 +888,7 @@ function normaliseTimeZone(raw) {
     out.offset = offset;
     out.source = 'windows-display';
     out.label = formatTimeZoneLabel(offset, winMatch[4] && winMatch[4].trim() || null);
+    flagCountry();
     return out;
   }
 
@@ -871,6 +902,7 @@ function normaliseTimeZone(raw) {
     out.offset = offset;
     out.source = 'string-offset';
     out.label = formatTimeZoneLabel(offset);
+    flagCountry();
     return out;
   }
 
@@ -887,6 +919,7 @@ function normaliseTimeZone(raw) {
       out.offset = n * 60;
       out.source = overflowed ? 'integer-overflow' : 'integer';
       out.label = formatTimeZoneLabel(out.offset);
+      flagCountry();
       return out;
     }
     out.source = 'invalid-int';
