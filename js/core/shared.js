@@ -159,6 +159,9 @@ function extractDomain(url) {
         return m ? normaliseDomain(m[1]) : null;
       }
     }
+    if (scheme !== 'http' && scheme !== 'https' && /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+      return null;
+    }
   }
 
   try {
