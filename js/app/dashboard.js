@@ -2,7 +2,7 @@
 
 import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
-import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp } from '../core/shared.js';
+import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp, extractCountryFromFilename, isValidCountryCode } from '../core/shared.js';
 import { CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
 import { escapeHtml, escapeAttr } from '../core/utils.js';
 import { formatDateTimeLabel } from '../pages/shared.js';
@@ -26,6 +26,9 @@ const overviewState = {
   wallets: null,
   notes: null,
   grabbedFiles: null,
+  autofill: null,
+  identity: null,
+  readErrors: null,
 };
 
 function setOverviewState(key, value) {
@@ -67,6 +70,17 @@ function findSysinfoValue(data, patterns) {
     if (patterns.some(pattern => pattern.test(key)) && value) return value;
   }
   return '';
+}
+
+function deriveVictimCountry(sysinfo, autofill) {
+  const fromSysinfo = findSysinfoValue(sysinfo, [/^country$/i, /^location$/i, /^region$/i]);
+  if (fromSysinfo && isValidCountryCode(fromSysinfo)) return { value: fromSysinfo, source: 'sysinfo' };
+  const autofillCountry = (autofill?.entries || []).find(e => /country/i.test(e?.name || '') && (e?.value || '').trim());
+  if (autofillCountry) return { value: autofillCountry.value.trim(), source: 'autofill' };
+  if (fromSysinfo) return { value: fromSysinfo, source: 'sysinfo' };
+  const fromFilename = extractCountryFromFilename(state.rootZipName || '');
+  if (fromFilename) return { value: fromFilename, source: 'filename' };
+  return { value: '', source: 'unknown' };
 }
 
 function inferDeviceType(sysinfo, computerName = '') {
@@ -267,11 +281,15 @@ function renderTriageOverview() {
   const services = overviewState.serviceArtifacts;
   const domainDetect = overviewState.domainDetect;
   const screenshot = overviewState.screenshot;
+  const readErrors = overviewState.readErrors;
 
   const summaryItems = [];
   const osUser = findSysinfoValue(sysinfo, [/^user\s*name$/i, /^username$/i, /^os user$/i]);
+  const pi = overviewState.identity?.primaryIdentity;
+  const resolvedUser = osUser || (pi?.osUsername || '');
+  const userSource = osUser ? 'sysinfo' : (pi?.userSource || null);
   const computer = findSysinfoValue(sysinfo, [/^computer\s*name$/i, /^pc\s*name$/i, /^machine\s*name$/i]);
-  const country = findSysinfoValue(sysinfo, [/^country$/i, /^location$/i, /^region$/i]);
+  const countryInfo = deriveVictimCountry(sysinfo, overviewState.autofill);
   const os = findSysinfoValue(sysinfo, [/^os$/i, /^operating system$/i, /^system$/i]);
   const deviceType = inferDeviceType(sysinfo, computer);
   const totalFiles = state.flatFiles.filter(file => file.type === 'file').length;
@@ -279,10 +297,11 @@ function renderTriageOverview() {
 
   if (fingerprint) summaryItems.push({ label: 'Family', value: fingerprint.family });
   if (computer) summaryItems.push({ label: 'Host', value: computer });
-  if (osUser) summaryItems.push({ label: 'User', value: osUser });
-  if (country) summaryItems.push({ label: 'Location', value: country });
+  if (resolvedUser) summaryItems.push({ label: 'User', value: userSource && userSource !== 'sysinfo' ? `${resolvedUser} (from ${userSource})` : resolvedUser });
+  if (countryInfo.value) summaryItems.push({ label: countryInfo.source === 'sysinfo' ? 'Location' : `Location (${countryInfo.source})`, value: countryInfo.value });
   if (credentials?.uniqueCredentials > 0) summaryItems.push({ label: 'Credentials', value: credentials.uniqueCredentials.toLocaleString() });
   if (credentials?.failedFiles?.length > 0) summaryItems.push({ label: 'Skipped Password Files', value: credentials.failedFiles.length.toLocaleString() });
+  if (readErrors?.failedFiles?.length > 0) summaryItems.push({ label: 'Unreadable Files', value: readErrors.failedFiles.length.toLocaleString() });
   if (cookies?.validSessionTokens > 0) summaryItems.push({ label: 'Active Sessions', value: cookies.validSessionTokens.toLocaleString() });
   if (history?.totalEntries > 0) summaryItems.push({ label: 'History', value: history.totalEntries.toLocaleString() });
   if (tokens?.totalEntries > 0) summaryItems.push({ label: 'Tokens', value: tokens.totalEntries.toLocaleString() });
@@ -313,7 +332,7 @@ function renderTriageOverview() {
     computer,
     os,
     deviceType,
-    user: osUser,
+    user: resolvedUser,
     credentials,
     cookies,
     history,
@@ -342,6 +361,9 @@ function renderTriageOverview() {
   }
   if (credentials?.failedFiles?.length > 0) {
     riskItems.push(`${pluralise(credentials.failedFiles.length, 'password file')} could not be parsed cleanly and may require manual review.`);
+  }
+  if (readErrors?.failedFiles?.length > 0) {
+    riskItems.push(`${pluralise(readErrors.failedFiles.length, 'file')} could not be read or decoded and were skipped during analysis.`);
   }
   if (cookies?.validSessionTokens > 0) {
     const domainText = topValuesText(cookies.topDomains);
@@ -680,6 +702,7 @@ export function initDashboard() {
   });
 
   on('analysis:autofill', (data) => {
+    setOverviewState('autofill', data);
     const section = document.getElementById('dashAutofillIntel');
     const summaryEl = document.getElementById('dashAutofillSummary');
     const body = document.getElementById('dashAutofillBody');
@@ -885,4 +908,8 @@ export function initDashboard() {
   on('analysis:grabbedFiles', (data) => {
     setOverviewState('grabbedFiles', data);
   });
+
+  on('analysis:identity', (data) => setOverviewState('identity', data));
+
+  on('analysis:readErrors', (data) => setOverviewState('readErrors', data));
 }

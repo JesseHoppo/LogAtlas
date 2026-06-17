@@ -395,7 +395,8 @@ async function loadFileContent(node) {
       const result = new Uint8Array(buf);
       node._cachedContent = result;
       return result;
-    } catch {
+    } catch (err) {
+      console.warn(`Failed to read file content: ${node.name} - ${err.message}`);
       return null;
     }
   }
@@ -411,7 +412,8 @@ async function loadFileContent(node) {
     node._password = result.password;
     node._cachedContent = result.data;
     return result.data;
-  } catch {
+  } catch (err) {
+    console.warn(`Failed to read file content: ${node.name} - ${err.message}`);
     return null;
   }
 }

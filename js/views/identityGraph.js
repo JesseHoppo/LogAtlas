@@ -6,6 +6,8 @@ import { extractBaseDomain, baseDomainFromUrl } from '../core/shared.js';
 import { escapeHtml } from '../core/utils.js';
 import { FIELD_PATTERNS, EMAIL_REGEX, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
 
+const USER_SOURCE_LABEL = { sysinfo: 'system info', autofill: 'autofill', email: 'email', hostname: 'hostname', unknown: 'unknown' };
+
 function extractEmails(passwordsData, autofillEmails) {
   const emailMap = new Map();
 
@@ -84,6 +86,7 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
     location: null,
     osUsername: null,
     computerName: null,
+    userSource: null,
   };
 
   if (sysinfoData && sysinfoData.entries) {
@@ -108,6 +111,26 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
         candidates.sort((a, b) => b.length - a.length);
         identity.location = candidates[0];
       }
+    }
+  }
+
+  const sysUser = (identity.osUsername || '').trim();
+  if (sysUser) {
+    identity.osUsername = sysUser;
+    identity.userSource = 'sysinfo';
+  } else if (identity.names.length > 0 && identity.names[0].trim()) {
+    identity.osUsername = identity.names[0].trim();
+    identity.userSource = 'autofill';
+  } else {
+    const emailSrc = identity.emails.find(em => em && em.includes('@'));
+    if (emailSrc) {
+      identity.osUsername = emailSrc.split('@')[0];
+      identity.userSource = 'email';
+    } else if (identity.computerName && identity.computerName.trim()) {
+      identity.osUsername = identity.computerName.trim();
+      identity.userSource = 'hostname';
+    } else {
+      identity.userSource = 'unknown';
     }
   }
 
@@ -318,7 +341,7 @@ function renderIdentityPage(searchQuery = '') {
   if (pi.names.length > 0) fields.push({ label: 'Name', value: pi.names.join(', ') });
   if (pi.emails.length > 0) fields.push({ label: 'Email', value: pi.emails.join(', ') });
   if (pi.phones.length > 0) fields.push({ label: 'Phone', value: pi.phones.join(', ') });
-  if (pi.osUsername) fields.push({ label: 'OS User', value: pi.osUsername });
+  if (pi.osUsername) fields.push({ label: 'OS User', value: pi.userSource && pi.userSource !== 'sysinfo' ? `${pi.osUsername} (from ${USER_SOURCE_LABEL[pi.userSource]})` : pi.osUsername });
   if (pi.computerName) fields.push({ label: 'Computer', value: pi.computerName });
   if (pi.location) fields.push({ label: 'Location', value: pi.location });
 

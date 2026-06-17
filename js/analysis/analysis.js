@@ -29,9 +29,12 @@ import {
   decodeBufferWithFallback,
   extractBaseDomain,
   baseDomainFromUrl,
+  extractDomain,
+  isLocalNetworkHost,
   dedupeDomainKey,
   extractCountryFromFilename,
   inferBrowserFromPath,
+  inferBrowserFromContent,
   inferServiceFromPath,
   isLikelyAutofillPhone,
   isPlaceholderUserName,
@@ -69,9 +72,14 @@ function bucketHintedNodes(fileTree, rootName) {
   return buckets;
 }
 
-async function decodeNodeText(node) {
+let readFailures = [];
+function recordReadFailure(node, path) {
+  readFailures.push({ path: path || node?.name || '(unknown)', reason: 'Unreadable or empty file' });
+}
+
+async function decodeNodeText(node, path, record = true) {
   const content = await loadFileContent(node);
-  if (!content) return null;
+  if (!content) { if (record) recordReadFailure(node, path); return null; }
   return decodeBufferWithFallback(content);
 }
 
@@ -106,6 +114,7 @@ async function analyseCredentials(nodes) {
       uniqueCredentials: 0,
       urlsWithoutCredentials: 0,
       topDomains: [],
+      localNetwork: [],
       topUsernames: [],
       failedFiles: [],
     });
@@ -113,6 +122,7 @@ async function analyseCredentials(nodes) {
   }
 
   const allDomains = [];
+  const localDomains = [];
   const allUsernames = [];
   const seen = new Set();
   const failedFiles = [];
@@ -123,7 +133,7 @@ async function analyseCredentials(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await loadFileContent(node).then(c => c == null ? null : decodeBufferWithFallback(c));
       if (text == null) {
         failedFiles.push({ path, reason: 'Unreadable or empty file' });
         continue;
@@ -167,7 +177,11 @@ async function analyseCredentials(nodes) {
           seen.add(key);
           uniqueCredentials++;
           const base = baseDomainFromUrl(url);
-          if (base) allDomains.push(base);
+          if (base) {
+            const host = extractDomain(url) || base;
+            if (isLocalNetworkHost(host) || isLocalNetworkHost(base)) localDomains.push(host);
+            else allDomains.push(base);
+          }
           if (user && !isPlaceholderTopUsername(user)) allUsernames.push(userPart);
         }
       }
@@ -183,6 +197,7 @@ async function analyseCredentials(nodes) {
     uniqueCredentials,
     urlsWithoutCredentials,
     topDomains: topN(allDomains, LIMITS.topDomains),
+    localNetwork: topN(localDomains, LIMITS.topDomains),
     topUsernames: topN(allUsernames, LIMITS.topUsernames),
     failedFiles,
   });
@@ -210,9 +225,9 @@ async function analyseCookies(nodes) {
   let trackingTokens = 0;
   let validTrackingTokens = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseCookieFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -324,9 +339,9 @@ async function analyseHistory(nodes) {
   const domains = [];
   let fileCount = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseHistoryFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -719,7 +734,7 @@ async function analyseAutofills(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseAutofillFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -794,7 +809,7 @@ async function analyseNotes(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const entry = parseNoteArtifact(text, node.name || '', path, node.lastModified);
       if (entry) entries.push(entry);
@@ -926,7 +941,7 @@ async function analyseBookmarks(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseBookmarkFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -975,15 +990,15 @@ async function analyseBrowserMetadata(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseBrowserMetadataFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
       totalEntries += parsed.rows.length;
-      const browser = inferBrowserFromPath(path || node.name);
-      if (browser) browsers.push(browser);
+      const browser = inferBrowserFromPath(path || node.name) || inferBrowserFromContent(text) || 'Unknown browser';
+      browsers.push(browser);
 
       const category = /\/path\//i.test(path) ? 'Path'
         : /\/ua\//i.test(path) ? 'User Agent'
@@ -1024,7 +1039,7 @@ async function analyseAccountTokens(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseAccountTokenFile(text, path || node.name);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -1075,7 +1090,7 @@ async function analyseServiceArtifacts(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseServiceArtifactFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -1119,7 +1134,7 @@ async function analyseWalletArtifacts(nodes) {
   for (const { node, path } of nodes) {
     try {
       const content = await loadFileContent(node);
-      if (!content) continue;
+      if (!content) { recordReadFailure(node, path); continue; }
       const entry = parseWalletArtifact(content, node.name || '', path || node.name || '');
       if (!entry) continue;
       entries.push(entry);
@@ -1244,7 +1259,7 @@ async function runFingerprint(fileTree, rootName) {
     const allTexts = [];
     for (const node of ctx.sysinfoNodes) {
       try {
-        const text = await decodeNodeText(node);
+        const text = await decodeNodeText(node, null, false);
         if (text == null) continue;
         allTexts.push(text);
         const parsed = parseSystemInfoFile(text, node.name);
@@ -1265,7 +1280,7 @@ async function runFingerprint(fileTree, rootName) {
     const creditsTexts = [];
     for (const node of ctx.creditsNodes) {
       try {
-        const text = await decodeNodeText(node);
+        const text = await decodeNodeText(node, null, false);
         if (text != null) creditsTexts.push(text);
       } catch {
         // skip
@@ -1284,7 +1299,7 @@ async function runFingerprint(fileTree, rootName) {
     for (const node of ctx.clipboardNodes) {
       if (budget <= 0) break;
       try {
-        const text = await decodeNodeText(node);
+        const text = await decodeNodeText(node, null, false);
         if (text == null) continue;
         const slice = text.slice(0, budget);
         clipTexts.push(slice);
@@ -1301,7 +1316,7 @@ async function runFingerprint(fileTree, rootName) {
   // Password file header (some stealers embed branding here)
   if (ctx.passwordNode) {
     try {
-      const text = await decodeNodeText(ctx.passwordNode);
+      const text = await decodeNodeText(ctx.passwordNode, null, false);
       if (text != null) ctx.passwordHeaderText = text.slice(0, 2000);
     } catch {
       // skip
@@ -1461,6 +1476,7 @@ async function analyseProcessList(nodes) {
 
 function runAnalysis(fileTree, rootName) {
   const buckets = bucketHintedNodes(fileTree, rootName);
+  readFailures = [];
 
   findScreenshot(buckets._screenshotHint);
 
@@ -1492,6 +1508,9 @@ function runAnalysis(fileTree, rootName) {
         console.error('Analysis task failed:', result.reason);
       }
     }
+    const seen = new Set();
+    const dedupedFailures = readFailures.filter(f => { if (seen.has(f.path)) return false; seen.add(f.path); return true; });
+    emit('analysis:readErrors', { failedFiles: dedupedFailures });
     emit('analysis:complete');
   });
 }

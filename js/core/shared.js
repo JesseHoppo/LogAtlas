@@ -190,6 +190,31 @@ function baseDomainFromUrl(url) {
   return host ? (extractBaseDomain(host) || host) : null;
 }
 
+const ROUTER_HOSTNAMES = new Set([
+  'fritz.box', 'router.asus.com', 'routerlogin.net', 'routerlogin.com',
+  'tplinkwifi.net', 'tplinkmodem.net', 'tplinklogin.net', 'tendawifi.com',
+  'mywifiext.net', 'orbilogin.com', 'orbilogin.net', 'dlinkrouter.local',
+  'netgear.com', 'miwifi.com', 'huaweimobilewifi.com', 'router.local',
+  'gateway.local', 'unifi.local', 'router.home', 'console.gl-inet.com'
+]);
+
+function isLocalNetworkHost(host) {
+  if (!host) return false;
+  const h = String(host).trim().toLowerCase();
+  if (!h) return false;
+  if (ROUTER_HOSTNAMES.has(h)) return true;
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const o = m.slice(1).map(Number);
+  if (o.some(n => n > 255)) return false;
+  if (o[0] === 10) return true;
+  if (o[0] === 127) return true;
+  if (o[0] === 192 && o[1] === 168) return true;
+  if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return true;
+  if (o[0] === 169 && o[1] === 254) return true;
+  return false;
+}
+
 // Same as baseDomainFromUrl but falls back to the raw URL when nothing parses.
 // Use for dedupe keys where unparseable URLs should still group themselves.
 function dedupeDomainKey(url) {
@@ -199,6 +224,14 @@ function dedupeDomainKey(url) {
 
 function inferBrowserFromPath(pathText) {
   const value = String(pathText || '');
+  for (const { pattern, label } of BROWSER_PATH_PATTERNS) {
+    if (pattern.test(value)) return label;
+  }
+  return '';
+}
+
+function inferBrowserFromContent(text) {
+  const value = String(text || '').slice(0, 4000);
   for (const { pattern, label } of BROWSER_PATH_PATTERNS) {
     if (pattern.test(value)) return label;
   }
@@ -959,8 +992,10 @@ export {
   extractDomain,
   extractBaseDomain,
   baseDomainFromUrl,
+  isLocalNetworkHost,
   dedupeDomainKey,
   inferBrowserFromPath,
+  inferBrowserFromContent,
   inferProfileFromPath,
   inferServiceFromPath,
   extractCountryFromFilename,
