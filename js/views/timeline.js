@@ -106,7 +106,7 @@ function extractFileEvents(fileTree, rootName) {
   return events;
 }
 
-function extractCookieEvents(cookiesData) {
+function extractCookieEvents(cookiesData, captureTime) {
   if (!cookiesData || cookiesData.rows.length === 0) return [];
 
   const domainMap = {};
@@ -149,7 +149,7 @@ function extractCookieEvents(cookiesData) {
       detail += ` - latest expiry: ${formatDateLabel(stats.latestExpiry)}`;
     }
     events.push({
-      time: stats.latestExpiry,
+      time: captureTime || stats.latestExpiry,
       category: 'cookie',
       title: domain,
       detail,
@@ -251,13 +251,15 @@ function buildTimeline() {
   const events = [];
 
   // Stealer dates from sysinfo
-  events.push(...extractStealerEvents(sysinfoEntries));
+  const stealerEvents = extractStealerEvents(sysinfoEntries);
+  events.push(...stealerEvents);
 
   // File modification times
   events.push(...extractFileEvents(state.fileTree, state.rootZipName));
 
   // Cookie domain events
-  events.push(...extractCookieEvents(getCookiesData()));
+  const captureTime = stealerEvents[0]?.time || null;
+  events.push(...extractCookieEvents(getCookiesData(), captureTime));
 
   // History events
   events.push(...extractHistoryEvents(getHistoryData()));
@@ -297,12 +299,14 @@ function renderStats(events) {
 
   let earliest = Infinity;
   let latest = -Infinity;
+  const now = Date.now();
 
   for (const ev of events) {
     const t = ev.time.getTime();
     if (t < earliest) earliest = t;
-    if (t > latest) latest = t;
+    if (t > latest && t <= now) latest = t;
   }
+  if (latest === -Infinity && earliest !== Infinity) latest = earliest;
 
   const span = latest !== -Infinity && earliest !== Infinity
     ? `${formatDateLabel(new Date(earliest))} - ${formatDateLabel(new Date(latest))}`
@@ -313,7 +317,7 @@ function renderStats(events) {
   // Log capture time
   const captureEvent = events.find(e => e.category === 'stealer');
   if (captureEvent) {
-    html += `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:1.3rem;color:var(--error)">${formatDateTimeLabel(captureEvent.time)}</div><div class="data-page-stat-label">Log Captured</div></div>`;
+    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-capture-value">${formatDateTimeLabel(captureEvent.time)}</div><div class="data-page-stat-label">Log Captured</div></div>`;
   }
 
   // Valid session count
@@ -328,7 +332,7 @@ function renderStats(events) {
   html += `<div class="data-page-stat"><div class="data-page-stat-value">${events.length}</div><div class="data-page-stat-label">Events</div></div>`;
 
   if (span) {
-    html += `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:0.85rem">${span}</div><div class="data-page-stat-label">Date Range</div></div>`;
+    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-range-value">${span}</div><div class="data-page-stat-label">Date Range</div></div>`;
   }
 
   el.innerHTML = html;

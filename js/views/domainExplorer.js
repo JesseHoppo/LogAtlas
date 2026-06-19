@@ -8,11 +8,14 @@ import { extractDomain, extractBaseDomain } from '../core/shared.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 
 const PAGE_SIZE = 100;
+const SAMPLE = 25;
+const SUSPICIOUS_MIN_VALID = 10;
 
 let domainList = [];
 let domainFiltered = [];
 let domainShown = 0;
 let expandedDomain = null;
+let domainIndexBuilt = false;
 const DOMAIN_PAGE_INPUTS = {
   passwords: 'passwordsSearch',
   cookies: 'cookiesSearch',
@@ -37,6 +40,14 @@ function buildDomainIndex() {
         detections: [],
         notes: [],
         subdomains: new Set(),
+        credentialsCount: 0,
+        cookiesCount: 0,
+        cookiesValidCount: 0,
+        historyCount: 0,
+        bookmarksCount: 0,
+        downloadsCount: 0,
+        detectionsCount: 0,
+        notesCount: 0,
       });
     }
     return index.get(baseDomain);
@@ -55,7 +66,8 @@ function buildDomainIndex() {
       if (!domain) continue;
       const base = extractBaseDomain(domain);
       const entry = getEntry(base);
-      entry.credentials.push({
+      entry.credentialsCount++;
+      if (entry.credentials.length < SAMPLE) entry.credentials.push({
         url,
         username: userIdx >= 0 ? row[userIdx] : '',
         password: passIdx >= 0 ? row[passIdx] : '',
@@ -73,7 +85,9 @@ function buildDomainIndex() {
       const cleanHost = host.replace(/^\./, '');
       const base = extractBaseDomain(cleanHost) || cleanHost;
       const entry = getEntry(base);
-      entry.cookies.push({
+      entry.cookiesCount++;
+      if (validity.status === 'valid') entry.cookiesValidCount++;
+      if (entry.cookies.length < SAMPLE) entry.cookies.push({
         host: cleanHost,
         name: getFieldByPattern(rowData, FIELD_PATTERNS.cookieName),
         validity,
@@ -90,7 +104,8 @@ function buildDomainIndex() {
       if (!domain) continue;
       const base = extractBaseDomain(domain);
       const entry = getEntry(base);
-      entry.history.push({ url, title, visitCount });
+      entry.historyCount++;
+      if (entry.history.length < SAMPLE) entry.history.push({ url, title, visitCount });
       if (domain !== base) entry.subdomains.add(domain);
     }
   }
@@ -102,7 +117,8 @@ function buildDomainIndex() {
       if (!domain) continue;
       const base = extractBaseDomain(domain);
       const entry = getEntry(base);
-      entry.bookmarks.push({ url, title, folder });
+      entry.bookmarksCount++;
+      if (entry.bookmarks.length < SAMPLE) entry.bookmarks.push({ url, title, folder });
       if (domain !== base) entry.subdomains.add(domain);
     }
   }
@@ -114,7 +130,8 @@ function buildDomainIndex() {
       if (!resolved) continue;
       const base = extractBaseDomain(resolved);
       const entry = getEntry(base);
-      entry.downloads.push({ filePath, sourceUrl });
+      entry.downloadsCount++;
+      if (entry.downloads.length < SAMPLE) entry.downloads.push({ filePath, sourceUrl });
       if (resolved !== base) entry.subdomains.add(resolved);
     }
   }
@@ -126,7 +143,8 @@ function buildDomainIndex() {
       if (!resolved) continue;
       const base = extractBaseDomain(resolved);
       const entry = getEntry(base);
-      entry.detections.push({ section, label, target, count });
+      entry.detectionsCount++;
+      if (entry.detections.length < SAMPLE) entry.detections.push({ section, label, target, count });
       if (resolved !== base) entry.subdomains.add(resolved);
     }
   }
@@ -137,7 +155,8 @@ function buildDomainIndex() {
       for (const domain of note.domains || []) {
         const base = extractBaseDomain(domain);
         const entry = getEntry(base);
-        entry.notes.push({ title: note.title, indicators: note.indicators });
+        entry.notesCount++;
+        if (entry.notes.length < SAMPLE) entry.notes.push({ title: note.title, indicators: note.indicators });
         if (domain !== base) entry.subdomains.add(domain);
       }
     }
@@ -145,28 +164,48 @@ function buildDomainIndex() {
 
   domainList = [];
   for (const [domain, data] of index) {
-    const total = data.credentials.length + data.cookies.length + data.history.length +
-      data.bookmarks.length + data.downloads.length + data.detections.length + data.notes.length;
+    const total = data.credentialsCount + data.cookiesCount + data.historyCount +
+      data.bookmarksCount + data.downloadsCount + data.detectionsCount + data.notesCount;
     domainList.push({
       domain,
-      credentials: data.credentials.length,
-      cookies: data.cookies.length,
-      history: data.history.length,
-      bookmarks: data.bookmarks.length,
-      downloads: data.downloads.length,
-      detections: data.detections.length,
-      notes: data.notes.length,
+      credentials: data.credentialsCount,
+      cookies: data.cookiesCount,
+      history: data.historyCount,
+      bookmarks: data.bookmarksCount,
+      downloads: data.downloadsCount,
+      detections: data.detectionsCount,
+      notes: data.notesCount,
       subdomains: data.subdomains.size,
       total,
+      suspicious: data.cookiesCount >= SUSPICIOUS_MIN_VALID && data.cookiesValidCount === data.cookiesCount,
       _data: data,
     });
   }
   domainList.sort((a, b) => b.total - a.total);
 }
 
+function ensureDomainIndex() {
+  if (domainIndexBuilt) return;
+  buildDomainIndex();
+  domainIndexBuilt = true;
+}
+
+function hasDomainSourceData() {
+  return getPasswordsData().rows.length > 0
+    || getCookiesData().rows.length > 0
+    || getHistoryData().entries.length > 0
+    || getBookmarksData().entries.length > 0
+    || getDownloadsData().entries.length > 0
+    || getDomainDetectionsData().entries.length > 0
+    || getNotesData().entries.length > 0;
+}
+
 function domainRowBuilder(item) {
-  return `<tr class="domain-row" data-domain="${escapeHtml(item.domain)}">
-    <td class="domain-name-cell"><span class="domain-expand-icon">&#9656;</span> ${escapeHtml(item.domain)}</td>
+  const suspiciousBadge = item.suspicious
+    ? ` <span class="domain-suspicious-badge" title="All ${item.cookies} cookies valid — possible attacker/test host" style="font-family:var(--font-mono);font-size:0.55rem;font-weight:600;text-transform:uppercase;padding:0.05rem 0.3rem;border-radius:3px;background:rgba(220,38,38,0.1);color:var(--error)">suspicious</span>`
+    : '';
+  return `<tr class="domain-row${item.suspicious ? ' domain-row-suspicious' : ''}" data-domain="${escapeHtml(item.domain)}">
+    <td class="domain-name-cell"><span class="domain-expand-icon">&#9656;</span> ${escapeHtml(item.domain)}${suspiciousBadge}</td>
     <td>${item.credentials}</td>
     <td>${item.cookies}</td>
     <td>${item.history}</td>
@@ -200,8 +239,8 @@ function renderDomainDetail(data, baseDomain) {
     html += '</div></div>';
   }
 
-  if (data.credentials.length > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Credentials (' + data.credentials.length + ')</div>';
+  if (data.credentialsCount > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Credentials (' + data.credentialsCount + ')</div>';
     html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Username</th><th>Password</th></tr></thead><tbody>';
     const showCreds = data.credentials.slice(0, 20);
     for (const c of showCreds) {
@@ -209,12 +248,12 @@ function renderDomainDetail(data, baseDomain) {
       html += `<tr><td title="${escapeHtml(c.url)}">${escapeHtml(c.url)}</td><td>${escapeHtml(c.username)}</td><td class="password-cell masked">${escapeHtml(masked)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('passwords', baseDomain, data.credentials.length, showCreds.length, 'credentials');
+    html += buildDomainSectionFooter('passwords', baseDomain, data.credentialsCount, showCreds.length, 'credentials');
     html += '</div>';
   }
 
-  if (data.cookies.length > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Cookies (' + data.cookies.length + ')</div>';
+  if (data.cookiesCount > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Cookies (' + data.cookiesCount + ')</div>';
     html += '<table class="domain-detail-table"><thead><tr><th>Host</th><th>Name</th><th>Status</th><th>Type</th></tr></thead><tbody>';
     const showCookies = data.cookies.slice(0, 20);
     for (const c of showCookies) {
@@ -227,67 +266,67 @@ function renderDomainDetail(data, baseDomain) {
       html += `<td>${typeLabel ? `<span class="session-badge session-badge-${c.sessionType}">${typeLabel}</span>` : ''}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('cookies', baseDomain, data.cookies.length, showCookies.length, 'cookies');
+    html += buildDomainSectionFooter('cookies', baseDomain, data.cookiesCount, showCookies.length, 'cookies');
     html += '</div>';
   }
 
-  if (data.history.length > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">History (' + data.history.length + ')</div>';
+  if (data.historyCount > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">History (' + data.historyCount + ')</div>';
     html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Title</th><th>Visits</th></tr></thead><tbody>';
     const showHistory = data.history.slice(0, 20);
     for (const h of showHistory) {
       html += `<tr><td title="${escapeHtml(h.url)}">${escapeHtml(h.url)}</td><td>${escapeHtml(h.title)}</td><td>${h.visitCount}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('history', baseDomain, data.history.length, showHistory.length, 'history');
+    html += buildDomainSectionFooter('history', baseDomain, data.historyCount, showHistory.length, 'history');
     html += '</div>';
   }
 
-  if (data.bookmarks.length > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Bookmarks (' + data.bookmarks.length + ')</div>';
+  if (data.bookmarksCount > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Bookmarks (' + data.bookmarksCount + ')</div>';
     html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Title</th><th>Folder</th></tr></thead><tbody>';
     const showBookmarks = data.bookmarks.slice(0, 20);
     for (const bookmark of showBookmarks) {
       html += `<tr><td title="${escapeHtml(bookmark.url)}">${escapeHtml(bookmark.url)}</td><td>${escapeHtml(bookmark.title)}</td><td>${escapeHtml(bookmark.folder)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('bookmarks', baseDomain, data.bookmarks.length, showBookmarks.length, 'bookmarks');
+    html += buildDomainSectionFooter('bookmarks', baseDomain, data.bookmarksCount, showBookmarks.length, 'bookmarks');
     html += '</div>';
   }
 
-  if (data.downloads.length > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Downloads (' + data.downloads.length + ')</div>';
+  if (data.downloadsCount > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Downloads (' + data.downloadsCount + ')</div>';
     html += '<table class="domain-detail-table"><thead><tr><th>File Path</th><th>Source URL</th></tr></thead><tbody>';
     const showDownloads = data.downloads.slice(0, 20);
     for (const download of showDownloads) {
       html += `<tr><td title="${escapeHtml(download.filePath)}">${escapeHtml(download.filePath)}</td><td title="${escapeHtml(download.sourceUrl)}">${escapeHtml(download.sourceUrl)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('downloads', baseDomain, data.downloads.length, showDownloads.length, 'downloads');
+    html += buildDomainSectionFooter('downloads', baseDomain, data.downloadsCount, showDownloads.length, 'downloads');
     html += '</div>';
   }
 
-  if (data.detections.length > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Detections (' + data.detections.length + ')</div>';
+  if (data.detectionsCount > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Detections (' + data.detectionsCount + ')</div>';
     html += '<table class="domain-detail-table"><thead><tr><th>Section</th><th>Label</th><th>Count</th></tr></thead><tbody>';
     const showDetections = data.detections.slice(0, 20);
     for (const detection of showDetections) {
       html += `<tr><td>${escapeHtml(detection.section)}</td><td>${escapeHtml(detection.label || detection.target)}</td><td>${detection.count}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('detections', baseDomain, data.detections.length, showDetections.length, 'detections');
+    html += buildDomainSectionFooter('detections', baseDomain, data.detectionsCount, showDetections.length, 'detections');
     html += '</div>';
   }
 
-  if (data.notes.length > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Notes (' + data.notes.length + ')</div>';
+  if (data.notesCount > 0) {
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Notes (' + data.notesCount + ')</div>';
     html += '<table class="domain-detail-table"><thead><tr><th>Title</th><th>Indicators</th></tr></thead><tbody>';
     const showNotes = data.notes.slice(0, 20);
     for (const note of showNotes) {
       html += `<tr><td>${escapeHtml(note.title)}</td><td>${escapeHtml(note.indicators)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('notes', baseDomain, data.notes.length, showNotes.length, 'notes');
+    html += buildDomainSectionFooter('notes', baseDomain, data.notesCount, showNotes.length, 'notes');
     html += '</div>';
   }
 
@@ -317,9 +356,14 @@ function renderDomainsPage(searchQuery = '') {
   domainShown = Math.min(PAGE_SIZE, filtered.length);
   expandedDomain = null;
 
-  summary.textContent = filtered.length !== domainList.length
+  let summaryText = filtered.length !== domainList.length
     ? `Showing ${filtered.length.toLocaleString()} of ${domainList.length.toLocaleString()} unique domains across credentials, cookies, history, bookmarks, downloads, detections, and notes`
     : `${domainList.length.toLocaleString()} unique domains across credentials, cookies, history, bookmarks, downloads, detections, and notes`;
+  const suspiciousCount = domainList.filter(d => d.suspicious).length;
+  if (suspiciousCount > 0) {
+    summaryText += ` — ${suspiciousCount} host${suspiciousCount !== 1 ? 's' : ''} with all-valid cookie sets (possible attacker/test infrastructure)`;
+  }
+  summary.textContent = summaryText;
 
   const top10 = domainList.slice(0, 10);
   if (top10.length > 0) {
@@ -394,6 +438,7 @@ function openDomainArtifactPage(pageName, searchQuery) {
 }
 
 function exportDomainsCSV() {
+  ensureDomainIndex();
   if (!domainList || domainList.length === 0) return;
   downloadCsvRows('domains.csv', ['Domain', 'Credentials', 'Cookies', 'History', 'Bookmarks', 'Downloads', 'Detections', 'Notes', 'Subdomains'], domainList.map((entry) => [
     entry.domain,
@@ -470,13 +515,12 @@ function initDomainExplorer() {
   });
 
   on('data:loaded', () => {
-    buildDomainIndex();
-    if (domainList.length > 0) {
-      document.getElementById('navDomains').disabled = false;
-    }
+    domainIndexBuilt = false;
+    document.getElementById('navDomains').disabled = !hasDomainSourceData();
   });
 
   on('page:domains', () => {
+    ensureDomainIndex();
     renderDomainsPage(searchInput?.value || '');
   });
 
@@ -485,6 +529,7 @@ function initDomainExplorer() {
     domainFiltered = [];
     domainShown = 0;
     expandedDomain = null;
+    domainIndexBuilt = false;
     document.getElementById('navDomains').disabled = true;
     if (searchInput) searchInput.value = '';
   });

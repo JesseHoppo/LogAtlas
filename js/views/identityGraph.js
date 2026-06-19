@@ -8,6 +8,15 @@ import { FIELD_PATTERNS, EMAIL_REGEX, IDENTITY_SYSINFO_KEYS } from '../core/defi
 
 const USER_SOURCE_LABEL = { sysinfo: 'system info', autofill: 'autofill', email: 'email', hostname: 'hostname', unknown: 'unknown' };
 
+function classifyOS(raw) {
+  const v = String(raw || '').toLowerCase();
+  if (!v) return null;
+  if (v.includes('windows') || /\bwin\s*\d/.test(v)) return 'Windows';
+  if (v.includes('mac') || v.includes('darwin') || v.includes('os x')) return 'macOS';
+  if (v.includes('linux') || v.includes('ubuntu') || v.includes('debian') || v.includes('fedora') || v.includes('arch')) return 'Linux';
+  return null;
+}
+
 function extractEmails(passwordsData, autofillEmails) {
   const emailMap = new Map();
 
@@ -86,6 +95,8 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
     location: null,
     osUsername: null,
     computerName: null,
+    os: null,
+    osFamily: null,
     userSource: null,
   };
 
@@ -94,8 +105,10 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
       if (IDENTITY_SYSINFO_KEYS.osUsername.some(rx => rx.test(key))) identity.osUsername = value;
       if (IDENTITY_SYSINFO_KEYS.computerName.some(rx => rx.test(key))) identity.computerName = value;
       if (IDENTITY_SYSINFO_KEYS.country.some(rx => rx.test(key))) identity.location = value;
+      if (!identity.os && IDENTITY_SYSINFO_KEYS.os.some(rx => rx.test(key))) identity.os = value;
     }
   }
+  identity.osFamily = classifyOS(identity.os);
 
   if (autofillData) {
     if (autofillData.names) identity.names = [...autofillData.names];
@@ -142,7 +155,7 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
 
   const allDomains = new Set([
     ...domainUsernames.keys(),
-    ...[...cookieLookup.entries()].filter(([, value]) => value.hasValidSession || value.hasValidCookies).map(([domain]) => domain),
+    ...[...cookieLookup.entries()].filter(([, value]) => value.hasValidSession).map(([domain]) => domain),
     ...tokenLookup.keys(),
   ]);
 
@@ -210,6 +223,7 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
   const userIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
   const passIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
   const domainUsernames = new Map(); // domain -> Set<username>
+  const passwordDomains = new Set();
   for (const { row } of passwordsData.rows) {
     const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
     const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
@@ -219,6 +233,7 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
     if (domain) {
       if (!domainUsernames.has(domain)) domainUsernames.set(domain, new Set());
       if (user) domainUsernames.get(domain).add(user);
+      if (pass) passwordDomains.add(domain);
     }
   }
   const allCredDomains = new Set(domainUsernames.keys());
@@ -245,10 +260,11 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
   const servicesWithBoth = new Set();
   for (const domain of allCredDomains) {
     const cookieInfo = cookieLookup.get(domain);
-    if (cookieInfo && cookieInfo.hasValidSession) {
-      servicesWithValidSessions.add(domain);
-      servicesWithBoth.add(domain);
-    }
+    if (cookieInfo && cookieInfo.hasValidSession) servicesWithValidSessions.add(domain);
+  }
+  for (const domain of passwordDomains) {
+    const cookieInfo = cookieLookup.get(domain);
+    if (cookieInfo && cookieInfo.hasValidSession) servicesWithBoth.add(domain);
   }
   for (const [domain, info] of cookieLookup) {
     if (info.hasValidSession) servicesWithValidSessions.add(domain);
@@ -325,13 +341,19 @@ function renderIdentityPage(searchQuery = '') {
   const data = identityData;
 
   const sessions = data.exposureSummary.servicesWithValidSessions;
-  summary.textContent = `${data.exposureSummary.totalUniqueServices} exposed services \u2014 ${sessions} active session${sessions !== 1 ? 's' : ''}, ${data.exposureSummary.tokenBackedServices} token-backed service${data.exposureSummary.tokenBackedServices !== 1 ? 's' : ''}`;
+  const summaryText = `${data.exposureSummary.totalUniqueServices} exposed services \u2014 ${sessions} active session${sessions !== 1 ? 's' : ''}, ${data.exposureSummary.tokenBackedServices} token-backed service${data.exposureSummary.tokenBackedServices !== 1 ? 's' : ''}`;
+  const osFamily = data.primaryIdentity.osFamily;
+  if (osFamily) {
+    summary.innerHTML = `${escapeHtml(summaryText)} <span class="identity-os-chip" data-os="${escapeHtml(osFamily)}" style="font-family:var(--font-mono);font-size:0.6rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:3px;background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border);margin-left:0.4rem">${escapeHtml(osFamily)}</span>`;
+  } else {
+    summary.textContent = summaryText;
+  }
 
   const es = data.exposureSummary;
   let statsHtml = '';
   statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value">${es.totalUniqueServices}</div><div class="data-page-stat-label">Services</div></div>`;
   statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value" style="color:var(--warning)">${es.servicesWithValidSessions}</div><div class="data-page-stat-label">Active Sessions</div></div>`;
-  statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value" style="color:var(--error)">${es.servicesWithBothPasswordAndSession}</div><div class="data-page-stat-label">Cred + Session</div></div>`;
+  statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value" style="color:var(--error)">${es.servicesWithBothPasswordAndSession}</div><div class="data-page-stat-label">Password + Session</div></div>`;
   statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value">${es.tokenBackedServices}</div><div class="data-page-stat-label">Token-Backed</div></div>`;
   statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value">${es.uniqueEmails}</div><div class="data-page-stat-label">Email Addresses</div></div>`;
   statsEl.innerHTML = statsHtml;
@@ -343,6 +365,7 @@ function renderIdentityPage(searchQuery = '') {
   if (pi.phones.length > 0) fields.push({ label: 'Phone', value: pi.phones.join(', ') });
   if (pi.osUsername) fields.push({ label: 'OS User', value: pi.userSource && pi.userSource !== 'sysinfo' ? `${pi.osUsername} (from ${USER_SOURCE_LABEL[pi.userSource]})` : pi.osUsername });
   if (pi.computerName) fields.push({ label: 'Computer', value: pi.computerName });
+  if (pi.os) fields.push({ label: 'OS', value: pi.os });
   if (pi.location) fields.push({ label: 'Location', value: pi.location });
 
   if (fields.length > 0) {
