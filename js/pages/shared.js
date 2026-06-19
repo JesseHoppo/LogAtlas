@@ -215,7 +215,9 @@ export function parseDownloadSize(rawValue) {
 
 function escapeCSV(str) {
   if (str == null) return '';
-  const s = String(str);
+  let s = String(str);
+  // Neutralise spreadsheet formula/DDE injection: log values are attacker-controlled.
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
     return '"' + s.replace(/"/g, '""') + '"';
   }

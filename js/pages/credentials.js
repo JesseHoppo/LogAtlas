@@ -1,5 +1,6 @@
 // Credentials pages: Passwords, Cookies, Autofill, Notes
 
+import { on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { escapeHtml } from '../core/utils.js';
 import {
@@ -31,12 +32,46 @@ import {
 const COOKIE_HEADERS = ['Domain', 'SubDomain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
 const COOKIE_HEADERS_NO_SUBDOMAIN = ['Domain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
 
+// Auth/SSO subdomains whose base domain doesn't name the consumer service.
+const AUTH_SUBDOMAIN_SERVICE = [
+  { match: /(^|\.)auth\.streamotion\.com\.au$/i, label: 'Kayo / Binge' },
+  { match: /(^|\.)auth\.foxtel\.com\.au$/i, label: 'Foxtel' },
+  { match: /(^|\.)login\.microsoftonline\.com$/i, label: 'Microsoft 365' },
+  { match: /(^|\.)accounts\.google\.com$/i, label: 'Google' },
+  { match: /(^|\.)appleid\.apple\.com$/i, label: 'Apple ID' },
+];
+const AUTH_PREFIX = /^(auth|login|sso|account|accounts|id|signin|secure)\./i;
+
+function titleCaseLabel(value) {
+  return String(value || '').split('.')[0].replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function friendlyServiceForUrl(url) {
+  const host = baseDomainFromUrl(url) ? extractAuthHost(url) : '';
+  if (!host) return '';
+  for (const { match, label } of AUTH_SUBDOMAIN_SERVICE) {
+    if (match.test(host)) return label;
+  }
+  if (AUTH_PREFIX.test(host)) {
+    const base = baseDomainFromUrl(url);
+    return base ? titleCaseLabel(base) : '';
+  }
+  return '';
+}
+
+function extractAuthHost(url) {
+  const m = String(url || '').match(/^[a-z][\w+.-]*:\/\/([^/?#]+)/i);
+  return m ? m[1].replace(/:\d+$/, '').toLowerCase() : '';
+}
+
 // Data stores
 
 let passwordsData = { rows: [], headers: [], fileCount: 0, failedFiles: [] };
 let cookiesData = { rows: [], headers: [], fileCount: 0 };
 let autofillsData = { entries: [], fileCount: 0 };
 let notesData = { entries: [], fileCount: 0 };
+let credAnalysis = null;
 
 let passwordsFiltered = [];
 let passwordsShown = 0;
@@ -49,6 +84,8 @@ let notesShown = 0;
 
 let hidePasswords = true;
 let passwordColumnIdx = -1;
+let passwordUrlIdx = -1;
+let passwordShowService = false;
 
 function getCookieColumnMap(headers, columnCount) {
   const map = {
@@ -188,14 +225,32 @@ async function loadPasswordsData(fileTree, rootName) {
   }
 
   const headers = [...canonicalHeaders, ...extraHeaders];
+  const rows = [...dedupedRows.values()].map(({ row, sources }) => ({
+    row,
+    source: [...sources].join('; '),
+  }));
+
+  const passIdx = headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+  const urlColIdx = headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+  const userColIdx = headers.findIndex(h => FIELD_PATTERNS.username.test(h));
+  const domains = new Set();
+  const usernames = new Set();
+  let withPasswords = 0;
+  for (const { row } of rows) {
+    if (passIdx >= 0 && row[passIdx]) withPasswords++;
+    if (urlColIdx >= 0) {
+      const domain = baseDomainFromUrl(row[urlColIdx] || '');
+      if (domain) domains.add(domain);
+    }
+    if (userColIdx >= 0 && row[userColIdx]) usernames.add(row[userColIdx].trim().toLowerCase());
+  }
+
   passwordsData = {
-    rows: [...dedupedRows.values()].map(({ row, sources }) => ({
-      row,
-      source: [...sources].join('; '),
-    })),
+    rows,
     headers,
     fileCount,
     failedFiles,
+    stats: { domains: domains.size, usernames: usernames.size, withPasswords },
   };
 }
 
@@ -250,7 +305,22 @@ async function loadCookiesData(fileTree, rootName) {
     }
   }
 
-  cookiesData = { rows, headers, fileCount };
+  let valid = 0, expired = 0, browserSession = 0, auth = 0, session = 0, validSession = 0;
+  for (const r of rows) {
+    if (r.validity.status === 'valid') valid++;
+    else if (r.validity.status === 'expired') expired++;
+    else if (r.validity.status === 'session') browserSession++;
+    if (r.sessionType === 'auth') auth++;
+    else if (r.sessionType === 'session') session++;
+    if ((r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid') validSession++;
+  }
+
+  cookiesData = {
+    rows,
+    headers,
+    fileCount,
+    stats: { valid, expired, browserSession, sessionTokens: auth + session, validSession },
+  };
 }
 
 async function loadAutofillsData(fileTree, rootName) {
@@ -286,7 +356,20 @@ async function loadAutofillsData(fileTree, rootName) {
     }
   }
 
-  autofillsData = { entries, fileCount };
+  let emailCount = 0, phoneCount = 0, nameCount = 0, addressCount = 0, idCount = 0;
+  for (const entry of entries) {
+    if (/email|e-mail/i.test(entry.name) || /@/.test(entry.value)) emailCount++;
+    if (/phone|mobile|tel/i.test(entry.name)) phoneCount++;
+    if (/first\s*name|last\s*name|full\s*name|^name$/i.test(entry.name)) nameCount++;
+    if (/address|street|city|postcode|zip|country/i.test(entry.name)) addressCount++;
+    if (/(date.?of.?birth|\bdob\b|birth\s*date|licen[cs]e|driver|passport|medicare|tax\s*file|\btfn\b)/i.test(entry.name)) idCount++;
+  }
+
+  autofillsData = {
+    entries,
+    fileCount,
+    stats: { emailCount, phoneCount, nameCount, addressCount, idCount },
+  };
 }
 
 async function loadNotesData(fileTree, rootName) {
@@ -330,6 +413,10 @@ async function loadNotesData(fileTree, rootName) {
 
 function passwordRowBuilder({ row }) {
   let html = '<tr>';
+  if (passwordShowService) {
+    const svc = passwordUrlIdx >= 0 ? friendlyServiceForUrl(row[passwordUrlIdx]) : '';
+    html += `<td>${svc ? `<span class="identity-service-tag">${escapeHtml(svc)}</span>` : ''}</td>`;
+  }
   for (let i = 0; i < row.length; i++) {
     const cell = row[i];
     if (hidePasswords && i === passwordColumnIdx) {
@@ -356,6 +443,63 @@ function buildPasswordParseIssuesHtml(failedFiles) {
       ${remaining > 0 ? `<div class="data-page-warning-more">${remaining.toLocaleString()} more file(s) omitted</div>` : ''}
     </div>
   `;
+}
+
+function buildBarList(items) {
+  if (!items || items.length === 0) return '';
+  const max = items[0].count || 1;
+  let html = '<div class="domain-bars">';
+  for (const { value, count } of items) {
+    const pct = Math.round((count / max) * 100);
+    html += `<div class="domain-bar-row">
+      <span class="domain-bar-label" title="${escapeHtml(value)}">${escapeHtml(value)}</span>
+      <div class="domain-bar-track"><div class="domain-bar-fill" style="width:${pct}%"></div></div>
+      <span class="domain-bar-count">${count.toLocaleString()}</span>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function buildFootprintCard(title, detail, extra = '') {
+  return `<div class="data-page-warning">
+    <div class="data-page-warning-title">${escapeHtml(title)}</div>
+    <div class="data-page-warning-more">${detail}</div>
+    ${extra}
+  </div>`;
+}
+
+function buildCredentialFootprintHtml() {
+  if (!credAnalysis) return '';
+  const recovered = credAnalysis.recoveredPasswords;
+  const localNetwork = credAnalysis.localNetwork || [];
+  const savedOnly = credAnalysis.urlsWithoutCredentials || 0;
+  const onion = credAnalysis.onionCredentials || 0;
+  const cards = [];
+
+  if (recovered && recovered.total > 0) {
+    const sample = (recovered.sample || []).slice(0, 8)
+      .map(p => `<span class="identity-service-tag">${escapeHtml(maskValue(p))}</span>`).join('');
+    cards.push(buildFootprintCard(
+      'Recovered passwords',
+      `${recovered.unique.toLocaleString()} unique plaintext password(s) from ${recovered.fileCount.toLocaleString()} bare dump file(s) with no account context.`,
+      sample ? `<div class="identity-service-tags">${sample}</div>` : ''
+    ));
+  }
+  if (savedOnly > 0) {
+    cards.push(buildFootprintCard('Saved-site footprint',
+      `${savedOnly.toLocaleString()} site(s) the victim saved with no captured username or password.`));
+  }
+  if (onion > 0) {
+    cards.push(buildFootprintCard('Tor / .onion credentials',
+      `${onion.toLocaleString()} credential domain(s) on the Tor network.`));
+  }
+  if (localNetwork.length > 0) {
+    cards.push(buildFootprintCard('Local network',
+      'Credentials for router / NAS / intranet hosts.', buildBarList(localNetwork)));
+  }
+
+  return cards.join('');
 }
 
 function cookieRowBuilder({ row, validity, sessionType }) {
@@ -394,6 +538,26 @@ function noteRowBuilder(entry) {
   </tr>`;
 }
 
+function buildNotesPiiGroupHtml(entries) {
+  const piiNotes = (entries || []).filter(entry => entry.hasStructuredPii);
+  if (piiNotes.length === 0) return '';
+
+  const rows = piiNotes.slice(0, 25).map(entry => `<tr>
+    <td title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</td>
+    <td title="${escapeHtml(entry.indicators)}">${escapeHtml(entry.indicators)}</td>
+    <td title="${escapeHtml(entry.source)}">${escapeHtml(trimRootPath(entry.source))}</td>
+  </tr>`).join('');
+
+  return `<div class="data-page-warning">
+    <div class="data-page-warning-title">Notes containing structured PII</div>
+    <div class="data-page-warning-more">${piiNotes.length.toLocaleString()} note(s) hold seed phrases, card numbers, IBANs, crypto addresses, or national IDs.</div>
+    <div class="data-table-container"><table class="data-table">
+      <thead><tr><th>Title</th><th>Indicators</th><th>Source</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+
 // Render functions
 
 function renderPasswordsPage(searchQuery = '') {
@@ -404,12 +568,15 @@ function renderPasswordsPage(searchQuery = '') {
   const issuesHtml = buildPasswordParseIssuesHtml(failedFiles);
 
   if (passwordsData.rows.length === 0) {
+    const footprintHtml = buildCredentialFootprintHtml();
     summary.textContent = failedFiles.length > 0
-      ? `No passwords found (${failedFiles.length.toLocaleString()} candidate file(s) skipped)`
-      : 'No passwords found';
+      ? `No account credentials found (${failedFiles.length.toLocaleString()} candidate file(s) skipped)`
+      : footprintHtml ? 'No account credentials, but recovered artifacts found' : 'No passwords found';
     addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
     stats.innerHTML = '';
-    content.innerHTML = `${issuesHtml}<div class="no-data">No password data available.</div>`;
+    content.innerHTML = footprintHtml
+      ? `${issuesHtml}${footprintHtml}`
+      : `${issuesHtml}<div class="no-data">No password data available.</div>`;
     return;
   }
 
@@ -436,31 +603,20 @@ function renderPasswordsPage(searchQuery = '') {
   addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
 
   passwordColumnIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
-  const urlIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-  const userIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
-  const domains = new Set();
-  const usernames = new Set();
-  let withPasswords = 0;
-  for (const { row } of passwordsData.rows) {
-    if (passwordColumnIdx >= 0 && row[passwordColumnIdx]) withPasswords++;
-    if (urlIdx >= 0) {
-      const domain = baseDomainFromUrl(row[urlIdx] || '');
-      if (domain) domains.add(domain);
-    }
-    if (userIdx >= 0 && row[userIdx]) usernames.add(row[userIdx].trim().toLowerCase());
-  }
+  passwordUrlIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+  const cached = passwordsData.stats || { domains: 0, usernames: 0, withPasswords: 0 };
 
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${domains.size.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.domains.toLocaleString()}</div>
       <div class="data-page-stat-label">Domains</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${usernames.size.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.usernames.toLocaleString()}</div>
       <div class="data-page-stat-label">Usernames</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${withPasswords.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.withPasswords.toLocaleString()}</div>
       <div class="data-page-stat-label">With Password</div>
     </div>
     <div class="data-page-stat">
@@ -469,8 +625,11 @@ function renderPasswordsPage(searchQuery = '') {
     </div>
   `;
 
-  let html = `${issuesHtml}<div class="data-table-container"><table class="data-table">`;
+  passwordShowService = passwordsFiltered.some(({ row }) => passwordUrlIdx >= 0 && friendlyServiceForUrl(row[passwordUrlIdx]));
+
+  let html = `${issuesHtml}${buildCredentialFootprintHtml()}<div class="data-table-container"><table class="data-table">`;
   html += '<thead><tr>';
+  if (passwordShowService) html += '<th>Service</th>';
   for (const h of passwordsData.headers) {
     html += `<th>${escapeHtml(h)}</th>`;
   }
@@ -509,13 +668,22 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
   cookiesFiltered = filtered;
   cookiesShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const validCount = filtered.filter(r => r.validity.status === 'valid').length;
-  const expiredCount = filtered.filter(r => r.validity.status === 'expired').length;
-  const browserSessionCount = filtered.filter(r => r.validity.status === 'session').length;
-  const authTokenCount = filtered.filter(r => r.sessionType === 'auth').length;
-  const sessionTokenCount = filtered.filter(r => r.sessionType === 'session').length;
-  const totalSessionTokens = authTokenCount + sessionTokenCount;
-  const validSessionCount = filtered.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
+  const filterActive = validOnly || sessionOnly || !!searchQuery;
+  const cached = cookiesData.stats || { valid: 0, expired: 0, browserSession: 0, sessionTokens: 0, validSession: 0 };
+  let validCount, expiredCount, browserSessionCount, totalSessionTokens, validSessionCount;
+  if (filterActive) {
+    validCount = filtered.filter(r => r.validity.status === 'valid').length;
+    expiredCount = filtered.filter(r => r.validity.status === 'expired').length;
+    browserSessionCount = filtered.filter(r => r.validity.status === 'session').length;
+    totalSessionTokens = filtered.filter(r => r.sessionType === 'auth' || r.sessionType === 'session').length;
+    validSessionCount = filtered.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
+  } else {
+    validCount = cached.valid;
+    expiredCount = cached.expired;
+    browserSessionCount = cached.browserSession;
+    totalSessionTokens = cached.sessionTokens;
+    validSessionCount = cached.validSession;
+  }
 
   const totalCookies = cookiesData.rows.length;
   const showingFiltered = filtered.length !== totalCookies;
@@ -593,27 +761,28 @@ function renderAutofillsPage(searchQuery = '') {
 
   addAdjustColumnsBtn(summary, '_autofillHint', 'autofill');
 
-  const emailCount = autofillsData.entries.filter(entry => /email|e-mail/i.test(entry.name) || /@/.test(entry.value)).length;
-  const phoneCount = autofillsData.entries.filter(entry => /phone|mobile|tel/i.test(entry.name)).length;
-  const nameCount = autofillsData.entries.filter(entry => /first\s*name|last\s*name|full\s*name|^name$/i.test(entry.name)).length;
-  const addressCount = autofillsData.entries.filter(entry => /address|street|city|postcode|zip|country/i.test(entry.name)).length;
+  const cached = autofillsData.stats || { emailCount: 0, phoneCount: 0, nameCount: 0, addressCount: 0, idCount: 0 };
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${emailCount.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.emailCount.toLocaleString()}</div>
       <div class="data-page-stat-label">Email Fields</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${phoneCount.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.phoneCount.toLocaleString()}</div>
       <div class="data-page-stat-label">Phone Fields</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${nameCount.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.nameCount.toLocaleString()}</div>
       <div class="data-page-stat-label">Name Fields</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${addressCount.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.addressCount.toLocaleString()}</div>
       <div class="data-page-stat-label">Address Fields</div>
     </div>
+    ${cached.idCount > 0 ? `<div class="data-page-stat">
+      <div class="data-page-stat-value">${cached.idCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">ID / DOB Fields</div>
+    </div>` : ''}
   `;
 
   let html = '<div class="data-table-container"><table class="data-table">';
@@ -663,6 +832,10 @@ function renderNotesPage(searchQuery = '') {
 
   stats.innerHTML = `
     <div class="data-page-stat">
+      <div class="data-page-stat-value">${statsData.structuredPiiNotes.toLocaleString()}</div>
+      <div class="data-page-stat-label">Structured PII</div>
+    </div>
+    <div class="data-page-stat">
       <div class="data-page-stat-value">${statsData.credentialNotes.toLocaleString()}</div>
       <div class="data-page-stat-label">Credential-Like</div>
     </div>
@@ -680,7 +853,8 @@ function renderNotesPage(searchQuery = '') {
     </div>
   `;
 
-  let html = '<div class="data-table-container"><table class="data-table">';
+  let html = buildNotesPiiGroupHtml(filtered);
+  html += '<div class="data-table-container"><table class="data-table">';
   html += '<thead><tr><th>Title</th><th>Type</th><th>Indicators</th><th>Preview</th><th>Source</th></tr></thead><tbody>';
   html += buildRowsHtml(noteRowBuilder, notesFiltered, 0, notesShown);
   html += '</tbody></table></div>';
@@ -782,6 +956,7 @@ function resetCredentials() {
   cookiesData = { rows: [], headers: [], fileCount: 0 };
   autofillsData = { entries: [], fileCount: 0 };
   notesData = { entries: [], fileCount: 0 };
+  credAnalysis = null;
   passwordsFiltered = []; passwordsShown = 0;
   cookiesFiltered = []; cookiesShown = 0;
   autofillsFiltered = []; autofillsShown = 0;
@@ -796,6 +971,13 @@ function initCredentials() {
   const passwordsSearch = document.getElementById('passwordsSearch');
   const passwordsHideCb = document.getElementById('passwordsHidePasswords');
   bindDebouncedInput(passwordsSearch, (value) => renderPasswordsPage(value));
+
+  on('analysis:credentials', (payload) => {
+    credAnalysis = payload || null;
+    if (document.getElementById('pagePasswords')?.classList.contains('active')) {
+      renderPasswordsPage(passwordsSearch?.value || '');
+    }
+  });
 
   passwordsHideCb?.addEventListener('change', () => {
     hidePasswords = passwordsHideCb.checked;

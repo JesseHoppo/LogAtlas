@@ -7,7 +7,8 @@ import {
   parseDomainDetectFile,
   parseClipboardFile,
 } from '../transforms/structured.js';
-import { classifyGrabbedFile } from '../analysis/contextArtifacts.js';
+import { classifyGrabbedFile, summariseGrabbedFiles } from '../analysis/contextArtifacts.js';
+import { CLIPBOARD_LURE_PATTERNS } from '../core/definitions/patterns.js';
 import {
   collectHintedNodes,
   extractDomain,
@@ -157,6 +158,25 @@ const pageRegistry = createPagedCollectionRegistry({
   },
 });
 
+const LURE_LABELS = {
+  clickfix: 'ClickFix',
+  powershell: 'PowerShell',
+  mshta: 'mshta',
+  certutil: 'certutil',
+  'crypto-swap': 'Clipper swap',
+  'base64-blob': 'Base64 blob',
+};
+
+function detectClipboardLure(text) {
+  const s = String(text || '').trim();
+  if (!s) return '';
+  for (const { category, rx } of CLIPBOARD_LURE_PATTERNS) {
+    rx.lastIndex = 0;
+    if (rx.test(s)) return category;
+  }
+  return '';
+}
+
 // Load functions
 
 async function loadDownloadsData(fileTree, rootName) {
@@ -208,7 +228,26 @@ async function loadDownloadsData(fileTree, rootName) {
     }
   }
 
-  downloadsData = { entries, fileCount };
+  const extensionCounts = {};
+  let withSourceUrl = 0, withFileSize = 0, totalKnownBytes = 0, knownSizeCount = 0;
+  for (const entry of entries) {
+    if (entry.extension) extensionCounts[entry.extension] = (extensionCounts[entry.extension] || 0) + 1;
+    if (entry.sourceUrl) withSourceUrl++;
+    if (entry.fileSizeDisplay) withFileSize++;
+    if (entry.fileSizeBytes != null) { totalKnownBytes += entry.fileSizeBytes; knownSizeCount++; }
+  }
+  const topExt = Object.entries(extensionCounts).sort((a, b) => b[1] - a[1])[0];
+
+  downloadsData = {
+    entries,
+    fileCount,
+    stats: {
+      withSourceUrl,
+      withFileSize,
+      topExtension: topExt ? topExt[0] : '-',
+      totalKnownSizeDisplay: knownSizeCount > 0 ? formatBytes(totalKnownBytes) : '-',
+    },
+  };
 }
 
 async function loadDomainDetectionsData(fileTree, rootName) {
@@ -248,7 +287,29 @@ async function loadDomainDetectionsData(fileTree, rootName) {
     }
   }
 
-  domainDetectionsData = { entries, fileCount, totalHits };
+  const uniqueTargets = new Set();
+  const uniqueSections = new Set();
+  let labelledEntries = 0;
+  const sectionCounts = {};
+  for (const entry of entries) {
+    uniqueTargets.add(entry.target.toLowerCase());
+    uniqueSections.add(entry.section);
+    if (entry.label) labelledEntries++;
+    sectionCounts[entry.section] = (sectionCounts[entry.section] || 0) + entry.count;
+  }
+  const topSections = Object.entries(sectionCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  domainDetectionsData = {
+    entries,
+    fileCount,
+    totalHits,
+    stats: {
+      uniqueTargets: uniqueTargets.size,
+      uniqueSections: uniqueSections.size,
+      labelledEntries,
+      topSections,
+    },
+  };
 }
 
 async function loadClipboardData(fileTree, rootName) {
@@ -287,6 +348,7 @@ async function loadClipboardData(fileTree, rootName) {
           urls,
           lineCount,
           length,
+          lure: detectClipboardLure(entryText),
           source: path,
         });
       }
@@ -295,7 +357,20 @@ async function loadClipboardData(fileTree, rootName) {
     }
   }
 
-  clipboardData = { entries, fileCount };
+  let withUrls = 0, commandCount = 0, pathCount = 0, lureCount = 0;
+  const lureCategories = {};
+  for (const e of entries) {
+    if (e.urls) withUrls++;
+    if (e.type === 'Command') commandCount++;
+    if (e.type === 'Path') pathCount++;
+    if (e.lure) { lureCount++; lureCategories[e.lure] = (lureCategories[e.lure] || 0) + 1; }
+  }
+
+  clipboardData = {
+    entries,
+    fileCount,
+    stats: { withUrls, commandCount, pathCount, lureCount, lureCategories },
+  };
 }
 
 async function loadGrabbedFilesData(fileTree, rootName) {
@@ -315,8 +390,12 @@ async function loadGrabbedFilesData(fileTree, rootName) {
     entries.push(entry);
   }
 
-  entries.sort((a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0) || a.relativePath.localeCompare(b.relativePath));
-  grabbedFilesData = { entries };
+  entries.sort((a, b) =>
+    (b.isHighValue ? 1 : 0) - (a.isHighValue ? 1 : 0)
+    || (b.sizeBytes || 0) - (a.sizeBytes || 0)
+    || a.relativePath.localeCompare(b.relativePath));
+  const { highValueCount, highValueBreakdown } = summariseGrabbedFiles(entries);
+  grabbedFilesData = { entries, stats: { highValueCount, highValueBreakdown } };
 }
 
 async function loadScreenshotsData(fileTree, rootName) {
@@ -384,9 +463,11 @@ function detectionRowBuilder({ section, label, target, count }) {
   </tr>`;
 }
 
-function clipboardRowBuilder({ type, preview, text, urls, lineCount, source }) {
+function clipboardRowBuilder({ type, preview, text, urls, lineCount, lure, source }) {
+  const lureChip = lure ? `<span class="dash-ioc-family">${escapeHtml(LURE_LABELS[lure] || lure)}</span>` : '';
   return `<tr>
     <td>${escapeHtml(type)}</td>
+    <td>${lureChip}</td>
     <td title="${escapeHtml(text)}">${escapeHtml(preview)}</td>
     <td title="${escapeHtml(urls)}">${escapeHtml(urls)}</td>
     <td>${lineCount}</td>
@@ -396,9 +477,10 @@ function clipboardRowBuilder({ type, preview, text, urls, lineCount, source }) {
 
 function grabbedFileRowBuilder(entry, index) {
   const modified = formatOptionalDate(entry.modifiedDate);
+  const flag = entry.isHighValue ? ` <span class="dash-ioc-family">${escapeHtml(entry.highValue)}</span>` : '';
   return `<tr>
     <td>${escapeHtml(entry.collection)}</td>
-    <td title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</td>
+    <td title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}${flag}</td>
     <td title="${escapeHtml(entry.relativePath)}">${escapeHtml(entry.relativePath)}</td>
     <td>${escapeHtml(entry.extension || '')}</td>
     <td>${escapeHtml(entry.sizeDisplay)}</td>
@@ -475,24 +557,7 @@ function renderDownloadsPage(searchQuery = '') {
   downloadsFiltered = filtered;
   downloadsShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const extensionCounts = {};
-  let withSourceUrl = 0;
-  let withFileSize = 0;
-  let totalKnownBytes = 0;
-  let knownSizeCount = 0;
-
-  for (const entry of downloadsData.entries) {
-    if (entry.extension) extensionCounts[entry.extension] = (extensionCounts[entry.extension] || 0) + 1;
-    if (entry.sourceUrl) withSourceUrl++;
-    if (entry.fileSizeDisplay) withFileSize++;
-    if (entry.fileSizeBytes != null) {
-      totalKnownBytes += entry.fileSizeBytes;
-      knownSizeCount++;
-    }
-  }
-
-  const topExtension = Object.entries(extensionCounts).sort((a, b) => b[1] - a[1])[0];
-  const totalKnownSizeDisplay = knownSizeCount > 0 ? formatBytes(totalKnownBytes) : '-';
+  const cached = downloadsData.stats || { withSourceUrl: 0, withFileSize: 0, topExtension: '-', totalKnownSizeDisplay: '-' };
 
   summary.textContent = filtered.length !== downloadsData.entries.length
     ? `Showing ${filtered.length.toLocaleString()} of ${downloadsData.entries.length.toLocaleString()} downloads from ${downloadsData.fileCount} file(s)`
@@ -500,19 +565,19 @@ function renderDownloadsPage(searchQuery = '') {
 
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${withSourceUrl.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.withSourceUrl.toLocaleString()}</div>
       <div class="data-page-stat-label">With Source URL</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${withFileSize.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.withFileSize.toLocaleString()}</div>
       <div class="data-page-stat-label">With File Size</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${escapeHtml(topExtension ? topExtension[0] : '-')}</div>
+      <div class="data-page-stat-value">${escapeHtml(cached.topExtension)}</div>
       <div class="data-page-stat-label">Top Extension</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${escapeHtml(totalKnownSizeDisplay)}</div>
+      <div class="data-page-stat-value">${escapeHtml(cached.totalKnownSizeDisplay)}</div>
       <div class="data-page-stat-label">Known Total Size</div>
     </div>
   `;
@@ -553,14 +618,8 @@ function renderDetectionsPage(searchQuery = '') {
   domainDetectionsFiltered = filtered;
   domainDetectionsShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const uniqueTargets = new Set(domainDetectionsData.entries.map(entry => entry.target.toLowerCase()));
-  const uniqueSections = new Set(domainDetectionsData.entries.map(entry => entry.section));
-  const labelledEntries = domainDetectionsData.entries.filter(entry => entry.label).length;
-  const sectionCounts = {};
-  for (const entry of domainDetectionsData.entries) {
-    sectionCounts[entry.section] = (sectionCounts[entry.section] || 0) + entry.count;
-  }
-  const topSections = Object.entries(sectionCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const cached = domainDetectionsData.stats || { uniqueTargets: 0, uniqueSections: 0, labelledEntries: 0, topSections: [] };
+  const topSections = cached.topSections;
 
   summary.textContent = filtered.length !== domainDetectionsData.entries.length
     ? `Showing ${filtered.length.toLocaleString()} of ${domainDetectionsData.entries.length.toLocaleString()} detections from ${domainDetectionsData.fileCount} file(s)`
@@ -568,15 +627,15 @@ function renderDetectionsPage(searchQuery = '') {
 
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${uniqueTargets.size.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.uniqueTargets.toLocaleString()}</div>
       <div class="data-page-stat-label">Unique Targets</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${uniqueSections.size.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.uniqueSections.toLocaleString()}</div>
       <div class="data-page-stat-label">Sections</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${labelledEntries.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.labelledEntries.toLocaleString()}</div>
       <div class="data-page-stat-label">Tagged Entries</div>
     </div>
     <div class="data-page-stat">
@@ -630,6 +689,7 @@ function renderClipboardPage(searchQuery = '') {
       entry.type.toLowerCase().includes(q) ||
       entry.text.toLowerCase().includes(q) ||
       entry.urls.toLowerCase().includes(q) ||
+      (entry.lure && (LURE_LABELS[entry.lure] || entry.lure).toLowerCase().includes(q)) ||
       entry.source.toLowerCase().includes(q)
     );
   }
@@ -637,10 +697,7 @@ function renderClipboardPage(searchQuery = '') {
   clipboardFiltered = filtered;
   clipboardShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const withUrls = clipboardData.entries.filter(entry => entry.urls).length;
-  const commandCount = clipboardData.entries.filter(entry => entry.type === 'Command').length;
-  const pathCount = clipboardData.entries.filter(entry => entry.type === 'Path').length;
-  const longest = clipboardData.entries.reduce((max, entry) => Math.max(max, entry.length), 0);
+  const cached = clipboardData.stats || { withUrls: 0, commandCount: 0, pathCount: 0, lureCount: 0, lureCategories: {} };
 
   summary.textContent = filtered.length !== clipboardData.entries.length
     ? `Showing ${filtered.length.toLocaleString()} of ${clipboardData.entries.length.toLocaleString()} clipboard entr${clipboardData.entries.length === 1 ? 'y' : 'ies'} from ${clipboardData.fileCount} file(s)`
@@ -648,25 +705,32 @@ function renderClipboardPage(searchQuery = '') {
 
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${withUrls.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.withUrls.toLocaleString()}</div>
       <div class="data-page-stat-label">With URLs</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${commandCount.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.commandCount.toLocaleString()}</div>
       <div class="data-page-stat-label">Commands</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${pathCount.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.pathCount.toLocaleString()}</div>
       <div class="data-page-stat-label">Paths</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${longest.toLocaleString()}</div>
-      <div class="data-page-stat-label">Longest Entry</div>
+      <div class="data-page-stat-value">${cached.lureCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">Lures</div>
     </div>
   `;
 
-  let html = '<div class="data-table-container"><table class="data-table">';
-  html += '<thead><tr><th>Type</th><th>Content</th><th>URLs</th><th>Lines</th><th>Source</th></tr></thead><tbody>';
+  let html = '';
+  const lureCats = Object.entries(cached.lureCategories || {}).sort((a, b) => b[1] - a[1]);
+  if (lureCats.length > 0) {
+    const chips = lureCats.map(([cat, count]) => `<span class="dash-ioc-family">${escapeHtml(LURE_LABELS[cat] || cat)} ${count}</span>`).join(' ');
+    html += `<div class="data-page-warning"><div class="data-page-warning-title">Clipboard social-engineering / clipper activity</div><div class="data-page-warning-more">Clipboard captures match known lure patterns.</div><div class="identity-service-tags">${chips}</div></div>`;
+  }
+
+  html += '<div class="data-table-container"><table class="data-table">';
+  html += '<thead><tr><th>Type</th><th>Lure</th><th>Content</th><th>URLs</th><th>Lines</th><th>Source</th></tr></thead><tbody>';
   html += buildRowsHtml(clipboardRowBuilder, clipboardFiltered, 0, clipboardShown);
   html += '</tbody></table></div>';
 
@@ -702,17 +766,17 @@ function renderGrabbedPage(searchQuery = '') {
   grabbedFiltered = filtered;
   grabbedShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const importantFilesCount = filtered.filter(entry => entry.collection === 'Important Files').length;
   const fileGrabberCount = filtered.filter(entry => entry.collection === 'FileGrabber').length;
   const uniqueExtensions = new Set(filtered.map(entry => entry.extension).filter(Boolean));
+  const cached = grabbedFilesData.stats || { highValueCount: 0, highValueBreakdown: [] };
   summary.textContent = filtered.length !== grabbedFilesData.entries.length
     ? `Showing ${filtered.length.toLocaleString()} of ${grabbedFilesData.entries.length.toLocaleString()} grabbed files`
     : `${grabbedFilesData.entries.length.toLocaleString()} grabbed files`;
 
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${importantFilesCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">Important Files</div>
+      <div class="data-page-stat-value">${cached.highValueCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">High-Value Files</div>
     </div>
     <div class="data-page-stat">
       <div class="data-page-stat-value">${fileGrabberCount.toLocaleString()}</div>
@@ -728,7 +792,12 @@ function renderGrabbedPage(searchQuery = '') {
     </div>
   `;
 
-  let html = '<div class="data-table-container"><table class="data-table">';
+  let html = '';
+  if (cached.highValueCount > 0) {
+    const chips = (cached.highValueBreakdown || []).map(({ label, count }) => `<span class="dash-ioc-family">${escapeHtml(label)} ${count}</span>`).join(' ');
+    html += `<div class="data-page-warning"><div class="data-page-warning-title">${cached.highValueCount.toLocaleString()} high-value file(s) grabbed</div><div class="data-page-warning-more">Password databases, wallet files, VPN profiles, or SSH keys were collected.</div>${chips ? `<div class="identity-service-tags">${chips}</div>` : ''}</div>`;
+  }
+  html += '<div class="data-table-container"><table class="data-table">';
   html += '<thead><tr><th>Collection</th><th>Name</th><th>Path</th><th>Ext</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>';
   html += buildRowsHtml(grabbedFileRowBuilder, grabbedFiltered, 0, grabbedShown);
   html += '</tbody></table></div>';
@@ -950,15 +1019,15 @@ function exportDetectionsCSV() {
 
 function exportClipboardCSV() {
   if (clipboardData.entries.length === 0) return;
-  downloadCsvRows('clipboard.csv', ['Type', 'Text', 'URLs', 'Line Count', 'Length', 'Source'], clipboardData.entries.map(
-    ({ type, text, urls, lineCount, length, source }) => [type, text, urls, lineCount, length, source]
+  downloadCsvRows('clipboard.csv', ['Type', 'Lure', 'Text', 'URLs', 'Line Count', 'Length', 'Source'], clipboardData.entries.map(
+    ({ type, lure, text, urls, lineCount, length, source }) => [type, lure ? (LURE_LABELS[lure] || lure) : '', text, urls, lineCount, length, source]
   ));
 }
 
 function exportGrabbedCSV() {
   if (grabbedFilesData.entries.length === 0) return;
-  downloadCsvRows('grabbed_files.csv', ['Collection', 'Name', 'Path', 'Extension', 'Size Bytes', 'Modified', 'Source'], grabbedFilesData.entries.map(
-    (entry) => [entry.collection, entry.name, entry.relativePath, entry.extension, entry.sizeBytes, formatOptionalDate(entry.modifiedDate), entry.source]
+  downloadCsvRows('grabbed_files.csv', ['Collection', 'Name', 'High Value', 'Path', 'Extension', 'Size Bytes', 'Modified', 'Source'], grabbedFilesData.entries.map(
+    (entry) => [entry.collection, entry.name, entry.highValue || '', entry.relativePath, entry.extension, entry.sizeBytes, formatOptionalDate(entry.modifiedDate), entry.source]
   ));
 }
 
