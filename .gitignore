@@ -27,3 +27,6 @@ processed examples/
 # Internal docs (architecture, backlog, audit, review history) + sweep harness.
 docs/
 reviews/
+DESIGN.md
+PRODUCT.md
+.impeccable/
