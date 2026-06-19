@@ -1,5 +1,5 @@
 // Loads the vendored domain reference lists (data/site-domains, data/email-domains)
-// and exposes a fast eTLD+1 classifier. See data/site-domains/README.md for sources.
+// and exposes a fast eTLD+1 classifier. Lists are refreshed by scripts/refresh-domain-data.sh.
 //
 // All lookups normalise to extractBaseDomain() so subdomain entries in the source
 // files (e.g. mail.google.com) collapse into the base used by credential URLs.
@@ -17,6 +17,9 @@ const FILES = {
   socialMedia:     'data/site-domains/social-media.txt',
   searchEngine:    'data/site-domains/search-engine.txt',
   aiAssistant:     'data/site-domains/ai-assistant.txt',
+  ddns:            'data/site-domains/ddns.txt',
+  rmm:             'data/site-domains/rmm.txt',
+  gambling:        'data/site-domains/gambling.txt',
   emailFree:       'data/email-domains/free-providers.txt',
   emailDisposable: 'data/email-domains/disposable.txt',
 };
@@ -31,6 +34,13 @@ const CATEGORY_LABELS = {
   searchEngine:    'Search',
   aiAssistant:     'AI',
   popular:         'Popular',
+  gov:             'Government',
+  military:        'Military',
+  edu:             'Education',
+  ddns:            'Dynamic DNS',
+  rmm:             'Remote Access',
+  gambling:        'Gambling',
+  sensitive:       'Sensitive',
   emailFree:       'Email (free)',
   emailDisposable: 'Email (disposable)',
 };
@@ -41,16 +51,51 @@ const CATEGORY_LABELS = {
 // class is very broad and catches popular sites like google.com that are
 // better labelled by their primary function.
 const SITE_CATEGORY_PRIORITY = [
+  'gov',             // suffix rule, highest-value
+  'military',        // suffix rule, highest-value
+  'edu',             // suffix rule + university list
+  'rmm',             // curated remote-access tooling
+  'ddns',            // curated dynamic-DNS providers
   'aiAssistant',     // Matomo curated, 20 entries, very precise
   'searchEngine',    // Matomo curated, ~600 entries, very precise
   'socialMedia',     // Matomo + Wikidata, ~600 entries
   'bank',            // Wikidata Q22687 direct
+  'gambling',        // curated operators
   'airline',         // Wikidata Q46970 direct
   'news',            // Wikidata Q1110794 direct
   'university',      // Wikidata Q3918 direct
   'retailer',        // Wikidata Q4830453, broad, used as a last-resort label
   'popular',         // Tranco, generic "consumer site" fallback
 ];
+
+const SENSITIVE_CATEGORIES = new Set(['gov', 'military', 'bank']);
+
+const GOV_SUFFIXES = [
+  '.gov', '.gov.uk', '.gov.au', '.gov.in', '.gov.za', '.gov.sg', '.gov.my',
+  '.gov.br', '.gov.co', '.gov.tr', '.gov.ph', '.gov.pk', '.gob.mx', '.gob.es',
+  '.gob.ar', '.gob.cl', '.gob.pe', '.gob.ec', '.gouv.fr', '.go.id', '.go.th',
+  '.go.jp', '.go.kr', '.govt.nz', '.gc.ca', '.admin.ch', '.bund.de',
+];
+const MILITARY_SUFFIXES = ['.mil', '.mil.uk', '.mil.au', '.forces.gc.ca'];
+const EDU_SUFFIXES = [
+  '.edu', '.edu.au', '.edu.cn', '.edu.in', '.edu.sg', '.edu.my', '.edu.br',
+  '.edu.mx', '.edu.tr', '.edu.pk', '.ac.uk', '.ac.nz', '.ac.jp', '.ac.kr',
+  '.ac.in', '.ac.za', '.ac.id', '.ac.th', '.sch.uk', '.sch.id',
+];
+
+const SUFFIX_RULES = [
+  { key: 'gov', suffixes: GOV_SUFFIXES },
+  { key: 'military', suffixes: MILITARY_SUFFIXES },
+  { key: 'edu', suffixes: EDU_SUFFIXES },
+];
+
+function matchSuffixCategory(host) {
+  const out = [];
+  for (const { key, suffixes } of SUFFIX_RULES) {
+    if (suffixes.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix))) out.push(key);
+  }
+  return out;
+}
 
 const sets = {};
 let loadingPromise = null;
@@ -140,10 +185,13 @@ function classifySiteDomain(host) {
   const cleanHost = normaliseHost(host);
   if (!cleanHost) return { base: '', categories: [], primaryKey: null, primaryLabel: '' };
   const base = extractBaseDomain(cleanHost) || cleanHost;
+  const suffixMatches = new Set(matchSuffixCategory(cleanHost));
+  if (setMatchesHost(sets.university, cleanHost)) suffixMatches.add('edu');
   const categories = [];
   for (const key of SITE_CATEGORY_PRIORITY) {
-    if (setMatchesHost(sets[key], cleanHost)) categories.push(key);
+    if (suffixMatches.has(key) || setMatchesHost(sets[key], cleanHost)) categories.push(key);
   }
+  if (categories.some((key) => SENSITIVE_CATEGORIES.has(key))) categories.push('sensitive');
   const primaryKey = categories[0] || null;
   return {
     base,
@@ -179,6 +227,7 @@ export {
   classifySiteDomain,
   classifyEmailDomain,
   getCategoryLabel,
+  matchSuffixCategory,
   isCategoriesLoaded,
   getSizes,
   SITE_CATEGORY_PRIORITY,

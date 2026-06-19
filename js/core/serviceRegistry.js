@@ -13,7 +13,14 @@ const GENERAL_SERVICE_DEFINITIONS = Object.freeze([
 ]);
 
 const STORE_SERVICE_DEFINITIONS = Object.freeze([
-  { name: 'Bitwarden', category: 'Vault', patterns: [/bitwarden/i], extensionIds: ['nngceckbapebfimnlniiiahkandclblb'] },
+  { name: 'Bitwarden', category: 'Password Manager', patterns: [/bitwarden/i], extensionIds: ['nngceckbapebfimnlniiiahkandclblb'] },
+  { name: '1Password', category: 'Password Manager', patterns: [/1password/i, /onepassword/i, /opvault/i], extensionIds: ['aeblfdkhhhdcdjpifhhbdiojplfjncoa', 'dppgmdbiimibapkepcbdbmkaabgiofem'] },
+  { name: 'LastPass', category: 'Password Manager', patterns: [/lastpass/i], extensionIds: ['hdokiejnpimakedhajhdlcegeplioahd'] },
+  { name: 'Dashlane', category: 'Password Manager', patterns: [/dashlane/i], extensionIds: ['fdjamakpfbbddfjaooikfcpapjohcfmg'] },
+  { name: 'NordPass', category: 'Password Manager', patterns: [/nordpass/i], extensionIds: ['fooolghllnmhmmndgjiamiiodkpenpbb'] },
+  { name: 'RoboForm', category: 'Password Manager', patterns: [/roboform/i], extensionIds: ['pnlccmojcmeohlpggmfnbbiapkmbliob'] },
+  { name: 'KeePassXC', category: 'Password Manager', patterns: [/keepassxc/i], extensionIds: [] },
+  { name: 'KeePass', category: 'Password Manager', patterns: [/keepass/i, /\.kdbx$/i], extensionIds: [] },
   { name: 'MetaMask', category: 'Wallet', patterns: [/metamask/i], extensionIds: ['nkbihfbeogaeaoehlefnkodbefgpgknn'] },
   { name: 'Phantom', category: 'Wallet', patterns: [/phantom/i], extensionIds: ['bfnaelmomeimhlpmgjnjophhpkkoljpa'] },
   { name: 'Rabby', category: 'Wallet', patterns: [/rabby/i], extensionIds: ['acmacodkjbdgmoleebolmdjonilkdbch'] },
@@ -79,6 +86,22 @@ function inferServiceFromPath(pathText) {
   return findServiceDefinition(pathText, GENERAL_SERVICE_DEFINITIONS)?.label || '';
 }
 
+const TOKEN_TYPE_SERVICE = [
+  { service: 'Google', patterns: [/google/i, /restore[\s_-]*token/i, /oauth/i] },
+  { service: 'Facebook', patterns: [/facebook/i] },
+  { service: 'Discord', patterns: [/discord/i] },
+  { service: 'Steam', patterns: [/steam/i] },
+];
+
+function serviceFromTokenType(type) {
+  const normalised = String(type || '').toLowerCase();
+  if (!normalised) return '';
+  for (const { service, patterns } of TOKEN_TYPE_SERVICE) {
+    if (patterns.some((pattern) => pattern.test(normalised))) return service;
+  }
+  return '';
+}
+
 function inferStoreService(pathText, text = '') {
   const fromPath = findStoreServiceByPath(pathText);
   if (fromPath) return fromPath;
@@ -100,4 +123,5 @@ function inferStoreService(pathText, text = '') {
 export {
   inferServiceFromPath,
   inferStoreService,
+  serviceFromTokenType,
 };

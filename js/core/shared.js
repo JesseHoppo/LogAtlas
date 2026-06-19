@@ -35,7 +35,7 @@ const BROWSER_PATH_PATTERNS = [
 const AUTOFILL_PHONE_FALSE_POSITIVE_PATTERN = /phonetic/i;
 const AUTOFILL_PHONE_FIELD_PATTERN = /phone|mobile|landline|tel|cell|contact(?:number)?|whatsapp|fax/i;
 const AUTOFILL_NAME_VALUE_PATTERN = /^[\p{L}][\p{L}' .-]{0,58}[\p{L}.]$/u;
-const AUTOFILL_NAME_STRONG_FIELD_PATTERN = /(?:^|[^a-z])(first[\s._-]*name|last[\s._-]*name|full[\s._-]*name|given[\s._-]*name|family[\s._-]*name|middle[\s._-]*name|surname|lastname|firstname|fullname|middlename|cardholder[\s._-]*name|name[\s._-]*on[\s._-]*card|billing[\s._-]*name|shipping[\s._-]*name|recipient[\s._-]*name|contact[\s._-]*name|customer[\s._-]*name|payer[\s._-]*name)(?:$|[^a-z])/i;
+const AUTOFILL_NAME_STRONG_FIELD_PATTERN = /(?:^|[^a-z])(first[\s._-]*name|last[\s._-]*name|full[\s._-]*name|given[\s._-]*name|family[\s._-]*name|middle[\s._-]*name|surname|lastname|firstname|fullname|middlename|cardholder[\s._-]*name|name[\s._-]*on[\s._-]*card|billing[\s._-]*name|shipping[\s._-]*name|recipient[\s._-]*name|contact[\s._-]*name|customer[\s._-]*name|payer[\s._-]*name|nombre(?:[\s._-]*completo)?|prenom|prénom|vorname|voornaam|nome(?:[\s._-]*completo)?|navn|apellidos?|nachname|achternaam|cognome|sobrenome)(?:$|[^a-z])/i;
 const AUTOFILL_NAME_WEAK_FIELD_PATTERN = /(?:^|[^a-z])(name)(?:$|[^a-z])/i;
 const AUTOFILL_NAME_FIELD_EXCLUSION_PATTERN = /(?:user(?:name)?|login[\s._-]*name|email[\s._-]*or[\s._-]*username|account[\s._-]*name|screen[\s._-]*name|nick[\s._-]*name|display[\s._-]*name|file[\s._-]*name|domain[\s._-]*name|company[\s._-]*name|business[\s._-]*name|merchant[\s._-]*name|organization[\s._-]*name|organisation[\s._-]*name|device[\s._-]*name|browser[\s._-]*name|service[\s._-]*name|app[\s._-]*name|application[\s._-]*name|page[\s._-]*name|tab[\s._-]*name|client[\s._-]*name|database[\s._-]*name|product[\s._-]*name|project[\s._-]*name|shop[\s._-]*name|store[\s._-]*name|school[\s._-]*name|brand[\s._-]*name|pet[\s._-]*name|pseudonymous[\s._-]*name|pseudo[\s._-]*name|alias[\s._-]*name|api[\s._-]*key[\s._-]*name|key[\s._-]*name)/i;
 const AUTOFILL_ADDRESS_STRONG_FIELD_PATTERN = /(?:address|street|city|state|suburb|province|postcode|postal[\s._-]*code|zip|country|address1|address2|address3|address4|line1|line2|suite|house|apartment|apt|building|unit)/i;
@@ -116,6 +116,19 @@ function normaliseDomain(hostname) {
 // extractBaseDomain doesn't strip parts off the package name.
 const ANDROID_PACKAGE_PATTERN = /^(?:com|org)\.[a-z][a-z0-9_]*(?:\.[a-z0-9_][a-z0-9_]*)+$/i;
 
+const ANDROID_APP_DOMAINS = new Map([
+  ['com.roblox.client', 'roblox.com'],
+  ['com.netflix.mediaclient', 'netflix.com'],
+  ['com.spotify.music', 'spotify.com'],
+  ['com.instagram.android', 'instagram.com'],
+  ['com.facebook.katana', 'facebook.com'],
+  ['com.google.android.gm', 'google.com'],
+  ['com.amazon.mshop.android.shopping', 'amazon.com'],
+  ['com.paypal.android.p2pmobile', 'paypal.com'],
+  ['com.discord', 'discord.com'],
+  ['org.telegram.messenger', 'telegram.org'],
+]);
+
 const HOSTED_SCHEMES = new Set([
   'smtp', 'smtps', 'imap', 'imaps', 'pop3', 'pop3s', 'oauth', 'ftp', 'sftp',
 ]);
@@ -146,7 +159,9 @@ function extractDomain(url) {
     if (scheme === 'android') {
       // Chrome Smart Lock: `android://<hash>@com.package.name/`.
       const m = raw.match(/^android:\/\/(?:[^@/]*@)?([a-z][a-z0-9_]*(?:\.[a-z0-9_][a-z0-9_]*)+)/i);
-      return m ? m[1].toLowerCase() : null;
+      if (!m) return null;
+      const pkg = m[1].toLowerCase();
+      return ANDROID_APP_DOMAINS.get(pkg) || pkg;
     }
     if (scheme === 'file') {
       return 'local-file';
@@ -159,7 +174,11 @@ function extractDomain(url) {
         return m ? normaliseDomain(m[1]) : null;
       }
     }
-    if (scheme !== 'http' && scheme !== 'https' && /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    if (scheme === 'blob') {
+      const inner = raw.slice(5);
+      return inner ? extractDomain(inner) : null;
+    }
+    if (scheme !== 'http' && scheme !== 'https') {
       return null;
     }
   }
@@ -167,12 +186,34 @@ function extractDomain(url) {
   try {
     let u = raw;
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-    return normaliseDomain(new URL(u).hostname);
+    const host = normaliseDomain(new URL(u).hostname);
+    return isAcceptableHost(host) ? host : null;
   } catch {
     const match = raw.match(/(?:https?:\/\/)?(?:www\.)?([^\/\s:]+)/i);
-    return normaliseDomain(match ? match[1] : '');
+    const host = normaliseDomain(match ? match[1] : '');
+    return isAcceptableHost(host) ? host : null;
   }
 }
+
+// Reject single-label tokens (`macos`, `intranet`) that aren't IPs or known
+// local-network hosts; those carry no real domain.
+function isAcceptableHost(host) {
+  if (!host) return false;
+  if (host.includes('.')) return true;
+  return isLocalNetworkHost(host);
+}
+
+const MULTI_LEVEL_SUFFIXES = new Set([
+  'gov.au', 'com.au', 'net.au', 'org.au', 'edu.au', 'asn.au', 'id.au',
+  'vic.gov.au', 'nsw.gov.au', 'qld.gov.au', 'wa.gov.au', 'sa.gov.au',
+  'tas.gov.au', 'act.gov.au', 'nt.gov.au',
+  'go.id', 'co.id', 'or.id', 'ac.id', 'web.id',
+  'go.th', 'co.th', 'ac.th', 'or.th',
+  'gob.ec', 'gob.mx', 'gob.pe', 'gob.cl', 'gob.ar',
+  'com.br', 'gov.br',
+  'co.uk', 'gov.uk', 'ac.uk', 'org.uk',
+  'co.jp', 'co.kr', 'co.za', 'co.nz',
+]);
 
 function extractBaseDomain(domain) {
   if (!domain) return domain;
@@ -181,8 +222,12 @@ function extractBaseDomain(domain) {
   if (ANDROID_PACKAGE_PATTERN.test(domain)) return domain;
   const parts = domain.split('.');
   if (parts.length <= 2) return domain;
+  for (let i = 0; i <= parts.length - 3; i++) {
+    const suffix = parts.slice(i + 1).join('.');
+    if (MULTI_LEVEL_SUFFIXES.has(suffix)) return parts.slice(i).join('.');
+  }
   const commonSLDs = ['co', 'com', 'net', 'org', 'gov', 'edu', 'ac'];
-  if (parts.length >= 3 && commonSLDs.includes(parts[parts.length - 2])) {
+  if (commonSLDs.includes(parts[parts.length - 2])) {
     return parts.slice(-3).join('.');
   }
   return parts.slice(-2).join('.');
@@ -216,6 +261,60 @@ function isLocalNetworkHost(host) {
   if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return true;
   if (o[0] === 169 && o[1] === 254) return true;
   return false;
+}
+
+function isOnionHost(host) {
+  return /\.onion$/i.test(String(host || '').trim());
+}
+
+function ipToInt(octets) {
+  return ((octets[0] << 24) >>> 0) + (octets[1] << 16) + (octets[2] << 8) + octets[3];
+}
+
+function inCidr(value, base, prefix) {
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return (value & mask) >>> 0 === (base & mask) >>> 0;
+}
+
+const PUBLIC_DNS_IPS = new Set([
+  '8.8.8.8', '8.8.4.4', '9.9.9.9', '1.1.1.1', '1.0.0.1',
+  '208.67.222.222', '208.67.220.220',
+]);
+
+// Classify an IPv4 literal so anycast/DNS/private addresses are never mistaken
+// for the victim's own IP. `synthetic` flags anything that isn't a plain
+// routable public address.
+function classifyIpAddress(ip) {
+  const s = String(ip || '').trim();
+  const m = s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  const octets = m.slice(1).map(Number);
+  if (octets.some((n) => n > 255)) return null;
+  const synthetic = (kind, label) => ({ kind, synthetic: true, label });
+  const value = ipToInt(octets);
+
+  if (inCidr(value, ipToInt([127, 0, 0, 0]), 8)) return synthetic('loopback', 'Loopback');
+  if (inCidr(value, ipToInt([10, 0, 0, 0]), 8)
+    || inCidr(value, ipToInt([172, 16, 0, 0]), 12)
+    || inCidr(value, ipToInt([192, 168, 0, 0]), 16)) return synthetic('rfc1918', 'Private (RFC1918)');
+  if (inCidr(value, ipToInt([169, 254, 0, 0]), 16)) return synthetic('rfc1918', 'Link-local');
+  if (inCidr(value, ipToInt([100, 64, 0, 0]), 10)) return synthetic('cgnat', 'CGNAT');
+  if (s === '1.1.1.1' || s === '1.0.0.1'
+    || inCidr(value, ipToInt([104, 16, 0, 0]), 12)
+    || inCidr(value, ipToInt([172, 64, 0, 0]), 13)) return synthetic('cloudflare-anycast', 'Cloudflare anycast');
+  if (PUBLIC_DNS_IPS.has(s)) return synthetic('public-dns', 'Public DNS resolver');
+  return { kind: 'public', synthetic: false, label: 'Public' };
+}
+
+// Domains worth ranking in topDomains: real public hosts and bare public IPs.
+// Drops local-file, RFC1918/router hosts, and single-label junk.
+function isRankableDomain(domain) {
+  if (!domain) return false;
+  if (domain === 'local-file') return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return !isLocalNetworkHost(domain);
+  if (isLocalNetworkHost(domain)) return false;
+  if (ANDROID_PACKAGE_PATTERN.test(domain)) return true;
+  return domain.includes('.');
 }
 
 // Same as baseDomainFromUrl but falls back to the raw URL when nothing parses.
@@ -308,7 +407,7 @@ function tokenizeAutofillName(value) {
 }
 
 function tokenizeAutofillFieldName(name) {
-  return normaliseAutofillFieldName(name)
+  return normaliseAutofillLetters(normaliseAutofillFieldName(name))
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
@@ -326,9 +425,13 @@ function getAutofillNameFieldRole(name) {
   const normalised = normaliseAutofillFieldName(name);
   const tokens = tokenizeAutofillFieldName(normalised);
 
-  if (tokens.includes('firstname') || tokens.includes('first') || tokens.includes('given')) return 'given';
+  if (tokens.includes('firstname') || tokens.includes('first') || tokens.includes('given')
+    || tokens.includes('nombre') || tokens.includes('prenom') || tokens.includes('vorname')
+    || tokens.includes('voornaam') || tokens.includes('nome') || tokens.includes('navn')) return 'given';
   if (tokens.includes('middlename') || tokens.includes('middle')) return 'middle';
-  if (tokens.includes('lastname') || tokens.includes('last') || tokens.includes('family') || tokens.includes('surname') || tokens.includes('surname')) return 'family';
+  if (tokens.includes('lastname') || tokens.includes('last') || tokens.includes('family') || tokens.includes('surname')
+    || tokens.includes('apellido') || tokens.includes('apellidos') || tokens.includes('nachname')
+    || tokens.includes('achternaam') || tokens.includes('cognome') || tokens.includes('sobrenome')) return 'family';
   if (tokens.includes('cardholder') || (tokens.includes('name') && tokens.includes('card'))) return 'full';
   if (tokens.includes('fullname') || (tokens.includes('full') && tokens.includes('name'))) return 'full';
   if ((tokens.includes('contact') || tokens.includes('customer') || tokens.includes('recipient') || tokens.includes('payer')) && tokens.includes('name')) return 'full';
@@ -410,7 +513,9 @@ function isLikelyAutofillAddressValue(value) {
 function extractAutofillEmail(value) {
   const normalised = normaliseAutofillValue(value);
   if (!normalised) return '';
-  if (EMAIL_REGEX.test(normalised)) return normalised;
+  // A scheme/path means this is a URL whose `user@host` is not an address.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalised) || /[\/\\]/.test(normalised)) return '';
+  if (!/[:,]/.test(normalised) && EMAIL_REGEX.test(normalised)) return normalised;
 
   const matches = normalised.match(SCAN_EMAIL_REGEX);
   return matches && matches.length > 0 ? matches[0] : '';
@@ -470,6 +575,7 @@ function isSupportedAutofillName(value, fieldName, support) {
     if (role === 'generic') return false;
     const letterCount = normaliseAutofillLetters(tokens[0]).replace(/[^\p{L}]/gu, '').length;
     if (letterCount < 3) return false;
+    if (isStrongAutofillNameField(normalisedField)) return true;
     const tokenSupport = support?.phraseTokenCounts?.get(tokens[0].toLowerCase()) || 0;
     return tokenSupport > 0;
   }
@@ -540,7 +646,7 @@ function classifyAutofillEntries(entries, maxOther = 20) {
     }
   }
 
-  const otherAll = other.map((entry) => ({ ...entry }));
+  const otherAll = other;
 
   return {
     emails: dedupeAutofillStrings(emails, canonicaliseAutofillEmail),
@@ -556,10 +662,23 @@ function classifyAutofillEntries(entries, maxOther = 20) {
 
 function buildLocalDate(year, month, day, hour = 0, minute = 0, second = 0) {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const date = new Date(year, month - 1, day, hour, minute, second);
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
   if (isNaN(date.getTime())) return null;
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
   return date;
+}
+
+// Disambiguate DD/MM vs MM/DD when both slots are <= 12. The corpus is
+// predominantly DD/MM and a capture timestamp cannot be in the future, so if the
+// US-default MM/DD reading lands ahead of now, fall back to DD/MM.
+function resolveDayMonth(a, b, year) {
+  if (a > 12) return { month: b, day: a };
+  if (b > 12) return { month: a, day: b };
+  if (a !== b) {
+    const mmdd = buildLocalDate(year, a, b);
+    if (mmdd && mmdd.getTime() > Date.now()) return { month: b, day: a };
+  }
+  return { month: a, day: b };
 }
 
 function parseTimestampValue(value) {
@@ -571,11 +690,14 @@ function parseTimestampValue(value) {
   const str = String(value).trim();
   if (!str || str === '0' || /^(?:session|null|undefined|nan)$/i.test(str)) return null;
 
-  if (/^\d+$/.test(str)) {
+  // Epoch numbers, including fractional-second forms (e.g. CDP-JSON cookie
+  // `expires` like 1742510427.431387) — truncate to the integer part.
+  const epochMatch = str.match(/^(\d+)(?:\.\d+)?$/);
+  if (epochMatch) {
     try {
-      const num = BigInt(str);
+      const num = BigInt(epochMatch[1]);
       let ms;
-      if (num > 13000000000000000n) {
+      if (num > CHROME_EPOCH_OFFSET) {
         // Chrome/WebKit epoch microseconds since 1601-01-01.
         ms = Number((num - CHROME_EPOCH_OFFSET) / 1000n);
       } else if (num > 1000000000000000n) {
@@ -586,7 +708,7 @@ function parseTimestampValue(value) {
         ms = Number(num * 1000n); // seconds
       }
       const date = new Date(ms);
-      if (!isNaN(date.getTime()) && date.getFullYear() > 1970 && date.getFullYear() < 3000) {
+      if (!isNaN(date.getTime()) && date.getUTCFullYear() > 1970 && date.getUTCFullYear() <= 9999) {
         return date;
       }
     } catch {
@@ -611,34 +733,48 @@ function parseTimestampValue(value) {
     if (date) return date;
   }
 
-  const normalised = str.includes('T') ? str : str.replace(' ', 'T');
-  const native = new Date(normalised);
-  if (!isNaN(native.getTime()) && native.getFullYear() > 1970 && native.getFullYear() < 3000) {
-    return native;
-  }
-
-  // Slash/dash-separated DD/MM. V8 handles MM/DD via `new Date()` above; this
-  // catches the slash forms where the first slot is > 12.
-  const dmyTime = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (dmyTime) {
-    let year = Number(dmyTime[3]);
+  // Slash-separated dates: parse explicitly so V8's US-default doesn't flip the
+  // slots, and so AM/PM is honoured. First slot <= 12 reads as MM/DD, else DD/MM.
+  const slashTime = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?/);
+  if (slashTime) {
+    let year = Number(slashTime[3]);
     if (year < 100) year += 2000;
-    const date = buildLocalDate(year, Number(dmyTime[2]), Number(dmyTime[1]), Number(dmyTime[4]), Number(dmyTime[5]), Number(dmyTime[6] || 0));
+    const { month, day } = resolveDayMonth(Number(slashTime[1]), Number(slashTime[2]), year);
+    let hour = Number(slashTime[4]);
+    const meridiem = (slashTime[7] || '').toLowerCase();
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+    const date = buildLocalDate(year, month, day, hour, Number(slashTime[5]), Number(slashTime[6] || 0));
     if (date) return date;
   }
 
-  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if (dmy) {
-    let year = Number(dmy[3]);
+  const slash = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (slash) {
+    let year = Number(slash[3]);
     if (year < 100) year += 2000;
-    const date = buildLocalDate(year, Number(dmy[2]), Number(dmy[1]));
+    const { month, day } = resolveDayMonth(Number(slash[1]), Number(slash[2]), year);
+    const date = buildLocalDate(year, month, day);
     if (date) return date;
   }
 
-  const ymd = str.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  // Bare yyyy-mm-dd[ HH:MM] without a timezone suffix: anchor to UTC. ISO
+  // strings carrying an offset/Z fall through to the native parser below.
+  const hasExplicitZone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(str);
+  const ymd = hasExplicitZone ? null : str.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?/);
   if (ymd) {
-    const date = buildLocalDate(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]), Number(ymd[4] || 0), Number(ymd[5] || 0), Number(ymd[6] || 0));
+    let hour = Number(ymd[4] || 0);
+    const meridiem = (ymd[7] || '').toLowerCase();
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+    const date = buildLocalDate(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]), hour, Number(ymd[5] || 0), Number(ymd[6] || 0));
     if (date) return date;
+  }
+
+  const isoLike = /^\d{4}-\d{2}-\d{2}[ T]/.test(str);
+  const normalised = isoLike ? str.replace(' ', 'T') : str;
+  const native = new Date(normalised);
+  if (!isNaN(native.getTime()) && native.getUTCFullYear() > 1970 && native.getUTCFullYear() <= 9999) {
+    return native;
   }
 
   const dMonY = str.match(/^(\d{1,2})\s+(\w{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
@@ -661,28 +797,28 @@ function parseArchiveTimestamp(name) {
   const ymd = source.match(/(?:^|[^0-9])(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
   if (ymd) {
     const [, year, month, day, hour = '0', minute = '0', second = '0'] = ymd;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
+    if (date) return date;
   }
 
   const dmy = source.match(/(?:^|[^0-9])(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
   if (dmy) {
     const [, day, month, year, hour = '0', minute = '0', second = '0'] = dmy;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
+    if (date) return date;
   }
 
   const compact = source.match(/(?:^|[^0-9])(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})(?:$|[^0-9])/);
   if (compact) {
     const [, year, month, day, hour, minute, second] = compact;
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    if (!isNaN(date.getTime())) return date;
+    const date = buildLocalDate(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
+    if (date) return date;
   }
 
   return null;
 }
 
-function checkCookieValidity(expiresValue) {
+function checkCookieValidity(expiresValue, referenceDate) {
   if (!expiresValue || expiresValue === '0' || String(expiresValue).toLowerCase() === 'session') {
     return { status: 'session', label: 'Session' };
   }
@@ -692,7 +828,7 @@ function checkCookieValidity(expiresValue) {
     return { status: 'unknown', label: 'Unknown expiry' };
   }
 
-  const now = new Date();
+  const now = (referenceDate instanceof Date && !isNaN(referenceDate.getTime())) ? referenceDate : new Date();
   if (expiryDate < now) {
     return { status: 'expired', label: `Expired ${formatRelativeTime(expiryDate)}` };
   }
@@ -848,7 +984,7 @@ const COUNTRY_OFFSET_RANGES = {
   PL: [60, 120], SE: [60, 120], NO: [60, 120], DK: [60, 120], AT: [60, 120],
   CZ: [60, 120], FI: [120, 180], GR: [120, 180], RO: [120, 180], UA: [120, 180],
   TR: [180, 180], RU: [120, 720], SA: [180, 180], AE: [240, 240], IL: [120, 180],
-  IN: [330, 330], PK: [300, 300], BD: [360, 360], TH: [420, 420], VN: [420, 420],
+  IN: [300, 330], PK: [300, 300], BD: [360, 360], TH: [420, 420], VN: [420, 420],
   ID: [420, 540], CN: [480, 480], SG: [480, 480], MY: [480, 480], PH: [480, 480],
   HK: [480, 480], TW: [480, 480], JP: [540, 540], KR: [540, 540],
   AU: [480, 660], NZ: [720, 780], ZA: [120, 120], EG: [120, 180], NG: [60, 60]
@@ -859,7 +995,7 @@ function isOffsetPlausibleForCountry(offset, country) {
   const code = String(country || '').trim().toUpperCase();
   const range = COUNTRY_OFFSET_RANGES[code];
   if (!range) return null;
-  return offset >= range[0] && offset <= range[1];
+  return offset >= range[0] - 90 && offset <= range[1] + 90;
 }
 
 // TimeZone arrives in four shapes: signed integer hour offset, unsigned 32-bit
@@ -877,7 +1013,7 @@ function normaliseTimeZone(raw, country) {
     const plausible = isOffsetPlausibleForCountry(out.offset, country);
     if (plausible === false) {
       out.countryMismatch = true;
-      out.label = `${out.label} (offset implausible for ${String(country).trim().toUpperCase()})`;
+      out.label = `${out.label} (offset atypical for ${String(country).trim().toUpperCase()})`;
     }
   }
 
@@ -1004,6 +1140,54 @@ function isValidCountryCode(value) {
   return /^[A-Za-z]{2}$/.test(String(value || '').trim());
 }
 
+// Full country name (`France`, `Australia`, `United States`); used so the
+// sanitiser keeps a written-out Country value instead of blanking it.
+function isLikelyCountryName(value) {
+  return /^[A-Za-z][A-Za-z .'-]{2,40}$/.test(String(value || '').trim());
+}
+
+// A placeholder-looking user value is real if it also names a profile/home
+// directory in the same record (`C:\Users\Lenovo`, `/home/admin`).
+function userNameAppearsInPath(name, entries) {
+  const target = String(name || '').trim().toLowerCase();
+  if (!target) return false;
+  const re = new RegExp(`(?:users[\\\\/]|home[\\\\/])${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\\\/]|$)`, 'i');
+  for (const entry of entries || []) {
+    const value = String(entry?.value || '');
+    if (re.test(value)) return true;
+  }
+  return false;
+}
+
+// Hand control back to the event loop so a long synchronous row loop over a
+// very large file can paint. Order-independent accumulation only — never use
+// where a yield could let observers see partial state.
+function yieldToEventLoop() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+// Memoise a parser's output on the tree node so the analysis pass and the
+// page loader don't both re-parse the same file. Keyed by parser name and
+// validated against the current `_parseConfig` reference: the Adjust-columns
+// flow assigns a fresh config object and applyManualType deletes it, so a
+// reference mismatch re-parses. Decoded content is already cached upstream.
+function parseNodeCached(node, parserName, parser, text, config) {
+  const cfg = config ?? null;
+  if (node) {
+    const store = node._parsedRows;
+    if (store) {
+      const hit = store[parserName];
+      if (hit && hit.config === cfg) return hit.parsed;
+    }
+  }
+  const parsed = parser(text, cfg);
+  if (node) {
+    if (!node._parsedRows) node._parsedRows = {};
+    node._parsedRows[parserName] = { config: cfg, parsed };
+  }
+  return parsed;
+}
+
 // Two-letter country prefix dropped into log filenames by resale markets:
 // `[PE]_…`, `_AU_…`, `[BR]_…`. Used as a fallback when sysinfo Country
 // fails IP-geo and lands as an IP literal or empty.
@@ -1029,6 +1213,9 @@ export {
   extractBaseDomain,
   baseDomainFromUrl,
   isLocalNetworkHost,
+  isRankableDomain,
+  isOnionHost,
+  classifyIpAddress,
   dedupeDomainKey,
   inferBrowserFromPath,
   inferBrowserFromContent,
@@ -1038,10 +1225,14 @@ export {
   isLikelyAutofillPhone,
   isPlaceholderUserName,
   isValidCountryCode,
+  isLikelyCountryName,
+  userNameAppearsInPath,
   normaliseTimeZone,
   parseSoftwareLine,
   parseTimestampValue,
   parseArchiveTimestamp,
+  parseNodeCached,
+  yieldToEventLoop,
   checkCookieValidity,
   downloadBlob,
   topN,
