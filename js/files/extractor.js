@@ -159,7 +159,7 @@ async function readZipEntryData(entry, label, initialPassword = null) {
   }
 }
 
-// Extract ZIP into tree (recursive for nested archives)
+// Recursive: descends into nested archives.
 async function extractIntoTree(root, zipData, basePath, depth) {
   if (depth > MAX_DEPTH) {
     addError(`Max depth exceeded at: ${basePath}`);
@@ -440,8 +440,10 @@ async function extractFile(file) {
   }
 
   reconcileAggregatePasswordFiles(root);
-  state.fileTree = root;
-  state.flatFiles = flattenTree(root, file.name);
+  const collapsed = collapseSingleWrapper(root);
+  state.fileTree = collapsed;
+  state.rootZipName = collapsed.name;
+  state.flatFiles = flattenTree(collapsed, collapsed.name);
   setLoading(null);
   emit('extracted');
 }
@@ -495,17 +497,32 @@ function flattenTree(root, basePath = '') {
   return result;
 }
 
+function collapseSingleWrapper(root) {
+  let node = root;
+  while (node && node.children) {
+    const childNames = Object.keys(node.children);
+    if (childNames.length !== 1) break;
+    const child = node.children[childNames[0]];
+    if (!child || child.type !== 'directory') break;
+    node = child;
+  }
+  return node;
+}
+
 function applyManualType(node, fileType) {
   for (const key of HINT_KEYS) delete node[key];
   delete node._parseConfig;
+  delete node._parsedRows;
 
   const hint = FILE_TYPE_TO_HINT[fileType];
   if (hint) node[hint] = true;
 }
 
 async function addFilesToTree(files) {
-  resetExtractionBudget();
+  // Reset the budget only when starting a fresh container; it must accumulate
+  // across repeated drops so the decompressed-size cap is per-session, not per-call.
   if (!state.fileTree) {
+    resetExtractionBudget();
     state.fileTree = createNode(state.virtualContainerName || 'Uploaded Files', {
       type: 'directory',
       depth: 0,
@@ -548,10 +565,18 @@ async function addFilesToTree(files) {
   }
 
   reconcileAggregatePasswordFiles(root);
-  state.flatFiles = flattenTree(root, state.rootZipName);
+  const childNames = Object.keys(root.children);
+  if (childNames.length === 1 && root.children[childNames[0]].type === 'directory') {
+    const collapsed = collapseSingleWrapper(root);
+    state.fileTree = collapsed;
+    state.rootZipName = collapsed.name;
+    state.flatFiles = flattenTree(collapsed, collapsed.name);
+  } else {
+    state.flatFiles = flattenTree(root, state.rootZipName);
+  }
   setLoading(null);
 
   return needsTypeSelection;
 }
 
-export { extractFile, getNodeAtPath, getChildrenList, countChildren, loadFileContent, flattenTree, applyManualType, addFilesToTree };
+export { extractFile, getNodeAtPath, getChildrenList, countChildren, loadFileContent, flattenTree, applyManualType, addFilesToTree, collapseSingleWrapper };

@@ -47,23 +47,27 @@ function clearSelection() {
   updateSelectionToolbar();
 }
 
-function toggleSelection(name) {
-  if (selectedFiles.has(name)) {
-    selectedFiles.delete(name);
+function itemKey(name) {
+  return [...state.currentPath, name].join('/');
+}
+
+function toggleSelection(key) {
+  if (selectedFiles.has(key)) {
+    selectedFiles.delete(key);
   } else {
-    selectedFiles.add(name);
+    selectedFiles.add(key);
   }
   updateSelectionUI();
   updateSelectionToolbar();
 }
 
 function updateSelectionUI() {
-  const allItems = elFileBrowser.querySelectorAll('[data-name]');
+  const allItems = elFileList.querySelectorAll('[data-path]');
   for (const el of allItems) {
-    const name = el.dataset.name;
+    const key = el.dataset.path;
     const cb = el.querySelector('.file-select-cb');
-    if (cb) cb.checked = selectedFiles.has(name);
-    el.classList.toggle('selected', selectedFiles.has(name));
+    if (cb) cb.checked = selectedFiles.has(key);
+    el.classList.toggle('selected', selectedFiles.has(key));
   }
 }
 
@@ -80,16 +84,15 @@ function updateSelectionToolbar() {
 }
 
 function getSelectedEntries() {
-  const node = getNodeAtPath(state.currentPath);
-  if (!node || !node.children) return [];
   const results = [];
-  for (const name of selectedFiles) {
-    const child = node.children[name];
-    if (child && child.type === 'file') {
+  for (const key of selectedFiles) {
+    const segments = key.split('/');
+    const node = getNodeAtPath(segments);
+    if (node && node.type === 'file') {
       results.push({
-        name,
-        path: [...state.currentPath, name],
-        node: child,
+        name: segments[segments.length - 1],
+        path: segments,
+        node,
       });
     }
   }
@@ -176,11 +179,13 @@ function renderGrid(items) {
   for (const item of items) {
     const isDir = item.type === 'directory';
     const icon = getFileIcon(item.name, isDir, item.isArchive);
-    const checked = selectedFiles.has(item.name) ? 'checked' : '';
-    const selectedClass = selectedFiles.has(item.name) ? ' selected' : '';
+    const key = itemKey(item.name);
+    const checked = selectedFiles.has(key) ? 'checked' : '';
+    const selectedClass = selectedFiles.has(key) ? ' selected' : '';
     const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
 
     html += `<div class="file-item${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
+      `data-path="${escapeAttr(key)}" ` +
       `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeAttr(verb)}">`;
 
     if (!isDir) {
@@ -226,11 +231,13 @@ function renderList(items) {
   for (const item of items) {
     const isDir = item.type === 'directory';
     const icon = getFileIcon(item.name, isDir, item.isArchive);
-    const checked = selectedFiles.has(item.name) ? 'checked' : '';
-    const selectedClass = selectedFiles.has(item.name) ? ' selected' : '';
+    const key = itemKey(item.name);
+    const checked = selectedFiles.has(key) ? 'checked' : '';
+    const selectedClass = selectedFiles.has(key) ? ' selected' : '';
     const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
 
     html += `<div class="file-list-item${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
+      `data-path="${escapeAttr(key)}" ` +
       `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeAttr(verb)}">`;
 
     if (!isDir) {
@@ -273,10 +280,10 @@ function activateItem(el) {
 
 function onItemClick(e) {
   if (e.target.classList.contains('file-select-cb')) {
-    const el = e.target.closest('[data-name]');
+    const el = e.target.closest('[data-path]');
     if (el) {
       e.stopPropagation();
-      toggleSelection(el.dataset.name);
+      toggleSelection(el.dataset.path);
     }
     return;
   }
@@ -570,7 +577,7 @@ function initBrowser() {
     const items = getItems();
     for (const item of items) {
       if (item.type === 'file') {
-        selectedFiles.add(item.name);
+        selectedFiles.add(itemKey(item.name));
       }
     }
     updateSelectionUI();

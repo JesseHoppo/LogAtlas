@@ -302,9 +302,7 @@ async function extractOfficeOpenXmlPreview(content, fileName) {
   } finally {
     try {
       await reader.close();
-    } catch (_) {
-      // Ignore reader close errors.
-    }
+    } catch (_) {}
   }
 }
 

@@ -35,13 +35,14 @@ const ROLE_SETS = {
 let mapperResolver = null;
 let currentText = '';
 let currentRoles = ROLE_SETS.credentials;
+let detectedDelimiter = '\t';
 
-let elModal, elRawPreview, elTableContainer, elHasHeader, elCustomInput, elFileName;
+let elModal, elRawPreview, elTableContainer, elHasHeader, elCustomInput, elFileName, elApply;
 
 function getSelectedDelimiter() {
   const checked = elModal.querySelector('input[name="mapperDelimiter"]:checked');
   if (!checked) return '\t';
-  if (checked.value === 'custom') return elCustomInput.value || '\t';
+  if (checked.value === 'custom') return elCustomInput.value;
   return checked.value;
 }
 
@@ -62,6 +63,12 @@ function setDelimiterRadio(delimiter) {
 
 function renderPreviewTable() {
   const delimiter = getSelectedDelimiter();
+  if (elApply) elApply.disabled = !delimiter;
+  if (!delimiter) {
+    elTableContainer.innerHTML = '<div class="no-data">Enter a custom delimiter</div>';
+    return;
+  }
+
   const hasHeader = elHasHeader.checked;
   const splitFn = makeSplitFn(delimiter);
   const lines = currentText.split('\n').map(l => l.trim()).filter(l => l);
@@ -75,20 +82,20 @@ function renderPreviewTable() {
   const allRows = previewLines.map(l => splitFn(l));
   const colCount = Math.max(...allRows.map(r => r.length));
 
-  // Infer roles for dropdown defaults (credential-style inference)
   const inference = inferColumnRoles(lines, delimiter, hasHeader);
+  const dropColumns = new Set(delimiter === detectedDelimiter ? (detectFormat(currentText)?.dropColumns || []) : []);
 
   let html = '<table class="data-table mapper-preview-table"><thead><tr>';
 
   for (let i = 0; i < colCount; i++) {
     const inferred = inference.columnMap[i] || '';
-    // Check if inferred role exists in current role set
     const inferredValid = currentRoles.some(r => r.value === inferred);
-    const isSkip = !inferred || !inferredValid;
+    const isSkip = dropColumns.has(i) || !inferred || !inferredValid;
+    const showSelected = inferredValid && !dropColumns.has(i);
 
     html += '<th><select class="mapper-role-select" data-col="' + i + '">';
     for (const role of currentRoles) {
-      const sel = (inferredValid && inferred === role.value) ? ' selected' : '';
+      const sel = (showSelected && inferred === role.value) ? ' selected' : '';
       html += `<option value="${role.value}"${sel}>${escapeHtml(role.label)}</option>`;
     }
     html += `<option value="skip"${isSkip ? ' selected' : ''}>(Skip)</option>`;
@@ -122,6 +129,7 @@ function renderPreviewTable() {
 
 function handleApply() {
   const delimiter = getSelectedDelimiter();
+  if (!delimiter) return;
   const hasHeaderRow = elHasHeader.checked;
   const selects = elTableContainer.querySelectorAll('.mapper-role-select');
   const columnMap = {};
@@ -157,9 +165,11 @@ function openColumnMapper(text, fileName, fileType) {
 
     const format = detectFormat(text);
     if (format && format.type === 'delimited') {
+      detectedDelimiter = format.delimiter;
       setDelimiterRadio(format.delimiter);
       elHasHeader.checked = format.hasHeaderRow || false;
     } else {
+      detectedDelimiter = '\t';
       setDelimiterRadio('\t');
       elHasHeader.checked = false;
     }
@@ -178,6 +188,7 @@ function initColumnMapper() {
   elHasHeader = document.getElementById('mapperHasHeader');
   elCustomInput = document.getElementById('mapperCustomDelimiter');
   elFileName = document.getElementById('mapperFileName');
+  elApply = document.getElementById('mapperApply');
 
   elModal.querySelectorAll('input[name="mapperDelimiter"]').forEach(radio => {
     radio.addEventListener('change', renderPreviewTable);
@@ -190,7 +201,7 @@ function initColumnMapper() {
 
   elHasHeader.addEventListener('change', renderPreviewTable);
 
-  document.getElementById('mapperApply').addEventListener('click', handleApply);
+  elApply.addEventListener('click', handleApply);
   document.getElementById('mapperCancel').addEventListener('click', () => closeMapper(null));
 
   elModal.addEventListener('click', (e) => {

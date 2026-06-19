@@ -22,6 +22,9 @@ function promptForPassword(filePath, { invalid = false } = {}) {
 
 function closePasswordModal(password) {
   elModal.classList.remove('visible');
+  elInput.value = '';
+  elInput.type = 'password';
+  elToggleBtn.textContent = 'Show';
   if (passwordResolver) {
     passwordResolver(password);
     passwordResolver = null;
