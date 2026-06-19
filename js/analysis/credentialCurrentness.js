@@ -1126,23 +1126,23 @@ function collectTenantSignal({ usernameEmail, usernameDomain, providerArtifacts,
     const recentStrength = getRecentStrength(artifact.date, captureDate);
 
     if (!exactDomainMatched && artifact.kind === 'tenant' && (artifactText.includes(usernameDomain) || host.includes(usernameDomain))) {
-      const value = recentStrength >= 2 ? 14 : 9;
-      score += value;
-      evidence.push(`${artifact.providerLabel} tenant activity mentions ${usernameDomain}`);
+      const amount = recentStrength >= 2 ? 14 : 9;
+      score += amount;
+      evidence.push({ amount, label: `${artifact.providerLabel} tenant activity mentions ${usernameDomain}` });
       exactDomainMatched = true;
       continue;
     }
 
     if (!tokenMatched && artifact.kind === 'tenant' && tokens.some((token) => tokenPattern(token).test(artifactText))) {
-      const value = recentStrength >= 2 ? 10 : 6;
-      score += value;
-      evidence.push(`${artifact.providerLabel} tenant activity matches ${tokens[0]}`);
+      const amount = recentStrength >= 2 ? 10 : 6;
+      score += amount;
+      evidence.push({ amount, label: `${artifact.providerLabel} tenant activity matches ${tokens[0]}` });
       tokenMatched = true;
     }
 
     if (exactEmail && artifactText.includes(exactEmail)) {
       score += 8;
-      evidence.push(`${artifact.providerLabel} activity mentions ${exactEmail}`);
+      evidence.push({ amount: 8, label: `${artifact.providerLabel} activity mentions ${exactEmail}` });
       break;
     }
   }
@@ -1352,8 +1352,8 @@ function scoreCredential(entry, context) {
     providerArtifacts,
     captureDate,
   });
-  for (const label of tenantSignal.evidence) {
-    addScore(result, Math.max(tenantSignal.score === 0 ? 0 : Math.round(tenantSignal.score / tenantSignal.evidence.length), 0), label, 'tenant');
+  for (const { amount, label } of tenantSignal.evidence) {
+    addScore(result, amount, label, 'tenant');
   }
 
   const dominant = identityDomains.dominantCorporateDomain;
@@ -1452,11 +1452,12 @@ const ACTIONABILITY_RANK = { live: 0, recent: 1, stored: 2, legacy: 3 };
 // Live = the credential's site is provably accessible right now (cookie session
 // or app-stored). A token email match is identity-level evidence and feeds the
 // score, but doesn't make a non-token site "live": having a Google token
-// doesn't mean the user is signed in to Netflix.
+// doesn't mean the user is signed in to Netflix. A live session is takeover-ready
+// regardless of a competing employer identity, so it outranks the conflict demotion.
 function classifyActionability(result) {
-  if (result.conflictDomain) return 'legacy';
   if (result.hasLiveSession) return 'live';
   if (result.isAppCredential) return 'live';
+  if (result.conflictDomain) return 'legacy';
   if (result.hasRecentVisit) return 'recent';
   return 'stored';
 }
@@ -1608,9 +1609,7 @@ function countReuseGroups(rows) {
   const groups = new Set();
   for (const r of rows) {
     if (r.reuseCount && r.reuseCount >= 2) {
-      // Group key is the password itself, but we don't expose passwords; use
-      // a stable proxy (first 6 chars of base64-ish hash isn't worth it),
-      // so just count distinct reuseSites signatures.
+      // Count distinct reuse-site sets as a proxy for the shared password.
       const sig = (r.reuseSites || []).slice().sort().join('|');
       groups.add(sig);
     }

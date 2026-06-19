@@ -7,6 +7,7 @@ import {
   parsePasswordFile,
   parseCookieFile,
   parseAutofillFile,
+  parseFileZillaSiteManager,
 } from '../transforms/credentials.js';
 import {
   parseSystemInfoFile,
@@ -31,6 +32,8 @@ import {
   baseDomainFromUrl,
   extractDomain,
   isLocalNetworkHost,
+  isRankableDomain,
+  isOnionHost,
   dedupeDomainKey,
   extractCountryFromFilename,
   inferBrowserFromPath,
@@ -39,26 +42,41 @@ import {
   isLikelyAutofillPhone,
   isPlaceholderUserName,
   isValidCountryCode,
+  isLikelyCountryName,
+  userNameAppearsInPath,
   normaliseTimeZone,
   parseSoftwareLine,
   parseTimestampValue,
+  parseArchiveTimestamp,
+  parseNodeCached,
+  yieldToEventLoop,
   checkCookieValidity,
   topN,
 } from '../core/shared.js';
+
+// Rows between event-loop yields inside the heaviest per-row loops, so a
+// single very large file doesn't block paint. High enough that ordinary files
+// never yield.
+const ROW_YIELD_INTERVAL = 5000;
+import { serviceFromTokenType } from '../core/serviceRegistry.js';
 import { classifyCookie } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
-import { FIELD_PATTERNS, IOC_KEY_MAP, CONTENT_IOC_PATTERNS, STEALER_INFRA_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
+import { classifySiteDomain } from '../core/domainCategories.js';
+import { detectNationalIds } from './structuredPii.js';
+import { FIELD_PATTERNS, IOC_KEY_MAP, CONTENT_IOC_PATTERNS, STEALER_INFRA_PATTERNS, CLIPBOARD_LURE_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
 
 // NUL: never present in real credential fields, so safe as a dedupe separator.
 const DEDUPE_KEY_SEP = '\u0000';
 
+const BUCKET_HINT_KEYS = [...HINT_KEYS, '_ftpCredentialHint'];
+
 // Walk the tree once, bucketing file nodes by hint key.
 function bucketHintedNodes(fileTree, rootName) {
-  const buckets = Object.fromEntries(HINT_KEYS.map(k => [k, []]));
+  const buckets = Object.fromEntries(BUCKET_HINT_KEYS.map(k => [k, []]));
 
   function walk(node, path) {
     if (!node) return;
-    for (const key of HINT_KEYS) {
+    for (const key of BUCKET_HINT_KEYS) {
       if (node[key]) buckets[key].push({ node, path });
     }
     if (node.children) {
@@ -87,15 +105,19 @@ async function decodeNodeText(node, path, record = true) {
 // topUsernames so they don't outrank real accounts.
 const PLACEHOLDER_USERNAMES = new Set(['unknown', 'unk', 'n/a', 'none', 'null', '-', '?']);
 
+// Dumps that are bare password lists with no account context.
+const RECOVERED_PASSWORD_FILE = /(?:unique[_-]?passwords|brute|all[_-]?passwords|passwords?[_-]?only|wordlist)/i;
+
 function isPlaceholderTopUsername(value) {
   const v = String(value || '').trim().toLowerCase();
   return v === '' || PLACEHOLDER_USERNAMES.has(v);
 }
 
-// Lowercase emails so case variants merge. Phone-shaped usernames collapse
-// to their trunk-stripped 8-digit suffix so `+61491570156` and `0491570156`
-// dedupe to the same key.
-function normaliseUsername(value) {
+// Dedupe key only. Lowercase emails so case variants merge; phone-shaped
+// usernames collapse to their trunk-stripped suffix so `+61491570156` and
+// `0491570156` key to the same account. Never used as a display value —
+// numeric national-IDs / bank accounts must surface verbatim.
+function usernameDedupeKey(value) {
   const v = String(value || '');
   if (v.includes('@')) return v.toLowerCase();
   if (isLikelyAutofillPhone(v)) {
@@ -115,7 +137,11 @@ async function analyseCredentials(nodes) {
       urlsWithoutCredentials: 0,
       topDomains: [],
       localNetwork: [],
+      onionCredentials: 0,
+      onionDomains: [],
+      nationalIds: [],
       topUsernames: [],
+      recoveredPasswords: null,
       failedFiles: [],
     });
     return;
@@ -123,8 +149,16 @@ async function analyseCredentials(nodes) {
 
   const allDomains = [];
   const localDomains = [];
+  const onionDomains = new Set();
+  const nationalIdHits = [];
   const allUsernames = [];
   const seen = new Set();
+  const urlOnlySeen = new Set();
+  const fileHashes = new Set();
+  const recoveredSeen = new Set();
+  let recoveredFileCount = 0;
+  let recoveredTotal = 0;
+  const recoveredSample = [];
   const failedFiles = [];
   let totalCredentials = 0;
   let uniqueCredentials = 0;
@@ -138,8 +172,21 @@ async function analyseCredentials(nodes) {
         failedFiles.push({ path, reason: 'Unreadable or empty file' });
         continue;
       }
-      const parsed = parsePasswordFile(text, node._parseConfig || null);
+      const parsed = parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) {
+        if (RECOVERED_PASSWORD_FILE.test(node.name || '')) {
+          let any = false;
+          for (const line of text.split('\n')) {
+            const pass = line.trim();
+            if (!pass || pass.startsWith('#') || /^[-=*#]{3,}$/.test(pass) || recoveredSeen.has(pass)) continue;
+            any = true;
+            recoveredSeen.add(pass);
+            recoveredTotal++;
+            if (recoveredSample.length < 50) recoveredSample.push(pass);
+            if (recoveredSeen.size >= LIMITS.maxRecoveredPasswords) break;
+          }
+          if (any) { recoveredFileCount++; continue; }
+        }
         failedFiles.push({ path, reason: 'No credentials parsed' });
         continue;
       }
@@ -148,22 +195,56 @@ async function analyseCredentials(nodes) {
       const userIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
       const passIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
 
+      // Passwords-only dumps (unique_passwords.txt / Brute.txt): no account
+      // context, so surface them as recovered plaintext rather than dropping.
+      if (passIdx >= 0 && urlIdx < 0 && userIdx < 0) {
+        let any = false;
+        for (const row of parsed.rows) {
+          const pass = (row[passIdx] || '').trim();
+          if (!pass || recoveredSeen.has(pass)) continue;
+          any = true;
+          recoveredSeen.add(pass);
+          recoveredTotal++;
+          if (recoveredSample.length < 50) recoveredSample.push(pass);
+          if (recoveredSeen.size >= LIMITS.maxRecoveredPasswords) break;
+        }
+        if (any) recoveredFileCount++;
+        continue;
+      }
+
       if (passIdx < 0 || (urlIdx < 0 && userIdx < 0)) {
         failedFiles.push({ path, reason: 'Missing credential columns after parsing' });
         continue;
       }
 
+      // Skip a file whose normalised row set is identical to one already seen
+      // (passwords.txt + passwords.tsv format twins).
+      const fileHash = parsed.rows
+        .map(r => `${(r[urlIdx] || '')}\t${(r[userIdx] || '')}\t${(r[passIdx] || '')}`)
+        .sort()
+        .join('\n');
+      if (fileHashes.has(fileHash)) continue;
+      fileHashes.add(fileHash);
+
       parsedCount++;
 
+      let rowIndex = 0;
       for (const row of parsed.rows) {
+        if (++rowIndex % ROW_YIELD_INTERVAL === 0) await yieldToEventLoop();
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
         const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
         const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
 
-        // Some logs include rows from the saved-URL index that have no user
-        // or password; track those separately so they don't inflate counts.
-        if (!user && !pass) {
-          urlsWithoutCredentials++;
+        // Saved-URL-only rows (URL present, no user/pass) are tracked
+        // separately so they don't inflate credential counts.
+        if (!pass && !user) {
+          if (url) {
+            const urlKey = dedupeDomainKey(url);
+            if (!urlOnlySeen.has(urlKey)) {
+              urlOnlySeen.add(urlKey);
+              urlsWithoutCredentials++;
+            }
+          }
           continue;
         }
 
@@ -171,24 +252,37 @@ async function analyseCredentials(nodes) {
 
         // Dedupe on (base domain, username, password) so the same credential
         // saved across profiles or sibling subdomains collapses to one row.
-        const userPart = normaliseUsername(user);
-        const key = dedupeDomainKey(url) + DEDUPE_KEY_SEP + userPart + DEDUPE_KEY_SEP + pass;
+        const userKey = usernameDedupeKey(user);
+        const key = dedupeDomainKey(url) + DEDUPE_KEY_SEP + userKey + DEDUPE_KEY_SEP + pass;
         if (!seen.has(key)) {
           seen.add(key);
           uniqueCredentials++;
           const base = baseDomainFromUrl(url);
           if (base) {
             const host = extractDomain(url) || base;
-            if (isLocalNetworkHost(host) || isLocalNetworkHost(base)) localDomains.push(host);
+            if (isOnionHost(host) || isOnionHost(base)) onionDomains.add(base);
+            else if (isLocalNetworkHost(host) || isLocalNetworkHost(base)) localDomains.push(host);
             else allDomains.push(base);
           }
-          if (user && !isPlaceholderTopUsername(user)) allUsernames.push(userPart);
+          if (user && !isPlaceholderTopUsername(user)) {
+            allUsernames.push(user);
+            const ids = detectNationalIds(user);
+            for (const id of ids) nationalIdHits.push({ type: id.type, country: id.country, last2: id.value.replace(/\D/g, '').slice(-2) });
+          }
         }
       }
     } catch (err) {
       failedFiles.push({ path, reason: err?.message || 'Failed to read or parse file' });
     }
   }
+
+  const nationalIdGroups = {};
+  for (const hit of nationalIdHits) {
+    const k = `${hit.type}${DEDUPE_KEY_SEP}${hit.country}`;
+    if (!nationalIdGroups[k]) nationalIdGroups[k] = { type: hit.type, country: hit.country, count: 0 };
+    nationalIdGroups[k].count++;
+  }
+  const nationalIds = Object.values(nationalIdGroups).sort((a, b) => b.count - a.count);
 
   emit('analysis:credentials', {
     fileCount: parsedCount,
@@ -198,14 +292,34 @@ async function analyseCredentials(nodes) {
     urlsWithoutCredentials,
     topDomains: topN(allDomains, LIMITS.topDomains),
     localNetwork: topN(localDomains, LIMITS.topDomains),
+    onionCredentials: onionDomains.size,
+    onionDomains: [...onionDomains],
+    nationalIds,
     topUsernames: topN(allUsernames, LIMITS.topUsernames),
+    recoveredPasswords: recoveredTotal > 0
+      ? { fileCount: recoveredFileCount, total: recoveredTotal, unique: recoveredSeen.size, sample: recoveredSample }
+      : null,
     failedFiles,
   });
 }
 
 // Cookies
 
-async function analyseCookies(nodes) {
+// Best-effort capture date for validity: archive name timestamp, else the
+// newest cookie-file modification time. Cookie expiry is then judged against
+// when the log was taken, not analysis-time now.
+function deriveCaptureDate(nodes, rootName) {
+  const fromName = parseArchiveTimestamp(rootName);
+  if (fromName) return fromName;
+  let newest = 0;
+  for (const { node } of nodes) {
+    const m = Number(node?.lastModified);
+    if (m && m > newest) newest = m;
+  }
+  return newest ? new Date(newest) : null;
+}
+
+async function analyseCookies(nodes, rootName = '') {
   if (nodes.length === 0) {
     emit('analysis:cookies', {
       fileCount: 0, totalCookies: 0, uniqueDomains: 0, topDomains: [],
@@ -217,6 +331,7 @@ async function analyseCookies(nodes) {
   }
 
   const domainStats = {};
+  const cookieSeen = new Set();
   let totalCookies = 0;
   let parsedCount = 0;
   let totalNoDomain = 0;
@@ -225,44 +340,58 @@ async function analyseCookies(nodes) {
   let trackingTokens = 0;
   let validTrackingTokens = 0;
 
+  const captureDate = deriveCaptureDate(nodes, rootName);
+
   for (const { node, path } of nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseCookieFile(text, node._parseConfig || null);
+      const parsed = parseNodeCached(node, 'cookie', parseCookieFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       parsedCount++;
-      totalCookies += parsed.rows.length;
 
       const domainIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
       const expiresIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
       const nameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
+      const valueIdx = parsed.headers.findIndex(h => /^value$/i.test(h));
 
+      let rowIndex = 0;
       for (const row of parsed.rows) {
+        if (++rowIndex % ROW_YIELD_INTERVAL === 0) await yieldToEventLoop();
         const domain = (domainIdx >= 0 ? (row[domainIdx] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase();
-        if (!domain) { totalNoDomain++; continue; }
+        const cookieName = nameIdx >= 0 ? row[nameIdx] : '';
+        const expiresVal = expiresIdx >= 0 ? row[expiresIdx] : null;
+        const cookieValue = valueIdx >= 0 ? (row[valueIdx] || '') : '';
+
+        // Collapse per-browser/aggregate duplicates and Netscape .txt + CDP
+        // _json.txt twins by keying each cookie on its content.
+        const dedupeKey = [domain, cookieName, cookieValue, expiresVal ?? ''].join(DEDUPE_KEY_SEP);
+        if (cookieSeen.has(dedupeKey)) continue;
+        cookieSeen.add(dedupeKey);
+
+        if (!domain) { totalNoDomain++; totalCookies++; continue; }
+        totalCookies++;
 
         if (!domainStats[domain]) {
           domainStats[domain] = { total: 0, valid: 0, expired: 0, session: 0, unknown: 0 };
         }
         domainStats[domain].total++;
 
-        const expiresVal = expiresIdx >= 0 ? row[expiresIdx] : null;
-        const validity = checkCookieValidity(expiresVal);
+        const validity = checkCookieValidity(expiresVal, captureDate);
         if (validity.status === 'valid') domainStats[domain].valid++;
         else if (validity.status === 'expired') domainStats[domain].expired++;
         else if (validity.status === 'session') domainStats[domain].session++;
         else domainStats[domain].unknown++;
 
-        const cookieName = nameIdx >= 0 ? row[nameIdx] : '';
+        const live = validity.status === 'valid' || validity.status === 'session';
         const sessionType = classifyCookie(cookieName, domain);
         if (sessionType === 'auth' || sessionType === 'session') {
           sessionTokens++;
-          if (validity.status === 'valid') validSessionTokens++;
+          if (live) validSessionTokens++;
         } else if (sessionType === 'tracking') {
           trackingTokens++;
-          if (validity.status === 'valid') validTrackingTokens++;
+          if (live) validTrackingTokens++;
         }
       }
     } catch {
@@ -288,6 +417,7 @@ async function analyseCookies(nodes) {
   const baseStats = {};
   for (const [host, stats] of Object.entries(domainStats)) {
     const base = extractBaseDomain(host) || host;
+    if (!isRankableDomain(base)) continue;
     if (!baseStats[base]) {
       baseStats[base] = { total: 0, valid: 0, expired: 0, session: 0, unknown: 0 };
     }
@@ -361,7 +491,7 @@ async function analyseHistory(nodes) {
         const lastVisit = lastIdx >= 0 ? (row[lastIdx] || '').trim() : '';
         const lastVisitDate = parseTimestampValue(lastVisit);
         const domain = baseDomainFromUrl(url);
-        if (domain) domains.push(domain);
+        if (domain && isRankableDomain(domain)) domains.push(domain);
         entries.push({ url, title, visitCount, lastVisit, lastVisitDate });
       }
     } catch {
@@ -407,13 +537,17 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
   const sourceFiles = [];
   const decoded = [];
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
+      // Environment.txt is an env-var dump (OS=Windows_NT, etc.) — keep it out
+      // of the system profile and IOC scan so it can't shadow the real OS.
+      if (/environment/i.test(node.name || '')) continue;
       decoded.push(text);
       const parsed = parseSystemInfoFile(text, node.name);
       if (!parsed || !parsed.entries) continue;
+      node._parsedSysinfo = { entries: parsed.entries, text };
 
       for (const [key, value] of Object.entries(parsed.entries)) {
         if (value && !merged[key]) {
@@ -434,10 +568,40 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
   const identityNotes = sanitiseIdentityEntries(merged, rootZipName);
   const combinedText = decoded.length > 0 ? decoded.join('\n') + '\n' : '';
   const iocs = extractIOCs(merged, combinedText) || [];
+  const fields = structuredFieldsFromIocs(iocs);
 
-  emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText, identityNotes, iocs });
+  emit('analysis:sysinfo', { entries: merged, fields, sourceFiles, sysinfoText: combinedText, identityNotes, iocs });
 
   extractInlineSections(combinedText);
+}
+
+const IOC_FIELD_KEYS = {
+  'IP Address': 'ip',
+  'Country': 'country',
+  'City': 'city',
+  'Computer Name': 'computerName',
+  'User Name': 'userName',
+  'OS': 'os',
+  'HWID': 'hwid',
+  'Machine ID': 'machineId',
+  'Timezone': 'timezone',
+  'Language': 'language',
+  'Log Date': 'captureDate',
+};
+
+function structuredFieldsFromIocs(iocs) {
+  const fields = {};
+  for (const ioc of iocs) {
+    const key = IOC_FIELD_KEYS[ioc.label];
+    if (!key || fields[key]) continue;
+    if (key === 'captureDate') {
+      const dt = parseTimestampValue(ioc.value);
+      fields[key] = dt ? dt.toISOString() : ioc.value;
+    } else {
+      fields[key] = ioc.value;
+    }
+  }
+  return fields;
 }
 
 // Strip placeholder / OEM / OS-name garbage from identity-bearing sysinfo
@@ -445,9 +609,11 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
 // `identityNotes` so the UI can still surface the stealer's original value.
 function sanitiseIdentityEntries(entries, rootZipName) {
   const notes = [];
+  const valueEntries = Object.values(entries).map(value => ({ value }));
 
   for (const key of ['User Name', 'UserName', 'User', 'username']) {
-    if (entries[key] && isPlaceholderUserName(entries[key])) {
+    if (entries[key] && isPlaceholderUserName(entries[key])
+        && !userNameAppearsInPath(entries[key], valueEntries)) {
       notes.push({ field: key, rawValue: entries[key], reason: 'placeholder/oem/os-name' });
       entries[key] = '';
     }
@@ -455,7 +621,13 @@ function sanitiseIdentityEntries(entries, rootZipName) {
 
   for (const key of ['Country', 'country']) {
     const raw = entries[key];
-    if (!raw || isValidCountryCode(raw)) continue;
+    if (!raw || isValidCountryCode(raw) || isLikelyCountryName(raw)) continue;
+    const fromGeo = entries.GEO || entries.geo;
+    if (fromGeo && (isValidCountryCode(fromGeo) || isLikelyCountryName(fromGeo))) {
+      notes.push({ field: key, rawValue: raw, reason: 'invalid-code', resolvedTo: fromGeo, resolvedSource: 'geo' });
+      entries[key] = fromGeo;
+      continue;
+    }
     const fromFilename = extractCountryFromFilename(rootZipName);
     if (fromFilename) {
       notes.push({ field: key, rawValue: raw, reason: 'invalid-code', resolvedTo: fromFilename, resolvedSource: 'filename' });
@@ -485,6 +657,7 @@ function extractInlineSections(text) {
   let softwareLines = null;
   let processLines = null;
   let currentTarget = null;
+  let bracketSection = false;
 
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
@@ -492,11 +665,13 @@ function extractInlineSections(text) {
     if (SOFTWARE_HEADER.test(trimmed) || BRACKET_SOFTWARE.test(trimmed)) {
       softwareLines = [];
       currentTarget = softwareLines;
+      bracketSection = BRACKET_SOFTWARE.test(trimmed);
       continue;
     }
     if (PROCESS_HEADER.test(trimmed) || BRACKET_PROCESS.test(trimmed)) {
       processLines = [];
       currentTarget = processLines;
+      bracketSection = BRACKET_PROCESS.test(trimmed);
       continue;
     }
 
@@ -506,8 +681,9 @@ function extractInlineSections(text) {
         currentTarget = null;
         continue;
       }
-      // KV lines (e.g. "Processor: Intel...") end the section too
-      if (KV_LINE.test(trimmed)) {
+      // Bracket-delimited lists may hold colon-bearing app names, so only
+      // colon/KV lines in colon-headed sections end the section.
+      if (!bracketSection && KV_LINE.test(trimmed)) {
         currentTarget = null;
         continue;
       }
@@ -521,9 +697,10 @@ function extractInlineSections(text) {
     }
   }
 
-  // Parse software entries
-  if (softwareLines && softwareLines.length > 0) {
-    const entries = [];
+  // Always emit the inline slot (even empty) so a vanished section clears
+  // stale rows on reanalysis.
+  const softwareEntries = [];
+  if (softwareLines) {
     const seen = new Set();
     for (const line of softwareLines) {
       if (line.length > 120) continue;
@@ -532,17 +709,14 @@ function extractInlineSections(text) {
       const { name, version } = parsed;
       if (name && !seen.has(name.toLowerCase())) {
         seen.add(name.toLowerCase());
-        entries.push({ name, version });
+        softwareEntries.push({ name, version });
       }
     }
-    if (entries.length > 0) {
-      emit('analysis:software', { fileCount: 1, entries, totalCount: entries.length, inline: true });
-    }
   }
+  emit('analysis:software', { fileCount: softwareEntries.length ? 1 : 0, entries: softwareEntries, totalCount: softwareEntries.length, inline: true });
 
-  // Parse process list entries
-  if (processLines && processLines.length > 0) {
-    const entries = [];
+  const processEntries = [];
+  if (processLines) {
     const seen = new Set();
     for (const line of processLines) {
       if (isPromotionalNoiseLine(line) || /^===\s*running processes\s*===$/i.test(line)) continue;
@@ -569,17 +743,25 @@ function extractInlineSections(text) {
       const key = [name, pid || ''].join(' ').toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
-        entries.push({ name, pid });
+        processEntries.push({ name, pid });
       }
     }
-    if (entries.length > 0) {
-      const uniqueCount = new Set(entries.map(e => e.name.toLowerCase())).size;
-      emit('analysis:processList', { fileCount: 1, entries, totalCount: entries.length, uniqueCount, inline: true });
-    }
   }
+  const uniqueCount = new Set(processEntries.map(e => e.name.toLowerCase())).size;
+  emit('analysis:processList', { fileCount: processEntries.length ? 1 : 0, entries: processEntries, totalCount: processEntries.length, uniqueCount, inline: true });
 }
 
 // Clipboard
+
+function detectClipboardLure(text) {
+  const s = String(text || '');
+  if (!s) return null;
+  for (const { category, rx } of CLIPBOARD_LURE_PATTERNS) {
+    rx.lastIndex = 0;
+    if (rx.test(s.trim())) return category;
+  }
+  return null;
+}
 
 async function analyseClipboard(nodes) {
   if (nodes.length === 0) {
@@ -588,13 +770,15 @@ async function analyseClipboard(nodes) {
   }
 
   const entries = [];
+  const lureCounts = {};
   let fileCount = 0;
   let urlCount = 0;
   let commandCount = 0;
   let pathCount = 0;
-  for (const { node } of nodes) {
+  let lureCount = 0;
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseClipboardFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -609,7 +793,9 @@ async function analyseClipboard(nodes) {
         if (urls.length > 0) urlCount += urls.length;
         if (type === 'Command') commandCount++;
         if (type === 'Path') pathCount++;
-        entries.push({ type, text: entryText, urls });
+        const lure = detectClipboardLure(entryText);
+        if (lure) { lureCount++; lureCounts[lure] = (lureCounts[lure] || 0) + 1; }
+        entries.push({ type, text: entryText, urls, lure });
       }
     } catch {
       // skip
@@ -621,7 +807,7 @@ async function analyseClipboard(nodes) {
     return;
   }
 
-  emit('analysis:clipboard', { entries, fileCount, urlCount, commandCount, pathCount });
+  emit('analysis:clipboard', { entries, fileCount, urlCount, commandCount, pathCount, lureCount, lureCategories: lureCounts });
 }
 
 function isLoaderSampleValue(value) {
@@ -678,10 +864,11 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
       let match;
       while ((match = pattern.exec(text)) !== null) {
         if (infraCount() >= LIMITS.stealerInfraMaxItems) return;
-        const value = match[0].replace(/^["']|["']$/g, '');
+        let value = match[0].replace(/^["']|["']$/g, '');
+        if (family === 'Lumma') value = value.replace(/^@/, '');
         const ioc = { label, value, kind: 'stealer-infra' };
         if (family) ioc.family = family;
-        if (pushIoc(ioc)) claimedStrings.add(value);
+        if (pushIoc(ioc)) { claimedStrings.add(value); claimedStrings.add('@' + value); }
       }
     }
   }
@@ -708,6 +895,10 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
             if (claimed.length > 8 && value.includes(claimed)) { claimedAsInfra = true; break; }
           }
           if (claimedAsInfra) continue;
+        }
+        if (label === 'Telegram Contact' || label === 'Telegram Channel') {
+          const norm = value.replace(/^@/, '').toLowerCase();
+          if ([...claimedStrings].some(c => c.replace(/^@/, '').toLowerCase().includes(norm))) continue;
         }
         const ioc = { label, value };
         if (kind) ioc.kind = kind;
@@ -831,20 +1022,15 @@ async function analyseNotes(nodes) {
 
 // Domain detect
 
-async function analyseDomainDetect(nodes) {
-  if (nodes.length === 0) {
-    emit('analysis:domainDetect', null);
-    return;
-  }
-
+async function analyseDomainDetect(nodes, credCookieNodes = []) {
   const categories = {};
   const entries = [];
   let fileCount = 0;
   let totalHits = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseDomainDetectFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -857,9 +1043,11 @@ async function analyseDomainDetect(nodes) {
         const count = Math.max(parseInt(row[3], 10) || 1, 1);
         if (!target) continue;
 
-        if (!categories[section]) categories[section] = [];
-        categories[section].push({ domain: target, count, label });
-        entries.push({ section, label, target, count });
+        const cat = classifySiteDomain(target);
+        const key = cat.primaryLabel || section;
+        if (!categories[key]) categories[key] = [];
+        categories[key].push({ domain: target, count, label, section, base: cat.base, ourCategory: cat.primaryLabel });
+        entries.push({ section, label, target, count, base: cat.base, ourCategory: cat.primaryLabel });
         totalHits += count;
       }
     } catch {
@@ -867,12 +1055,63 @@ async function analyseDomainDetect(nodes) {
     }
   }
 
-  if (Object.keys(categories).length === 0) {
-    emit('analysis:domainDetect', null);
+  if (Object.keys(categories).length > 0) {
+    emit('analysis:domainDetect', { fileCount, totalHits, categories, entries });
     return;
   }
 
-  emit('analysis:domainDetect', { fileCount, totalHits, categories, entries });
+  // No domain-detect file shipped: synthesise an equivalent by classifying
+  // the credential/cookie hosts so the same panel still renders.
+  const synth = await synthesiseDomainDetect(credCookieNodes);
+  emit('analysis:domainDetect', synth);
+}
+
+async function synthesiseDomainDetect(nodes) {
+  if (!nodes || nodes.length === 0) return null;
+  const counts = new Map();
+  for (const { node, path, kind } of nodes) {
+    try {
+      const text = await decodeNodeText(node, path, false);
+      if (text == null) continue;
+      const parsed = kind === 'cookie'
+        ? parseNodeCached(node, 'cookie', parseCookieFile, text, node._parseConfig || null)
+        : parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      let hosts = [];
+      if (kind === 'cookie') {
+        const domainIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+        hosts = parsed.rows.map(r => (domainIdx >= 0 ? (r[domainIdx] || '') : (r[0] || '')).replace(/^\./, ''));
+      } else {
+        const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+        if (urlIdx < 0) continue;
+        hosts = parsed.rows.map(r => extractDomain(r[urlIdx] || ''));
+      }
+      for (const host of hosts) {
+        if (!host) continue;
+        const cat = classifySiteDomain(host);
+        if (!cat.primaryLabel) continue;
+        const base = cat.base || host;
+        const k = `${cat.primaryLabel}${DEDUPE_KEY_SEP}${base}`;
+        if (!counts.has(k)) counts.set(k, { ourCategory: cat.primaryLabel, base, count: 0 });
+        counts.get(k).count++;
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (counts.size === 0) return null;
+  const categories = {};
+  const entries = [];
+  let totalHits = 0;
+  for (const { ourCategory, base, count } of counts.values()) {
+    if (!categories[ourCategory]) categories[ourCategory] = [];
+    categories[ourCategory].push({ domain: base, count, label: '', section: ourCategory, base, ourCategory });
+    entries.push({ section: ourCategory, label: '', target: base, count, base, ourCategory });
+    totalHits += count;
+  }
+  return { fileCount: 0, totalHits, categories, entries, synthesized: true };
 }
 
 async function analyseCreditCards(nodes) {
@@ -888,25 +1127,28 @@ async function analyseCreditCards(nodes) {
   let withCvc = 0;
   let withExpiry = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseCreditCardFile(text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
-      totalCards += parsed.rows.length;
       for (const row of parsed.rows) {
         const cardNumber = (row[0] || '').trim();
         const nameOnCard = (row[1] || '').trim();
         const cvc = (row[2] || '').trim();
         const expiration = (row[3] || '').trim();
-        const tail = cardNumber.replace(/\D/g, '').slice(-4);
-        if (tail) last4.add(tail);
+        const panDigits = cardNumber.replace(/\D/g, '');
+        const validPan = panDigits.length >= 12 && panDigits.length <= 19;
+        const hasExpiry = /\b(0?[1-9]|1[0-2])\s*[\/-]\s*(\d{2}|\d{4})\b/.test(expiration);
+        if (!validPan && !nameOnCard && !hasExpiry && !cvc) continue;
+        totalCards++;
+        if (validPan) last4.add(panDigits.slice(-4));
         if (nameOnCard) withHolder++;
         if (cvc) withCvc++;
-        if (expiration && expiration !== '/') withExpiry++;
+        if (hasExpiry) withExpiry++;
       }
     } catch {
       // skip
@@ -956,7 +1198,7 @@ async function analyseBookmarks(nodes) {
         const url = (row[0] || '').trim();
         if (!url) continue;
         const base = baseDomainFromUrl(url);
-        if (base) allDomains.push(base);
+        if (base && isRankableDomain(base)) allDomains.push(base);
       }
     } catch {
       // skip
@@ -1024,6 +1266,23 @@ async function analyseBrowserMetadata(nodes) {
   });
 }
 
+// Restore-token files hold bare opaque base64url blobs with no key:value
+// structure, so the keyed parser returns nothing. Recover them here.
+function parseBareTokenFile(text) {
+  const lines = stripLeadingNoiseLines(text).split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !isPromotionalNoiseLine(line));
+  if (lines.length === 0) return null;
+
+  const rows = [];
+  for (const line of lines) {
+    if (!/^[A-Za-z0-9_-]{40,}$/.test(line)) return null;
+    rows.push(['Restore Token', line, '', '']);
+  }
+
+  return rows.length > 0 ? { rows } : null;
+}
+
 async function analyseAccountTokens(nodes) {
   if (nodes.length === 0) {
     emit('analysis:accountTokens', null);
@@ -1041,17 +1300,18 @@ async function analyseAccountTokens(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseAccountTokenFile(text, path || node.name);
+      const parsed = parseAccountTokenFile(text, path || node.name) || parseBareTokenFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
       totalEntries += parsed.rows.length;
-      const service = inferServiceFromPath(path || node.name) || 'Unknown';
+      const pathService = inferServiceFromPath(path || node.name);
 
       for (const row of parsed.rows) {
         const type = (row[0] || 'Token').trim();
         const value = (row[1] || '').trim();
         const accountId = (row[2] || '').trim();
+        const service = pathService || serviceFromTokenType(type) || 'Unknown';
         services.push(service);
         if (type) types.push(type);
         if (value) withValue++;
@@ -1077,8 +1337,8 @@ async function analyseAccountTokens(nodes) {
   });
 }
 
-async function analyseServiceArtifacts(nodes) {
-  if (nodes.length === 0) {
+async function analyseServiceArtifacts(nodes, ftpNodes = []) {
+  if (nodes.length === 0 && ftpNodes.length === 0) {
     emit('analysis:serviceArtifacts', null);
     return;
   }
@@ -1102,6 +1362,26 @@ async function analyseServiceArtifacts(nodes) {
       for (const row of parsed.rows) {
         const key = (row[1] || '').trim();
         if (key) keys.push(key);
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  for (const { node, path } of ftpNodes) {
+    try {
+      const text = await decodeNodeText(node, path);
+      if (text == null) continue;
+      const parsed = parseFileZillaSiteManager(text);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      totalEntries += parsed.rows.length;
+      for (const [url, user, password] of parsed.rows) {
+        services.push('FileZilla');
+        const host = String(url || '').replace(/^[a-z]+:\/\//i, '');
+        const label = [host, user].filter(Boolean).join(' / ');
+        if (label) keys.push(password ? `${label} (password recovered)` : label);
       }
     } catch {
       // skip
@@ -1172,9 +1452,9 @@ async function analyseDownloads(nodes) {
   let totalDownloads = 0;
   let parsedCount = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const parsed = parseDownloadFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
@@ -1187,7 +1467,7 @@ async function analyseDownloads(nodes) {
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : (row[1] || '').trim();
         if (!url) continue;
         const base = baseDomainFromUrl(url);
-        if (base) allDomains.push(base);
+        if (base && isRankableDomain(base)) allDomains.push(base);
       }
     } catch {
       // skip
@@ -1259,14 +1539,19 @@ async function runFingerprint(fileTree, rootName) {
     const allTexts = [];
     for (const node of ctx.sysinfoNodes) {
       try {
-        const text = await decodeNodeText(node, null, false);
-        if (text == null) continue;
-        allTexts.push(text);
-        const parsed = parseSystemInfoFile(text, node.name);
+        let cached = node._parsedSysinfo;
+        if (!cached) {
+          const text = await decodeNodeText(node, null, false);
+          if (text == null) continue;
+          const parsed = parseSystemInfoFile(text, node.name);
+          cached = { entries: parsed && parsed.entries ? parsed.entries : {}, text };
+          node._parsedSysinfo = cached;
+        }
+        allTexts.push(cached.text);
         ctx.sysinfoCandidates.push({
           sysinfoFilename: node.name,
-          sysinfoText: text,
-          sysinfoKeys: parsed && parsed.entries ? Object.keys(parsed.entries) : [],
+          sysinfoText: cached.text,
+          sysinfoKeys: Object.keys(cached.entries),
         });
       } catch {
         // skip unreadable sysinfo candidates
@@ -1323,6 +1608,26 @@ async function runFingerprint(fileTree, rootName) {
     }
   }
 
+  // Cookie/autofill headers — resale brands (e.g. OTTOMAN) stamp a self-id
+  // banner at the top of every exported browser-data file.
+  if (ctx.browserHeaderNodes && ctx.browserHeaderNodes.length > 0) {
+    const headerTexts = [];
+    let budget = 8192;
+    for (const node of ctx.browserHeaderNodes) {
+      if (budget <= 0) break;
+      try {
+        const text = await decodeNodeText(node, null, false);
+        if (text == null) continue;
+        const slice = text.slice(0, 2000);
+        headerTexts.push(slice);
+        budget -= slice.length;
+      } catch {
+        // skip
+      }
+    }
+    if (headerTexts.length > 0) ctx.browserHeaderText = headerTexts.join('\n');
+  }
+
   const result = fingerprintStealer(ctx);
   emit('analysis:fingerprint', result);
 }
@@ -1339,9 +1644,9 @@ async function analyseSoftware(nodes) {
   const seen = new Set();
   let parsedCount = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const text = await decodeNodeText(node);
+      const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const lines = text.split('\n');
       let found = false;
@@ -1389,9 +1694,9 @@ async function analyseProcessList(nodes) {
   const entryMap = new Map();
   let parsedCount = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
-      const decoded = await decodeNodeText(node);
+      const decoded = await decodeNodeText(node, path);
       if (decoded == null) continue;
       const text = stripLeadingNoiseLines(decoded);
       const lines = text.split('\n');
@@ -1410,12 +1715,17 @@ async function analyseProcessList(nodes) {
         let sessionId = null;
         let commandLine = '';
 
-        const labelled = line.match(/^PID:\s*(\d+)\s*,\s*SessionID:\s*([^,]+)\s*,\s*Name:\s*([^,]+)(?:\s*,\s*CommandLine:\s*(.*))?$/i);
+        const labelled = line.match(/^PID:\s*(\d+)(?:\s*,\s*SessionID:\s*([^,]+))?\s*,\s*Name:\s*([^,]+)(?:\s*,\s*CommandLine:\s*(.*))?$/i);
+        const idLabelled = labelled ? null : line.match(/^ID:\s*(\d+)\s*,\s*Name:\s*([^,]+?)(?:\s*,\s*CommandLine:\s*(.*))?$/i);
         if (labelled) {
           pid = labelled[1];
-          sessionId = labelled[2].trim();
+          sessionId = (labelled[2] || '').trim();
           name = labelled[3].trim();
           commandLine = (labelled[4] || '').trim();
+        } else if (idLabelled) {
+          pid = idLabelled[1];
+          name = idLabelled[2].trim();
+          commandLine = (idLabelled[3] || '').trim();
         } else {
           const pidDashMatch = line.match(/^PID:\s*(\d+)\s*-\s*(.+)$/i);
           if (pidDashMatch) {
@@ -1446,7 +1756,8 @@ async function analyseProcessList(nodes) {
         }
 
         name = name.replace(/^[-*•]\s+/, '').trim();
-        if (!name || name.length > 200) continue;
+        if (name.length > 200) continue;
+        if (!name && !commandLine) continue;
 
         const key = [name, pid || '', sessionId || '', commandLine].join(' ').toLowerCase();
         if (!entryMap.has(key)) {
@@ -1467,39 +1778,59 @@ async function analyseProcessList(nodes) {
     return;
   }
 
-  const uniqueCount = new Set(entries.map(e => e.name.toLowerCase())).size;
+  const uniqueCount = new Set(entries.map(e => (e.name || e.commandLine || '').toLowerCase())).size;
   emit('analysis:processList', { fileCount: parsedCount, entries, totalCount: entries.length, uniqueCount });
 }
 
 // Kick off all analyses. Returns a promise resolved once every task settles;
 // `analysis:complete` fires from the resolution.
 
+// Descend through aggregate wrapper layers (outer → data.zip → case/) so
+// consumers see the real case root, not a lone wrapper folder. Stops at the
+// first directory holding more than one child or any file.
+function collapseSingleWrapper(root) {
+  let node = root;
+  while (node?.children) {
+    const children = Object.values(node.children);
+    if (children.length !== 1 || children[0].type !== 'directory') break;
+    node = children[0];
+  }
+  return node;
+}
+
 function runAnalysis(fileTree, rootName) {
-  const buckets = bucketHintedNodes(fileTree, rootName);
+  const root = collapseSingleWrapper(fileTree) || fileTree;
+  const treeRootName = root === fileTree ? rootName : (root.name || rootName);
+  const buckets = bucketHintedNodes(root, treeRootName);
   readFailures = [];
 
   findScreenshot(buckets._screenshotHint);
 
+  const credCookieNodes = [
+    ...buckets._passwordFileHint.map(n => ({ ...n, kind: 'password' })),
+    ...buckets._cookieFileHint.map(n => ({ ...n, kind: 'cookie' })),
+  ];
+
   const tasks = [
     analyseCredentials(buckets._passwordFileHint),
-    analyseCookies(buckets._cookieFileHint),
+    analyseCookies(buckets._cookieFileHint, treeRootName),
     analyseHistory(buckets._historyHint),
-    analyseSystemInfo(buckets._sysInfoHint, rootName),
+    analyseSystemInfo(buckets._sysInfoHint, treeRootName),
     analyseAutofills(buckets._autofillHint),
     analyseNotes(buckets._notesHint),
     analyseBookmarks(buckets._bookmarkHint),
     analyseBrowserMetadata(buckets._browserMetadataHint),
     analyseAccountTokens(buckets._accountTokenHint),
-    analyseServiceArtifacts(buckets._serviceArtifactHint),
+    analyseServiceArtifacts(buckets._serviceArtifactHint, buckets._ftpCredentialHint),
     analyseWalletArtifacts(buckets._cryptoWalletHint),
     analyseDownloads(buckets._downloadHint),
     analyseCreditCards(buckets._creditCardHint),
-    analyseDomainDetect(buckets._domainDetectHint),
+    analyseDomainDetect(buckets._domainDetectHint, credCookieNodes),
     analyseSoftware(buckets._softwareFileHint),
     analyseProcessList(buckets._processListHint),
     analyseClipboard(buckets._clipboardHint),
     analyseGrabbedFiles(buckets._grabbedFileHint),
-    runFingerprint(fileTree, rootName),
+    runFingerprint(root, treeRootName),
   ];
 
   return Promise.allSettled(tasks).then((results) => {

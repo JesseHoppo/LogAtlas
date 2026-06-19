@@ -77,8 +77,8 @@ function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: []
       if (/token/.test(lowerKey) && typeof child === 'string' && child.trim()) results.tokenCount++;
       if (/(?:mnemonic|seed|recovery)/.test(lowerKey) && child) results.seedHints++;
       if (/(?:email|mail)/.test(lowerKey) && typeof child === 'string') results.emails.push(child);
-      if (/(?:url|server|vault|api|identity)/.test(lowerKey) && typeof child === 'string') results.urls.push(child);
-      if (/(?:id|uuid)/.test(lowerKey) && typeof child === 'string' && UUID_REGEX.test(child)) results.ids.push(child);
+      if (/(?:^|_)(?:url|server|vault|api|identity)(?:$|_|s$)/.test(lowerKey) && typeof child === 'string') results.urls.push(child);
+      if ((/(?:^|_)(?:id|uuid)$/i.test(key) || /[a-z](?:Id|Uuid|UUID)$/.test(key)) && typeof child === 'string' && UUID_REGEX.test(child)) results.ids.push(child);
       collectJsonFieldValues(child, results, depth + 1);
     }
     return results;
@@ -142,8 +142,11 @@ function parseWalletArtifact(content, fileName, sourcePath) {
   tokenCount += jwtMatches.length;
 
   const seedHints = jsonSignals.seedHints + ((/mnemonic|seed phrase|recovery phrase|secret recovery/i.test(combinedText)) ? 1 : 0);
+  const isPasswordManager = service.category === 'Password Manager' || service.category === 'Vault'
+    || /bitwarden|1password|keepass|lastpass|dashlane|nordpass|roboform/i.test(service.name);
+  const effectiveSeedHints = isPasswordManager ? 0 : seedHints;
 
-  const meaningful = emails.length || urls.length || ethAddresses.length || btcAddresses.length || tokenCount || seedHints;
+  const meaningful = emails.length || urls.length || ethAddresses.length || btcAddresses.length || tokenCount || effectiveSeedHints;
   const pathLooksRelevant = /(wallet|bitwarden|metamask|phantom|trust wallet|exodus|atomic|keplr|tronlink|ronin|rabby|extension|local extension settings|token\.json|seed\.txt|keychain)/i.test(normalisedPath);
   if (!meaningful && !pathLooksRelevant) return null;
 
@@ -154,11 +157,11 @@ function parseWalletArtifact(content, fileName, sourcePath) {
     storeType,
     browser: inferBrowserFromPath(normalisedPath),
     profile: inferProfileFromPath(normalisedPath),
-    highlights: buildHighlights({ emails, urls, ethAddresses, btcAddresses, tokenCount, seedHints, ids }),
+    highlights: buildHighlights({ emails, urls, ethAddresses, btcAddresses, tokenCount, seedHints: effectiveSeedHints, ids }),
     emailCount: emails.length,
     addressCount: ethAddresses.length + btcAddresses.length,
     tokenCount,
-    seedHints,
+    seedHints: effectiveSeedHints,
     source: sourcePath,
   };
 }
