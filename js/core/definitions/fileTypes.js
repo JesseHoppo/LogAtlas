@@ -7,35 +7,41 @@ export const FILE_TYPE_PATTERNS = {
       /^pass(?:words?)?[_-]?(?:list|dump|log)?\.(txt|tsv|csv)$/i,
       /^passwords?[_\s](?:google\s?chrome|microsoft\s?edge|firefox|opera|brave|vivaldi|chromium)[^/]*\.(txt|tsv|csv)$/i,
       /^logins?\.(txt|tsv|csv)$/i,
+      /^logins?[_\s][^/]+\.(txt|tsv|csv)$/i,
+      /^passwords?[_\s][^/]+\.(txt|tsv|csv)$/i,
       /^credentials?\.(txt|tsv|csv)$/i,
       /^browser[_\s]?passwords?\.(txt|tsv|csv)$/i,
+      /^ftps?\.(txt|tsv|csv)$/i,
+      /^filezilla\.(txt|tsv|csv)$/i,
+      /^brute\.txt$/i,
     ],
     // Aggregate summary files. Only promoted when no per-profile file exists,
     // otherwise they'd double-count. See reconcileAggregatePasswordFiles.
     aggregatePatterns: [
       /^(?:all|unique|icloud)[\s_-]*passwords?(?:\([^)]+\))?\.(txt|tsv|csv)$/i,
+      /^passwords?[\s_-]*(?:unique|all)\.(txt|tsv|csv)$/i,
     ],
     exclusions: [
       /bruteforce/i,
       /wordlist/i,
-      /^brute\.txt$/i,
     ],
-    parentDirMatch: /^(?:passwords?|logins)$/i,
+    parentDirMatch: /^(?:passwords?|logins|ftps?)$/i,
   },
 
   cookie: {
     patterns: [
       /^cookies?\.(txt|tsv|csv|json)$/i,
       /^cookies?[\s_-]*dev\.(txt|tsv|csv)$/i,
-      /^(?:chrome|firefox|edge)[\s_-]*cookie[\s_-]*restore[\s_-]*data[\s_-]*\d*\.txt$/i,
       /^Cookies[\s_-]*(?:JSON|Netscape)\.txt$/i,
+      /^cookies?[\s_][^/]+\.(txt|tsv|csv|json)$/i,
+      /^[^/]+[\s_]cookies?\.(txt|tsv|csv|json)$/i,
     ],
     browserProfiles: [
       /^(?:chrome|firefox|edge|opera|brave|vivaldi|chromium)[_\s]?\d+\.txt$/i,
       /^(?:google\s?chrome|microsoft\s?edge)[_\s]?(?:default|profile)?\s*\d*\.txt$/i,
     ],
     textExtensions: TEXT_EXTENSIONS,
-    exclusions: [/^cookie[\s_-]*list\.txt$/i],
+    exclusions: [/^cookie[\s_-]*list\.txt$/i, /cookie[\s_-]*restore[\s_-]*data/i],
     excludeFolders: /^(?:auto[\s_-]*fills?|histor(?:y|ies)|downloads?|bookmarks?|passwords?|logins?|credit[\s_-]*cards?)$/i,
     parentDirMatch: /^cookies?$/i,
   },
@@ -76,7 +82,7 @@ export const FILE_TYPE_PATTERNS = {
       /^history\.(txt|tsv|csv|json)$/i,
       /^browsing[\s_-]*history\.(txt|tsv|csv)$/i,
     ],
-    folderPattern: /^history$/i,
+    folderPattern: /^(?:browser[\s_-]*)?histor(?:y|ies)$/i,
   },
 
   bookmark: {
@@ -113,8 +119,9 @@ export const FILE_TYPE_PATTERNS = {
       /^(?:credit[\s_-]*)?cards?\.(txt|tsv|csv)$/i,
       /^cc[\s_-]?data\.(txt|tsv|csv)$/i,
       /^CreditCards?\.(txt|tsv|csv)$/i,
+      /^[^/]*_cards?\.(txt|tsv|csv)$/i,
     ],
-    folderPattern: /^(?:credit[\s_-]*)?cards?|credits?|cc$/i,
+    folderPattern: /^(?:(?:(?:credit|bank)[\s_-]*)?cards?|credits?|cc)$/i,
   },
 
   cryptoWallet: {
@@ -130,10 +137,13 @@ export const FILE_TYPE_PATTERNS = {
       /^token\.json$/i,
       /^seed\.txt$/i,
       /^data\.json$/i,
+    ],
+    pathScopedFilePatterns: [
       /^(?:current|lock|log(?:\.old)?|manifest-\d+|\d+\.(?:log|ldb)|.+\.(?:db|sqlite|sqlite3))$/i,
     ],
     pathPatterns: [
       /(^|\/)wallets?\//i,
+      /(^|\/)local extension settings\//i,
       /(^|\/)(?:applications|plugins?)\/(?:bitwarden|metamask|phantom|trust wallet|exodus|atomic|keplr|tronlink|ronin|rabby)\//i,
       /(^|\/)(?:bitwarden|metamask|phantom|trust wallet|exodus|atomic|keplr|tronlink|ronin|rabby)\//i,
       /(^|\/)(?:nngceckbapebfimnlniiiahkandclblb|nkbihfbeogaeaoehlefnkodbefgpgknn|bfnaelmomeimhlpmgjnjophhpkkoljpa|acmacodkjbdgmoleebolmdjonilkdbch|dmkamcknogkgcdfhhbddcghachkejeap|ibnejdfjmmkpcnlpebklmnkoeoihofec|fnjhmkhhmkbjkkabndcnnogagogbneec)\//i,
@@ -155,18 +165,28 @@ export const FILE_TYPE_PATTERNS = {
     ],
     folderPatterns: [
       /^googleaccounts$/i,
-      /^fbfastcheck$/i,
       /^discord$/i,
       /^steam$/i,
     ],
     pathPatterns: [
       /(^|\/)(?:browser\/)?googleaccounts\//i,
       /(^|\/)accounttokens?\//i,
+      /cookie[\s_-]*restore[\s_-]*data[\s_-]*\d*\.txt$/i,
       /(^|\/)restore\/.*token\.txt$/i,
       /(^|\/)browsers?\/token_[^/]+\.txt$/i,
       /(^|\/)fbfastcheck\/(?:token_eaab|ids?)\.txt$/i,
       /(^|\/)(?:applications|games|messengers?|soft)\/discord\/.*(?:discordtokens?|tokens?|discord)\.txt$/i,
       /(^|\/)(?:applications|games|messengers?|soft)\/steam\/.*tokens?\.txt$/i,
+    ],
+  },
+
+  ftpCredential: {
+    filePatterns: [
+      /^sitemanager\.xml$/i,
+      /^recentservers\.xml$/i,
+    ],
+    pathPatterns: [
+      /(^|\/)filezilla\/[^/]*\.xml$/i,
     ],
   },
 
@@ -184,7 +204,6 @@ export const FILE_TYPE_PATTERNS = {
       /(^|\/)(?:mails?|soft|email clients?)\/outlook/i,
       /(^|\/)outlook - windows app \(new\)\//i,
       /(^|\/)messenger\/discord\/.*leveldb\/.*\.(?:log|ldb)$/i,
-      /(^|\/)(?:ftps?|ftp)\/filezilla\/credentials\.txt$/i,
       /(^|\/)mails?\/thunderbird\.txt$/i,
     ],
   },
@@ -211,7 +230,6 @@ export const FILE_TYPE_PATTERNS = {
     filePatterns: [
       /^notes?[\s_-]*\d*\.txt$/i,
       /^stickynotes(?:_sqlite)?\.txt$/i,
-      /^note\.txt$/i,
     ],
     folderPatterns: [
       /^notes?$/i,
@@ -231,6 +249,13 @@ export const FILE_TYPE_PATTERNS = {
     pathPatterns: [
       /(^|\/)filegrabber\//i,
       /(^|\/)important files\//i,
+      /(^|\/)files\/(?:desktop|downloads?|documents?)\//i,
+    ],
+  },
+
+  keylog: {
+    pathPatterns: [
+      /(^|\/)extension\/[a-f0-9-]+\/\d+\.txt$/i,
     ],
   },
 

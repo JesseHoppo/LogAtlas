@@ -19,7 +19,6 @@ function isLikelyPasswordFilename(name, parentDir, fullPath = '') {
   if (FILE_TYPE_PATTERNS.password.exclusions.some(rx => rx.test(trimmedName))) return false;
   if (isLikelyAggregatePasswordFile(trimmedName)) return false;
   if (/(^|\/)(?:mails?|email clients?)\/outlook\/credentials\.txt$/i.test(normalisedPath)) return false;
-  if (/(^|\/)(?:ftps?|ftp)\/filezilla\/credentials\.txt$/i.test(normalisedPath)) return false;
   if (parentDir && FILE_TYPE_PATTERNS.password.parentDirMatch.test(parentDir)) return true;
   return FILE_TYPE_PATTERNS.password.patterns.some(rx => rx.test(trimmedName));
 }
@@ -111,9 +110,14 @@ function isLikelyCryptoWalletFile(name, parentDir, fullPath) {
   const cw = FILE_TYPE_PATTERNS.cryptoWallet;
   const normalisedPath = normalisePath(fullPath);
   if (cw.filePatterns.some(rx => rx.test(name))) return true;
-  if (parentDir && cw.folderPatterns.some(rx => rx.test(parentDir))) return true;
-  if (cw.pathPatterns && cw.pathPatterns.some(rx => rx.test(normalisedPath))) return true;
-  return false;
+  const inWalletScope = (parentDir && cw.folderPatterns.some(rx => rx.test(parentDir)))
+    || (cw.pathPatterns && cw.pathPatterns.some(rx => rx.test(normalisedPath)));
+  if (inWalletScope) {
+    return true;
+  }
+  return cw.pathScopedFilePatterns
+    && cw.pathScopedFilePatterns.some(rx => rx.test(name))
+    && /(^|\/)(?:wallets?|crypto)\//i.test(normalisedPath);
 }
 
 function isLikelyAccountTokenFile(name, parentDir, fullPath) {
@@ -141,6 +145,13 @@ function isLikelyServiceArtifactFile(name, parentDir, fullPath) {
   return sa.filePatterns.some(rx => rx.test(name)) && /(telegram|outlook|anydesk|discord)/i.test(normalisedPath);
 }
 
+function isLikelyFtpCredentialFile(name, parentDir, fullPath) {
+  const ftp = FILE_TYPE_PATTERNS.ftpCredential;
+  const normalisedPath = normalisePath(fullPath);
+  if (ftp.filePatterns.some(rx => rx.test(name))) return true;
+  return ftp.pathPatterns.some(rx => rx.test(normalisedPath));
+}
+
 function isLikelyMessengerFile(name, parentDir, fullPath) {
   const m = FILE_TYPE_PATTERNS.messenger;
   if (isLikelyAccountTokenFile(name, parentDir, fullPath) || isLikelyServiceArtifactFile(name, parentDir, fullPath)) {
@@ -161,6 +172,11 @@ function isLikelyNoteFile(name, parentDir, fullPath) {
   return notes.pathPatterns.some(rx => rx.test(normalisedPath)) && TEXT_EXTENSIONS.test(name);
 }
 
+function isLikelyKeylogFile(name, parentDir, fullPath) {
+  const normalisedPath = normalisePath(fullPath);
+  return FILE_TYPE_PATTERNS.keylog.pathPatterns.some(rx => rx.test(normalisedPath));
+}
+
 function isLikelyGrabbedFile(name, parentDir, fullPath) {
   const grabbed = FILE_TYPE_PATTERNS.grabbedFiles;
   const normalisedPath = normalisePath(fullPath);
@@ -168,7 +184,8 @@ function isLikelyGrabbedFile(name, parentDir, fullPath) {
   return grabbed.pathPatterns.some(rx => rx.test(normalisedPath));
 }
 
-function applyDetectionHints(node, name, parentDir, fullPath = '') {
+function applyDetectionHints(node, rawName, parentDir, fullPath = '') {
+  const name = String(rawName).replace(/\s*\[Part \d+ of \d+\]\s*$/i, '');
   let detected = false;
   if (isLikelyPasswordFilename(name, parentDir, fullPath)) { node._passwordFileHint = true; detected = true; }
   else if (isLikelyAggregatePasswordFile(name)) { node._passwordFileAggregateHint = true; detected = true; }
@@ -184,6 +201,7 @@ function applyDetectionHints(node, name, parentDir, fullPath = '') {
   if (isLikelyCryptoWalletFile(name, parentDir, fullPath))   { node._cryptoWalletHint = true; detected = true; }
   if (isLikelyAccountTokenFile(name, parentDir, fullPath)) { node._accountTokenHint = true; detected = true; }
   if (isLikelyServiceArtifactFile(name, parentDir, fullPath)) { node._serviceArtifactHint = true; detected = true; }
+  if (isLikelyFtpCredentialFile(name, parentDir, fullPath)) { node._ftpCredentialHint = true; detected = true; }
   if (isLikelyMessengerFile(name, parentDir, fullPath))      { node._messengerHint = true;    detected = true; }
   if (isLikelyCreditsFile(name))                   { node._creditsFileHint = true;  detected = true; }
   if (isLikelySoftwareFile(name))                  { node._softwareFileHint = true; detected = true; }
@@ -193,26 +211,25 @@ function applyDetectionHints(node, name, parentDir, fullPath = '') {
   if (isLikelyClipboardFile(name))                 { node._clipboardHint = true;    detected = true; }
   if (isLikelyNoteFile(name, parentDir, fullPath)) { node._notesHint = true;       detected = true; }
   if (isLikelyGrabbedFile(name, parentDir, fullPath)) { node._grabbedFileHint = true; detected = true; }
+  if (isLikelyKeylogFile(name, parentDir, fullPath)) { node._keylogHint = true; detected = true; }
   return detected;
 }
 
-// Fold the aggregate-password hint into the real one after the file walk: if
-// any per-profile password file exists, drop aggregates (they'd double-count);
-// otherwise promote them so credentials still get extracted.
+// Promote every aggregate-password file to a real password file. Aggregates may
+// be supersets of the per-profile files, so suppressing them risks dropping
+// rows; exact (url,user,pass) duplicates are removed at the credential layer.
 function reconcileAggregatePasswordFiles(tree) {
   if (!tree) return;
-  let hasIndividual = false;
   const aggregates = [];
   walk(tree);
 
   for (const node of aggregates) {
-    if (!hasIndividual) node._passwordFileHint = true;
+    node._passwordFileHint = true;
     delete node._passwordFileAggregateHint;
   }
 
   function walk(node) {
     if (!node) return;
-    if (node._passwordFileHint) hasIndividual = true;
     if (node._passwordFileAggregateHint) aggregates.push(node);
     if (node.children) {
       for (const child of Object.values(node.children)) walk(child);

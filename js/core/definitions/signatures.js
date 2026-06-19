@@ -209,6 +209,9 @@ export const SIGNATURES = {
         label: 'Structure: Extension/{UUID}/token.json',
       },
     ],
+    require: ({ matchedCounts }) =>
+      matchedCounts.selfId > 0 || matchedCounts.sysinfoContent > 0 ||
+      matchedCounts.folder > 0 || matchedCounts.structure > 0,
   },
 
   Lumma: {
@@ -312,7 +315,6 @@ export const SIGNATURES = {
     selfId: [
       { pattern: /stealc\s+stealer/i, label: 'Self-ID: Stealc stealer' },
       { pattern: /STEALC/i, label: 'Self-ID: STEALC branding' },
-      { pattern: /ottoman/i, label: 'Self-ID: OTTOMAN variant' },
     ],
     sysinfoFile: { pattern: /^(?:Info|system_info)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -391,10 +393,41 @@ export const SIGNATURES = {
     ],
   },
 
+  Ottoman: {
+    selfId: [
+      { pattern: /\(\s*O\s*\|\s*T\s*\|\s*T\s*\|\s*O\s*\|\s*M\s*\|\s*A\s*\|\s*N\s*\)/i, label: 'Self-ID: OTTOMAN banner' },
+      { pattern: /ottoman\s*cl[oó]ud/i, label: 'Self-ID: OTTOMAN CLOUD' },
+      { pattern: /@salesupports/i, label: 'Self-ID: @salesupports resale handle' },
+      { pattern: /\bottoman\b/i, label: 'Self-ID: OTTOMAN brand', scope: 'sysinfo' },
+    ],
+    sysinfoFile: { pattern: /^(?:information|UserInformation|system_info|SystemInformation|Info|System)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Version$/i, label: 'Sysinfo key: Version' },
+      { pattern: /^Work Dir$/i, label: 'Sysinfo key: Work Dir' },
+      { pattern: /^HWID$/i, label: 'Sysinfo key: HWID' },
+      { pattern: /^Build ID$/i, label: 'Sysinfo key: Build ID' },
+    ],
+    sysinfoContent: [
+      { pattern: /@salesupports/i, label: 'Sysinfo content: @salesupports' },
+      { pattern: /Buy daily fresh logs/i, label: 'Sysinfo content: resale tagline' },
+    ],
+    folders: [
+      { pattern: /^Autofill$/i, label: 'Folder: Autofill/' },
+      { pattern: /^Cookies$/i, label: 'Folder: Cookies/' },
+      { pattern: /^History$/i, label: 'Folder: History/' },
+      { pattern: /^GoogleAccounts$/i, label: 'Folder: GoogleAccounts/' },
+    ],
+    files: [
+      { pattern: /^unique_passwords\.txt$/i, label: 'File: unique_passwords.txt' },
+      { pattern: /^domain detect\.txt$/i, label: 'File: domain detect.txt' },
+      { pattern: /^All Passwords\.txt$/i, label: 'File: All Passwords.txt' },
+    ],
+    structures: [],
+  },
+
   Raccoon: {
     selfId: [
       { pattern: /raccoon\s+stealer/i, label: 'Self-ID: Raccoon stealer' },
-      { pattern: /\(\s*O\s*\|\s*T\s*\|\s*T\s*\|\s*O\s*\|\s*M\s*\|\s*A\s*\|\s*N\s*\)/i, label: 'Self-ID: OTTOMAN banner' },
     ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -502,9 +535,10 @@ export const SIGNATURES = {
   },
 
   Atomic: {
+    osClass: 'macos',
     selfId: [
       { pattern: /atomic\s*stealer/i, label: 'Self-ID: Atomic Stealer' },
-      { pattern: /\bamos\b/i, label: 'Self-ID: AMOS (Atomic macOS Stealer)' },
+      { pattern: /\bamos\b/i, label: 'Self-ID: AMOS (Atomic macOS Stealer)', scope: 'sysinfo' },
     ],
     sysinfoFile: { pattern: /^Sysinfo\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -540,9 +574,11 @@ export const SIGNATURES = {
         label: 'Structure: Keychain/ or FileGrabber/ (macOS stealer)',
       },
     ],
+    require: ({ matchedCounts }) =>
+      matchedCounts.selfId > 0 || matchedCounts.sysinfoContent > 0 || matchedCounts.sysinfoKey > 0,
     exclusions: [
       {
-        test: ({ ctx }) => /\bWindows\b/i.test(ctx.sysinfoText || ''),
+        test: ({ ctx }) => /\bWindows\b/i.test(ctx.sysinfoText || ctx.combinedSysinfoText || ''),
       },
     ],
   },
@@ -700,6 +736,7 @@ export const SIGNATURES = {
   },
 
   Banshee: {
+    osClass: 'macos',
     selfId: [
       { pattern: /banshee\s+stealer/i, label: 'Self-ID: Banshee stealer' },
     ],
@@ -916,6 +953,46 @@ export const SIGNATURES = {
     files: [],
     structures: [],
     require: ({ matchedCounts }) => matchedCounts.selfId > 0 || matchedCounts.sysinfoContent > 0,
+  },
+
+  PXA: {
+    sysinfoFile: { pattern: /^UserInformation\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
+    sysinfoKeys: [
+      { pattern: /^Build ID$/i, label: 'Sysinfo key: Build ID' },
+      { pattern: /^Build Comment$/i, label: 'Sysinfo key: Build Comment' },
+      { pattern: /^Build Version$/i, label: 'Sysinfo key: Build Version' },
+      { pattern: /^Active window$/i, label: 'Sysinfo key: Active window' },
+      { pattern: /^User time$/i, label: 'Sysinfo key: User time' },
+      { pattern: /^GEO$/i, label: 'Sysinfo key: GEO' },
+    ],
+    sysinfoContent: [
+      { pattern: /^Build Comment:/mi, label: 'Sysinfo content: Build Comment line' },
+      { pattern: /^Active window:/mi, label: 'Sysinfo content: Active window line' },
+      { pattern: /^GEO:\s*\S/mi, label: 'Sysinfo content: GEO line' },
+    ],
+    folders: [
+      { pattern: /^\[Simple Checker\]$/i, label: 'Folder: [Simple Checker]/' },
+      { pattern: /^Clients$/i, label: 'Folder: Clients/' },
+      { pattern: /^Browsers$/i, label: 'Folder: Browsers/' },
+    ],
+    files: [
+      { pattern: /^Browsers\/Logins_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Browsers/Logins_{Browser}_{Profile}.txt' },
+      { pattern: /^Browsers\/Token_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Browsers/Token_{Browser}_{Profile}.txt' },
+      { pattern: /^Clients\/DiscordTokens\.txt$/i, label: 'File: Clients/DiscordTokens.txt' },
+    ],
+    structures: [
+      {
+        test: (dirs, files) => {
+          const hasToken = files.some(f => /^Browsers\/Token_[^/]+_[^/]+\.txt$/i.test(f));
+          const hasChecker = dirs.some(d => /^\[Simple Checker\]/i.test(d)) ||
+            files.some(f => /^\[Simple Checker\]\//i.test(f));
+          return hasToken && hasChecker;
+        },
+        label: 'Structure: Browsers/Token_* with [Simple Checker]/',
+      },
+    ],
+    require: ({ matchedCounts }) =>
+      matchedCounts.sysinfoKey >= 2 || matchedCounts.structure > 0 || matchedCounts.folder >= 2,
   },
 
   BlankGrabber: {
