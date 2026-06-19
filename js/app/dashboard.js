@@ -2,7 +2,7 @@
 
 import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
-import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp, extractCountryFromFilename, isValidCountryCode } from '../core/shared.js';
+import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp, extractCountryFromFilename, isValidCountryCode, classifyIpAddress } from '../core/shared.js';
 import { CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
 import { escapeHtml, escapeAttr } from '../core/utils.js';
 import { formatDateTimeLabel } from '../pages/shared.js';
@@ -10,6 +10,16 @@ let sysInfoSourcePath = null;
 let overviewScreenshotUrl = null;
 let sysinfoIocs = [];
 let clipboardIocs = [];
+let clipboardLures = [];
+
+const LURE_LABELS = {
+  clickfix: 'ClickFix',
+  powershell: 'PowerShell',
+  mshta: 'mshta',
+  certutil: 'certutil',
+  'base64-blob': 'Base64 blob',
+  'crypto-swap': 'Clipper / address swap',
+};
 
 const overviewState = {
   credentials: null,
@@ -235,9 +245,13 @@ function renderDashboardIocs() {
   function renderItems(items) {
     return items.map((ioc) => {
       const family = ioc.family ? `<span class="dash-ioc-family">${escapeHtml(ioc.family)}</span>` : '';
+      const ipClass = classifyIpAddress(ioc.value);
+      const badge = ipClass?.synthetic
+        ? `<span class="dash-ioc-badge" title="${escapeAttr(ipClass.label)}">synthetic / non-victim IP</span>`
+        : '';
       return `<div class="dash-ioc-item">
         <span class="dash-ioc-label">${escapeHtml(ioc.label)}</span>${family}
-        <span class="dash-ioc-value">${escapeHtml(ioc.value)}</span>
+        <span class="dash-ioc-value">${escapeHtml(ioc.value)}</span>${badge}
         <button class="dash-ioc-copy" title="Copy" data-copy="${escapeAttr(ioc.value)}">Copy</button>
       </div>`;
     }).join('');
@@ -259,6 +273,29 @@ function renderDashboardIocs() {
     infraSection.classList.remove('hidden');
     infraBody.innerHTML = renderItems(infra);
   }
+}
+
+function renderClipboardLures() {
+  const section = document.getElementById('dashClipboardLures');
+  const body = document.getElementById('dashClipboardLuresBody');
+  if (!section || !body) return;
+
+  if (clipboardLures.length === 0) {
+    section.classList.add('hidden');
+    body.innerHTML = '';
+    return;
+  }
+
+  section.classList.remove('hidden');
+  body.innerHTML = clipboardLures.map((lure) => {
+    const label = LURE_LABELS[lure.category] || lure.category;
+    const preview = lure.text.length > 280 ? lure.text.slice(0, 280) + '…' : lure.text;
+    return `<div class="dash-ioc-item">
+      <span class="dash-ioc-family dash-ioc-family-warn">${escapeHtml(label)}</span>
+      <span class="dash-ioc-value">${escapeHtml(preview)}</span>
+      <button class="dash-ioc-copy" title="Copy" data-copy="${escapeAttr(lure.text)}">Copy</button>
+    </div>`;
+  }).join('');
 }
 
 function renderTriageOverview() {
@@ -359,8 +396,27 @@ function renderTriageOverview() {
         : `${pluralise(credentials.uniqueCredentials, 'unique credential')} recovered across the parsed credential files.`
     );
   }
+  if (credentials?.onionCredentials > 0) {
+    riskItems.push({
+      text: `Tor hidden-service (.onion) credentials present — strong indicator of darknet-market or carding activity (${pluralise(credentials.onionCredentials, 'domain')}).`,
+      variant: 'warn',
+    });
+  }
   if (credentials?.failedFiles?.length > 0) {
     riskItems.push(`${pluralise(credentials.failedFiles.length, 'password file')} could not be parsed cleanly and may require manual review.`);
+  }
+  if (clipboardLures.length > 0) {
+    riskItems.push({
+      text: 'Clipboard contains likely social-engineering lure or clipper activity (ClickFix / PowerShell / address-swap).',
+      variant: 'warn',
+    });
+  }
+  if (credentials?.nationalIds?.length > 0) {
+    const total = credentials.nationalIds.reduce((sum, n) => sum + n.count, 0);
+    riskItems.push({
+      text: `Possible government identifiers detected (CPF/Aadhaar/DNI/SSN) in ${pluralise(total, 'field')}.`,
+      variant: 'warn',
+    });
   }
   if (readErrors?.failedFiles?.length > 0) {
     riskItems.push(`${pluralise(readErrors.failedFiles.length, 'file')} could not be read or decoded and were skipped during analysis.`);
@@ -440,6 +496,97 @@ function renderTriageOverview() {
     riskBody.innerHTML = '';
   }
 
+  renderSeedBanner(wallets);
+  renderNationalIds(credentials);
+  renderConsistencyChecks({ credentials, cookies, history, countryInfo });
+}
+
+function renderSeedBanner(wallets) {
+  const banner = document.getElementById('dashSeedBanner');
+  if (!banner) return;
+  if (wallets?.withSeedHints > 0) {
+    banner.classList.remove('hidden');
+    banner.textContent = `${pluralise(wallets.withSeedHints, 'wallet store')} contain seed / recovery-phrase material — treat as full account compromise.`;
+  } else {
+    banner.classList.add('hidden');
+    banner.textContent = '';
+  }
+}
+
+function renderNationalIds(credentials) {
+  const section = document.getElementById('dashNationalIds');
+  const body = document.getElementById('dashNationalIdsBody');
+  if (!section || !body) return;
+  const ids = credentials?.nationalIds || [];
+  if (ids.length === 0) {
+    section.classList.add('hidden');
+    body.innerHTML = '';
+    return;
+  }
+  section.classList.remove('hidden');
+  renderSimpleList(body, ids.map((n) => {
+    const where = n.country ? ` (${n.country})` : '';
+    return `${n.type}${where}: ${pluralise(n.count, 'field')}`;
+  }));
+}
+
+const CCTLD_COUNTRY = {
+  au: 'AU', nz: 'NZ', uk: 'GB', 'co.uk': 'GB', de: 'DE', fr: 'FR', es: 'ES', it: 'IT',
+  nl: 'NL', se: 'SE', no: 'NO', fi: 'FI', dk: 'DK', pl: 'PL', pt: 'PT', ie: 'IE',
+  br: 'BR', mx: 'MX', ar: 'AR', cl: 'CL', co: 'CO', ru: 'RU', ua: 'UA', tr: 'TR',
+  in: 'IN', cn: 'CN', jp: 'JP', kr: 'KR', id: 'ID', th: 'TH', vn: 'VN', ph: 'PH',
+  za: 'ZA', ng: 'NG', eg: 'EG', sa: 'SA', ae: 'AE', il: 'IL', ca: 'CA', us: 'US',
+};
+
+const CORPORATE_DOMAIN_RX = /(?:login\.microsoftonline\.com|accounts\.google\.com|sharepoint\.com|atlassian\.net|onelogin\.com|okta\.com)$/i;
+
+function dominantCcTld(domains) {
+  const counts = {};
+  for (const d of domains) {
+    const m = String(d || '').toLowerCase().match(/\.(co\.uk|[a-z]{2})$/);
+    if (!m) continue;
+    const tld = m[1];
+    if (!CCTLD_COUNTRY[tld]) continue;
+    counts[tld] = (counts[tld] || 0) + 1;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return sorted.length ? sorted[0][0] : null;
+}
+
+function renderConsistencyChecks({ credentials, cookies, history, countryInfo }) {
+  const section = document.getElementById('dashConsistency');
+  const body = document.getElementById('dashConsistencyBody');
+  if (!section || !body) return;
+
+  const checks = [];
+  const credDomains = (credentials?.topDomains || []).map(d => d.value);
+  const histDomains = (history?.topDomains || []).map(d => d.value);
+
+  if (cookies?.totalCookies > 0 && (!credentials || credentials.uniqueCredentials === 0)) {
+    checks.push({ text: 'Session cookies recovered but no credentials parsed — credential files may be encrypted, missing, or unparsed.', variant: 'warn' });
+  }
+
+  const corpInHistory = histDomains.find(d => CORPORATE_DOMAIN_RX.test(d));
+  if (corpInHistory && !credDomains.some(d => CORPORATE_DOMAIN_RX.test(d))) {
+    checks.push({ text: `Corporate SSO domain ${corpInHistory} appears in browsing history but not in recovered credentials.`, variant: 'warn' });
+  }
+
+  const tld = dominantCcTld([...credDomains, ...histDomains]);
+  const victimCode = String(countryInfo?.value || '').trim().toUpperCase();
+  if (tld && victimCode.length === 2) {
+    const tldCountry = CCTLD_COUNTRY[tld];
+    if (tldCountry && tldCountry !== victimCode) {
+      checks.push({ text: `Browsing/credential domains are predominantly .${tld} (${tldCountry}) but victim location resolves to ${victimCode} — verify geolocation.`, variant: 'warn' });
+    }
+  }
+
+  if (checks.length > 0) {
+    section.classList.remove('hidden');
+    renderSimpleList(body, checks);
+  } else {
+    section.classList.add('hidden');
+    body.innerHTML = '';
+  }
 }
 
 function updateDashboardVisibility() {
@@ -467,12 +614,10 @@ function updateDashboardVisibility() {
 
   const dashCred = document.getElementById('dashCredIntel');
   const dashCookie = document.getElementById('dashCookieIntel');
-  const dashAutofill = document.getElementById('dashAutofillIntel');
   const noData = document.getElementById('overviewNoData');
 
   dashCred.classList.toggle('hidden', credFiles.length === 0);
   dashCookie.classList.toggle('hidden', cookieFiles.length === 0);
-  dashAutofill.classList.toggle('hidden', autofillFiles.length === 0);
 
   const hasAnyData = credFiles.length > 0 || cookieFiles.length > 0 ||
     autofillFiles.length > 0 || notesFiles.length > 0 || historyFiles.length > 0 || bookmarkFiles.length > 0 ||
@@ -548,6 +693,7 @@ export function resetOverviewState() {
   sysInfoSourcePath = null;
   sysinfoIocs = [];
   clipboardIocs = [];
+  clipboardLures = [];
 
   if (overviewScreenshotUrl) {
     URL.revokeObjectURL(overviewScreenshotUrl);
@@ -578,6 +724,7 @@ export function initDashboard() {
   }
   bindCopy(document.getElementById('dashIOCBody'));
   bindCopy(document.getElementById('dashStealerInfraBody'));
+  bindCopy(document.getElementById('dashClipboardLuresBody'));
 
   on('loading', () => {
     loadingText.textContent = state.loadingText;
@@ -600,10 +747,19 @@ export function initDashboard() {
       summaryEl.textContent = summary;
       renderBarList(document.getElementById('dashTopDomains'), data.topDomains);
       renderBarList(document.getElementById('dashTopUsernames'), data.topUsernames);
+      const localCol = document.getElementById('dashLocalNetworkCol');
+      if (data.localNetwork?.length) {
+        localCol.classList.remove('hidden');
+        renderBarList(document.getElementById('dashLocalNetwork'), data.localNetwork);
+      } else {
+        localCol.classList.add('hidden');
+        document.getElementById('dashLocalNetwork').innerHTML = '';
+      }
     } else {
       summaryEl.textContent = skipped > 0
         ? `No structured credential data could be parsed; ${skipped.toLocaleString()} file(s) were skipped.`
         : 'No structured credential data could be parsed.';
+      document.getElementById('dashLocalNetworkCol').classList.add('hidden');
     }
   });
 
@@ -689,7 +845,12 @@ export function initDashboard() {
 
   on('analysis:clipboard', (data) => {
     clipboardIocs = [];
+    clipboardLures = [];
     for (const entry of data?.entries || []) {
+      if (entry.lure) {
+        clipboardLures.push({ category: entry.lure, text: entry.text });
+        continue;
+      }
       if (entry.urls.length > 0) {
         for (const url of entry.urls) {
           clipboardIocs.push({ label: 'Clipboard URL', value: url });
@@ -698,6 +859,7 @@ export function initDashboard() {
         clipboardIocs.push({ label: 'Clipboard', value: entry.text });
       }
     }
+    renderClipboardLures();
     renderDashboardIocs();
   });
 
@@ -874,9 +1036,16 @@ export function initDashboard() {
     }
 
     section.classList.remove('hidden');
-    let html = '';
+    let html = data.synthesized
+      ? '<div class="dash-section-subtitle">Synthesised from credential and cookie hosts (no domain-detect file present).</div>'
+      : '';
     for (const [label, entries] of Object.entries(data.categories)) {
-      const domains = entries.map(e => `${escapeHtml(e.domain)} (${e.count})`).join(', ');
+      const domains = entries.map((e) => {
+        const tag = e.label && e.label.toLowerCase() !== String(label).toLowerCase()
+          ? ` <span class="dash-domain-tag">${escapeHtml(e.label)}</span>`
+          : '';
+        return `${escapeHtml(e.domain)} (${e.count})${tag}`;
+      }).join(', ');
       html += `<div class="dash-kv-row">
       <span class="dash-kv-key">${escapeHtml(label)}</span>
       <span class="dash-kv-value">${domains}</span>

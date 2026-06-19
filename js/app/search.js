@@ -10,12 +10,14 @@ export function initSearch(navigateToPage) {
   const globalSearchBtn = document.getElementById('globalSearchBtn');
   const searchResults = document.getElementById('searchResults');
   const searchStatus = document.getElementById('searchStatus');
+  const searchHints = document.getElementById('searchHints');
   let searchRunId = 0;
 
   function resetSearchUi() {
     searchResults.innerHTML = '';
     searchStatus.textContent = '';
     searchStatus.className = 'search-page-status';
+    searchHints?.classList.remove('hidden');
   }
 
   function hasStructuredSearchHint(node) {
@@ -63,6 +65,7 @@ export function initSearch(navigateToPage) {
 
     const lowerQuery = query.toLowerCase();
     resetSearchUi();
+    searchHints?.classList.add('hidden');
     searchStatus.textContent = 'Searching...';
     searchStatus.className = 'search-page-status dash-loading';
 

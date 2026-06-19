@@ -3,21 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob: https:; frame-src 'self' blob:;">
+  <!-- connect-src limited to self+blob: keeps the local-only guarantee; ?file= autoload only works same-origin under this policy -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:; frame-src 'self' blob:;">
   <title>Log Atlas</title>
   <link rel="stylesheet" href="css/styles.css">
-  <script>
-    // Pre-paint theme application; avoids a light-mode flash for dark users.
-    (function () {
-      try {
-        var stored = localStorage.getItem('logAtlasTheme');
-        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (stored === 'dark' || (stored == null && prefersDark)) {
-          document.documentElement.setAttribute('data-theme', 'dark');
-        }
-      } catch (_) { /* storage unavailable; default to light */ }
-    })();
-  </script>
+  <script src="js/app/theme-bootstrap.js"></script>
   <script src="lib/zip.min.js"></script>
 </head>
 <body>
@@ -73,9 +63,10 @@
       </div>
     </aside>
     <main class="main-content">
-      <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Drop a file here or click to browse">
+      <h1 class="sr-only">Log Atlas</h1>
+      <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Drop a file here or click to browse" aria-describedby="dropZoneHint">
         <h2>Drop file here or click to browse</h2>
-        <p>Archives and individual files supported</p>
+        <p id="dropZoneHint">Archives and individual files supported</p>
         <button class="paste-text-trigger" id="pasteTextBtn">or paste text</button>
         <input type="file" id="fileInput" multiple aria-hidden="true">
       </div>
@@ -108,6 +99,7 @@
       <div class="results" id="results">
         <div class="page active" id="pageOverview">
           <h2 class="page-title">Overview</h2>
+          <div class="dash-banner dash-banner-critical hidden" id="dashSeedBanner" role="alert"></div>
           <div class="dash-section dash-fingerprint hidden" id="dashFingerprint">
             <div class="dash-section-title">Stealer Identification</div>
             <div class="dash-fingerprint-body" id="dashFingerprintBody"></div>
@@ -122,6 +114,10 @@
             <div class="dash-section-title">Insights</div>
             <div class="dash-list" id="dashRiskSignalsBody"></div>
           </div>
+          <div class="dash-section hidden" id="dashConsistency">
+            <div class="dash-section-title">Consistency Checks</div>
+            <div class="dash-list" id="dashConsistencyBody"></div>
+          </div>
           <div class="dash-section hidden" id="dashScreenshot">
             <div class="dash-section-title">Screenshot</div>
             <div class="dash-screenshot-body" id="dashScreenshotBody"></div>
@@ -130,9 +126,17 @@
             <div class="dash-section-title">Stealer Infrastructure</div>
             <div class="dash-ioc-grid" id="dashStealerInfraBody"></div>
           </div>
+          <div class="dash-section hidden" id="dashClipboardLures">
+            <div class="dash-section-title">Clipboard Lures</div>
+            <div class="dash-ioc-grid" id="dashClipboardLuresBody"></div>
+          </div>
           <div class="dash-section hidden" id="dashIOCs">
             <div class="dash-section-title">Identifiers</div>
             <div class="dash-ioc-grid" id="dashIOCBody"></div>
+          </div>
+          <div class="dash-section hidden" id="dashNationalIds">
+            <div class="dash-section-title">Government Identifiers</div>
+            <div class="dash-list" id="dashNationalIdsBody"></div>
           </div>
           <div class="dash-section hidden" id="dashCredIntel">
             <div class="dash-section-title">Credential Intelligence</div>
@@ -145,6 +149,10 @@
               <div class="dash-intel-col">
                 <div class="dash-intel-heading">Top Usernames</div>
                 <div class="dash-bar-list" id="dashTopUsernames"></div>
+              </div>
+              <div class="dash-intel-col hidden" id="dashLocalNetworkCol">
+                <div class="dash-intel-heading">Local Network</div>
+                <div class="dash-bar-list" id="dashLocalNetwork"></div>
               </div>
             </div>
           </div>
@@ -206,6 +214,13 @@
             <input type="text" id="globalSearchInput" class="search-page-input" placeholder="Search file names and contents..." autocomplete="off" aria-label="Search all files">
             <button class="search-page-btn" id="globalSearchBtn">Search</button>
           </div>
+          <div class="search-page-hints" id="searchHints" aria-label="Search examples">
+            <span>Try a username</span>
+            <span>Domain</span>
+            <span>File path</span>
+            <span>Process</span>
+            <span>Credential source</span>
+          </div>
           <div class="search-page-status" id="searchStatus"></div>
           <div class="search-page-results" id="searchResults"></div>
         </div>
@@ -249,6 +264,7 @@
           <div class="export-cards">
             <div class="export-card">
               <div class="export-card-body">
+                <div class="export-card-kicker">Best for incident handoff</div>
                 <div class="export-card-title">Log Summary</div>
                 <div class="export-card-desc">HTML report with victim profile, credential stats, and cookie analysis. Opens in a new tab for printing.</div>
                 <div class="export-card-counts" id="exportSummaryCounts"></div>
@@ -259,6 +275,7 @@
             </div>
             <div class="export-card">
               <div class="export-card-body">
+                <div class="export-card-kicker">Best for spreadsheet review</div>
                 <div class="export-card-title">Obfuscated Credentials</div>
                 <div class="export-card-desc">CSV export with passwords partially masked. Safe for sharing in reports without exposing raw credentials.</div>
                 <div class="export-card-counts" id="exportCredsCounts"></div>
@@ -269,6 +286,7 @@
             </div>
             <div class="export-card">
               <div class="export-card-body">
+                <div class="export-card-kicker">Best for evidence preservation</div>
                 <div class="export-card-title">Parsed Data</div>
                 <div class="export-card-desc">Password-protected ZIP containing parsed credentials, cookies, autofills, notes, history, bookmarks, browser metadata, tokens, wallet/store artifacts, services, downloads, cards, clipboard, grabbed-file metadata, detections, and screenshot files.</div>
                 <div class="export-card-counts" id="exportZipCounts"></div>

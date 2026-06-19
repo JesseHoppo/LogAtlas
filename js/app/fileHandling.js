@@ -215,6 +215,13 @@ export function initFileHandling({ resetUI }) {
   // Drag & drop / file input
   dropZone.addEventListener('click', () => fileInput.click());
 
+  dropZone.addEventListener('keydown', (e) => {
+    if (e.target !== dropZone) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    fileInput.click();
+  });
+
   dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropZone.classList.add('drag-over');

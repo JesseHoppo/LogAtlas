@@ -39,19 +39,6 @@ function confirmRemoteDownload(parsedUrl, sizeBytes) {
   });
 }
 
-// Returns -1 when the size can't be probed; the streaming cap below catches
-// servers that block HEAD or don't expose Content-Length.
-async function probeRemoteSize(fileUrl) {
-  try {
-    const head = await fetch(fileUrl, { method: 'HEAD' });
-    if (!head.ok) return -1;
-    const contentLength = head.headers.get('content-length');
-    return contentLength ? parseInt(contentLength, 10) : -1;
-  } catch {
-    return -1;
-  }
-}
-
 export async function autoLoadFromQuery(handleFiles) {
   const params = new URLSearchParams(window.location.search);
   const fileUrl = params.get('file');
@@ -74,16 +61,7 @@ export async function autoLoadFromQuery(handleFiles) {
   const loading = document.getElementById('loading');
   const loadingText = document.getElementById('loadingText');
 
-  const reportedSize = await probeRemoteSize(fileUrl);
-  if (reportedSize > LIMITS.autoLoadMaxBytes) {
-    showNotification(
-      `Remote file is ${formatBytes(reportedSize)}, exceeds ${formatBytes(LIMITS.autoLoadMaxBytes)} cap.`,
-      'error',
-    );
-    return;
-  }
-
-  const proceed = await confirmRemoteDownload(parsed, reportedSize);
+  const proceed = await confirmRemoteDownload(parsed, -1);
   if (!proceed) return;
 
   dropZone.style.display = 'none';
