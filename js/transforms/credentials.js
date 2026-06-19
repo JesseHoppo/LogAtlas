@@ -1,6 +1,7 @@
 // Password, Cookie, Autofill parsing.
 
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
+import { parseTimestampValue } from '../core/shared.js';
 import {
   KV_PATTERN,
   AUTOFILL_KV_PATTERN,
@@ -10,6 +11,7 @@ import {
   normaliseSeparators,
   stripLeadingNoiseLines,
   isSeparatorOnlyLine,
+  isPromotionalNoiseLine,
   classifyPasswordFieldKey,
   canonicalisePasswordExtraHeader,
 } from './shared.js';
@@ -21,8 +23,17 @@ import {
   finaliseCredentialDataset,
 } from './delimited.js';
 
-// Chrome stores timestamps as microseconds since 1601-01-01 (Windows epoch).
-const CHROME_EPOCH_OFFSET = 11644473600000000n;
+function mostCommonCount(counts) {
+  const tally = new Map();
+  let best = counts[0];
+  let bestN = 0;
+  for (const c of counts) {
+    const n = (tally.get(c) || 0) + 1;
+    tally.set(c, n);
+    if (n > bestN) { bestN = n; best = c; }
+  }
+  return best;
+}
 
 function convertCookieTimestamp(raw) {
   const trimmed = raw.trim();
@@ -31,28 +42,9 @@ function convertCookieTimestamp(raw) {
   const num = Number(trimmed);
   if (isNaN(num) || num <= 0) return 'Session';
 
-  try {
-    let ms;
-
-    if (num > 13000000000000000) {
-      // Chrome epoch microseconds since 1601-01-01
-      const bigVal = BigInt(trimmed);
-      const unixMicro = bigVal - CHROME_EPOCH_OFFSET;
-      ms = Number(unixMicro / 1000n);
-    } else if (num > 1e15) {
-      ms = Number(BigInt(trimmed) / 1000n); // Unix microseconds (Firefox places.sqlite)
-    } else if (num > 1e12) {
-      ms = num; // already milliseconds
-    } else {
-      ms = num * 1000; // seconds
-    }
-
-    const date = new Date(ms);
-    if (isNaN(date.getTime())) return trimmed;
-    return date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
-  } catch (_) {
-    return trimmed;
-  }
+  const date = parseTimestampValue(trimmed);
+  if (!date) return trimmed;
+  return date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
 }
 
 function parsePasswordKeyValueRecords(text) {
@@ -249,6 +241,7 @@ const AUTOFILL_BLOCK_MAX_LINES = 6;
 const AUTOFILL_BLOCK_MAX_VALUE_LENGTH = 500;
 const AUTOFILL_SPACED_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _.$\-[\]]{0,80}?)\s*:\s+(.+)$/;
 const AUTOFILL_TOKEN_VALUE_PATTERN = /^([A-Za-z_$][A-Za-z0-9_.$:-]*(?:\[[^\]\n]+\])*)\s+(.+)$/;
+const AUTOFILL_NUMERIC_NAME_PATTERN = /^([0-9:][A-Za-z0-9 _.$:/\-[\]]{0,80}?)\s*[:=]?\s+(.+)$/;
 const AUTOFILL_RECORD_LABEL_KEYS = new Set(['browser', 'profile', 'name', 'field', 'key', 'label', 'value', 'form']);
 const AUTOFILL_RECORD_NAME_KEYS = new Set(['name', 'field', 'key', 'label', 'form']);
 const AUTOFILL_RECORD_VALUE_KEYS = new Set(['value']);
@@ -272,8 +265,7 @@ function normaliseAutofillValue(value) {
 function isLikelyAutofillFieldName(name) {
   const normalised = normaliseAutofillFieldName(name);
   if (!normalised || normalised.length > 120) return false;
-  if (/^\d+$/.test(normalised)) return false;
-  if (/^[^A-Za-z]+$/.test(normalised)) return false;
+  if (!/[A-Za-z]/.test(normalised)) return false;
   if (/^(?:https?|file):/i.test(normalised)) return false;
   if (/telegram/i.test(normalised)) return false;
   if (/[*|\\/]{3,}/.test(normalised)) return false;
@@ -408,6 +400,14 @@ function parseLooseAutofillLine(line) {
     return buildRow(genericKvMatch[1], genericKvMatch[2]);
   }
 
+  const numericMatch = trimmed.match(AUTOFILL_NUMERIC_NAME_PATTERN);
+  if (numericMatch && isLikelyAutofillFieldValue(numericMatch[2].trim())) {
+    const name = normaliseAutofillFieldName(numericMatch[1].replace(/^:+/, ''));
+    if (isLikelyAutofillFieldName(name) && !AUTOFILL_INLINE_EXCLUDED_KEYS.has(normaliseAutofillRecordLabel(name))) {
+      return [name, numericMatch[2].trim()];
+    }
+  }
+
   return null;
 }
 
@@ -431,6 +431,49 @@ export function parsePasswordFile(text, config) {
   }
 
   return comboParsed || keyValueParsed || finaliseCredentialDataset(parseLoosePasswordBlocks(clean));
+}
+
+const FILEZILLA_PROTOCOLS = { 0: 'ftp', 1: 'sftp', 3: 'ftps' };
+
+function decodeBase64(value) {
+  try {
+    return decodeURIComponent(escape(atob(value)));
+  } catch (_) {
+    try { return atob(value); } catch (__) { return value; }
+  }
+}
+
+export function parseFileZillaSiteManager(xmlText) {
+  const text = String(xmlText || '');
+  const rows = [];
+
+  const serverBlocks = text.match(/<Server>[\s\S]*?<\/Server>/g) || [];
+  for (const block of serverBlocks) {
+    const field = (tag) => {
+      const m = block.match(new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, 'i'));
+      return m ? m[1].trim() : '';
+    };
+
+    const host = field('Host');
+    if (!host) continue;
+
+    const port = field('Port');
+    const user = field('User');
+    const proto = FILEZILLA_PROTOCOLS[field('Protocol')] || 'sftp';
+
+    let password = '';
+    const passMatch = block.match(/<Pass(\s[^>]*)?>([^<]*)<\/Pass>/i);
+    if (passMatch) {
+      password = /encoding="base64"/i.test(passMatch[1] || '')
+        ? decodeBase64(passMatch[2].trim())
+        : passMatch[2].trim();
+    }
+
+    const url = `${proto}://${host}${port ? `:${port}` : ''}`;
+    rows.push([url, user, password]);
+  }
+
+  return rows.length > 0 ? { headers: ['URL', 'Username', 'Password'], rows } : null;
 }
 
 // Cookie parser
@@ -517,7 +560,6 @@ export function parseCookieFile(text, config) {
 
   const sanitised = stripLeadingNoiseLines(clean).trim();
 
-  // Try JSON format first
   const trimmed = sanitised || clean.trim();
   if (trimmed.startsWith('[')) {
     const jsonResult = parseJSONCookies(trimmed);
@@ -531,37 +573,55 @@ export function parseCookieFile(text, config) {
     }
   }
 
-  const lines = (sanitised || clean).split('\n').map(l => l.trim()).filter(l => l !== '');
+  const allLines = (sanitised || clean).split('\n').map(l => l.trim()).filter(l => l !== '');
+  if (allLines.length === 0) return null;
+
+  const lines = allLines
+    .filter(l => !/^#/.test(l) || /^#HttpOnly_/i.test(l))
+    .filter(l => !isPromotionalNoiseLine(l));
   if (lines.length === 0) return null;
 
   const restoreTokens = parseGoogleRestoreTokens(lines);
   if (restoreTokens) return restoreTokens;
 
-  // Check for Netscape cookie format (7 tab-separated fields)
   const sample = lines.slice(0, 20);
   if (sample.length === 0) return null;
-  const sevenColLines = sample.filter(l => l.split('\t').length === 7);
-  if (sevenColLines.length / sample.length >= 0.7) {
+  const tabCounts = sample.map(l => l.split('\t').length);
+  const netscapeCols = mostCommonCount(tabCounts);
+  const netscapeLines = sample.filter(l => l.split('\t').length === netscapeCols);
+  if ([5, 6, 7].includes(netscapeCols) && netscapeLines.length / sample.length >= 0.7) {
     const rows = [];
     for (const line of lines) {
       const fields = line.split('\t');
-      if (fields.length < 7) continue;
+      if (fields.length < 5) continue;
 
-      const domain = fields[0];
-      const subDomain = fields[1];
-      const path = fields[2];
-      const secure = fields[3];
-      const expiration = convertCookieTimestamp(fields[4]);
-      const name = fields[5];
+      const domain = fields[0].replace(/^#HttpOnly_/i, '');
+      let subDomain = '';
+      let path = '';
+      let secure = '';
+      let expiry = '';
+      let name = '';
+      let rawValue = '';
 
-      let value = fields[6];
+      if (fields.length >= 7) {
+        [, subDomain, path, secure, expiry, name] = fields;
+        rawValue = fields[6];
+      } else if (fields.length === 6) {
+        [, path, secure, expiry, name] = fields;
+        rawValue = fields[5];
+      } else {
+        [, path, expiry, name] = fields;
+        rawValue = fields[4];
+      }
+
+      let value = rawValue;
       try {
-        value = decodeURIComponent(value);
+        value = decodeURIComponent(rawValue);
       } catch (_) {
         // keep raw value
       }
 
-      rows.push([domain, subDomain, path, secure, expiration, name, value]);
+      rows.push([domain, subDomain, path, secure, convertCookieTimestamp(expiry), name, value]);
     }
 
     if (rows.length > 0) return { headers: COOKIE_HEADERS, rows };
@@ -595,7 +655,6 @@ export function parseAutofillFile(text, config) {
 
   // Some logs store autofills as repeated short "field-id" + "value" blocks.
   const blockParsed = parseAutofillBlocks(clean);
-  if (blockParsed) return blockParsed;
 
   const linesList = stripLeadingNoiseLines(clean).split('\n').map(line => line.trim()).filter(Boolean);
   const rows = [];
@@ -604,6 +663,8 @@ export function parseAutofillFile(text, config) {
     const parsedLine = parseLooseAutofillLine(line);
     if (parsedLine) rows.push(parsedLine);
   }
+
+  if (blockParsed && (!rows.length || blockParsed.rows.length >= rows.length)) return blockParsed;
 
   return rows.length > 0 ? { headers: ['Field', 'Value'], rows } : null;
 }

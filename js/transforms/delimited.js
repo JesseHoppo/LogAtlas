@@ -24,7 +24,6 @@ function splitCSVLine(line) {
   return fields;
 }
 
-// Build a split function for a given delimiter
 export function makeSplitFn(delimiter) {
   if (delimiter === ',') return splitCSVLine;
   return (line) => line.split(delimiter);
@@ -168,15 +167,16 @@ function findEmptyColumns(nonBlankLines, delimiter, columns) {
 // Check if the first row looks like a header by matching common exported column names.
 function detectHeaderRow(firstLine, delimiter) {
   const splitFn = makeSplitFn(delimiter);
-  const cells = splitFn(firstLine).map(c => c.trim()).filter(Boolean);
-  if (cells.length < 2) return false;
+  const cells = splitFn(firstLine).map(c => c.trim());
+  const filled = cells.filter(Boolean);
+  if (filled.length < 2) return false;
 
   let matches = 0;
   for (const cell of cells) {
-    if (KNOWN_HEADER_NAMES.has(normaliseHeaderCell(cell))) matches++;
+    if (cell && KNOWN_HEADER_NAMES.has(normaliseHeaderCell(cell))) matches++;
   }
 
-  return matches >= Math.max(2, Math.ceil(cells.length / 2));
+  return matches >= Math.max(2, Math.ceil(filled.length / 2));
 }
 
 // Content-based column role inference: scans sample data to guess URL/Username/Password columns
@@ -195,7 +195,7 @@ export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
       const val = cells[i].trim();
       if (!val) continue;
       stats[i].total++;
-      if (/^https?:\/\//.test(val) || (val.includes('/') && val.includes('.') && !val.includes('@'))) stats[i].urlLike++;
+      if (!val.includes('@') && (/^https?:\/\//i.test(val) || /^www\./i.test(val) || /^[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(val))) stats[i].urlLike++;
       if (val.includes('@') && val.includes('.')) stats[i].emailLike++;
     }
   }
@@ -315,7 +315,6 @@ export function detectFormat(text) {
   return null;
 }
 
-// Block parser
 export function parseBlocks(text, headers) {
   const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
   const rows = [];
@@ -336,7 +335,6 @@ export function parseBlocks(text, headers) {
   return { headers, rows };
 }
 
-// Unified delimited parser (replaces old parseTSV)
 export function parseDelimited(text, format) {
   const { delimiter, columns, hasHeaderRow, dropColumns } = format;
   const splitFn = makeSplitFn(delimiter);
@@ -360,7 +358,6 @@ export function parseDelimited(text, format) {
     headers = keepIndices.map(i => (headerCells[i] ?? '').trim() || `Column ${i + 1}`);
     startIdx = 1;
   } else {
-    // Try content-based inference
     const inference = inferColumnRoles(allLines, delimiter, false);
     if (inference.confidence !== 'low') {
       headers = keepIndices.map((origIdx) => {
@@ -381,17 +378,16 @@ export function parseDelimited(text, format) {
   return { headers, rows };
 }
 
-// Parse with explicit user-supplied config (from column mapper)
 export function parseWithConfig(text, config) {
   const { delimiter, hasHeaderRow, columnMap } = config;
   const splitFn = makeSplitFn(delimiter);
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   if (lines.length === 0) return null;
 
-  const sampleCols = splitFn(lines[0]).length;
+  const sampleCols = Math.max(...lines.slice(0, 50).map(l => splitFn(l).length));
   const startIdx = hasHeaderRow ? 1 : 0;
 
-  // Build headers and determine which columns to keep (skip = excluded)
+  // role 'skip' excludes a column
   const keepIndices = [];
   const headers = [];
   for (let i = 0; i < sampleCols; i++) {
@@ -439,7 +435,7 @@ export function finaliseCredentialDataset(parsed) {
     const password = (row[passIdx] || '').trim();
     const username = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
     const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
-    return Boolean(password && (username || url));
+    return Boolean((password && (username || url)) || (url && !password && !username));
   });
 
   if (rows.length === 0) return null;

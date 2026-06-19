@@ -31,8 +31,11 @@ function buildCreditCardRowsFromBlocks(clean) {
     const expiration = record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || (month || year ? `${month}/${year}`.replace(/^\/|\/$/g, '') : '');
     const filePath = record.filepath || record['file path'] || record.path || record.target || '';
 
-    if (!cardNumber && !expiration && !nameOnCard && !cvc && !filePath) continue;
-    rows.push([cardNumber, nameOnCard, cvc, expiration, filePath]);
+    const panDigits = cardNumber.replace(/\D/g, '');
+    const validPan = panDigits.length >= 12 && panDigits.length <= 19;
+    const pan = validPan ? cardNumber : '';
+    if (!pan && !expiration && !nameOnCard && !cvc && !filePath) continue;
+    rows.push([pan, nameOnCard, cvc, expiration, filePath]);
   }
 
   return rows;
@@ -65,8 +68,11 @@ function mapCreditCardHeaders(parsed) {
           (row[headerMap.expirationMonth ?? -1] || '').trim(),
           (row[headerMap.expirationYear ?? -1] || '').trim(),
         );
+      const rawPan = row[headerMap.number ?? -1] || '';
+      const panDigits = rawPan.replace(/\D/g, '');
+      const pan = panDigits.length >= 12 && panDigits.length <= 19 ? rawPan : '';
       return [
-        row[headerMap.number ?? -1] || '',
+        pan,
         row[headerMap.name ?? -1] || '',
         row[headerMap.cvc ?? -1] || '',
         expiration,
@@ -116,18 +122,17 @@ function mapCreditCardRowsByContent(parsed) {
       }
     }
 
+    let chosenMonth = '';
+    let chosenYear = '';
     if (!expiration) {
-      const month = numericCandidates.find(cell => /^(?:0?[1-9]|1[0-2])$/.test(cell)) || '';
-      const year = numericCandidates.find(cell => cell !== month && /^(?:\d{2}|\d{4})$/.test(cell)) || '';
-      expiration = buildExpirationValue(month, year);
+      chosenMonth = numericCandidates.find(cell => /^(?:0?[1-9]|1[0-2])$/.test(cell)) || '';
+      chosenYear = numericCandidates.find(cell => cell !== chosenMonth && /^(?:\d{2}|\d{4})$/.test(cell)) || '';
+      expiration = buildExpirationValue(chosenMonth, chosenYear);
     }
 
     if (!cvc) {
-      cvc = numericCandidates.find(cell =>
-        cell !== expiration.split('/')[0]
-        && cell !== expiration.split('/')[1]
-        && /^\d{3,4}$/.test(cell)
-      ) || '';
+      const used = new Set([chosenMonth, chosenYear].filter(Boolean));
+      cvc = numericCandidates.find(cell => !used.has(cell) && /^\d{3,4}$/.test(cell)) || '';
     }
 
     if (!cardNumber && !nameOnCard && !expiration && !cvc && !filePath) continue;

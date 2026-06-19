@@ -10,7 +10,9 @@ export const DOMAIN_DETECT_LABELED_ENTRY = /\[([^\]]+)\]\s*([^,\n]+?)(?:\s*\((\d
 export const DOMAIN_DETECT_UNLABELED_ENTRY = /(^|,\s*)([^,\[]+?)(?:\s*\((\d+)\))(?=\s*(?:,|$))/g;
 export const CLIPBOARD_URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
 export const CREDIT_CARD_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _/-]*?)\s*:\s*(.*)$/;
-export const BOOKMARK_HTML_PATTERN = /<a\b[^>]*href=(?:"([^"]+)"|'([^']+)')[^>]*>(.*?)<\/a>/ig;
+// `[^>]` runs are length-bounded so a malformed anchor with no closing `>`
+// cannot drive quadratic backtracking on multi-MB attacker-controlled bookmark HTML.
+export const BOOKMARK_HTML_PATTERN = /<a\b[^>]{0,2000}href=(?:"([^"]+)"|'([^']+)')[^>]{0,2000}>(.*?)<\/a>/ig;
 export const DISCORD_TOKEN_PATTERN = /^(?:mfa\.)?[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{10,}$/;
 export const TOKEN_VALUE_FIELD_PATTERN = /^(?:(?:access|refresh|auth|oauth|bearer|session|restore|google|discord|facebook|steam)\s+)?token(?:\s+value)?\s*[:=]\s*(\S{6,})$/i;
 export const ACCOUNT_ID_FIELD_PATTERN = /^(?:id|uid|user(?:\s*id)?|account(?:\s*id)?|profile(?:\s*id)?)\s*[:=]\s*(\d{6,})$/i;
@@ -19,8 +21,9 @@ export const WINDOWS_PATH_PATTERN = /[A-Z]:\\[^"\r\n\t]+/g;
 export const URL_INDICATOR_PATTERN = /https?:\/\/[^\s"'<>]+/g;
 export const SYSINFO_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()%-]*?)\s*(?:=\s*|:\s*)(.*)$/;
 export const SYSINFO_CAPTURE_SECTION_PATTERN = /^(?:Network Info|System Summary|System Info(?:rmation)?|User Info(?:rmation)?|Hardware Info|PC Info|Environment|Computer Info|User Agents|Installed (?:Apps|Software|Programs)|Process(?: List|es)?|Browsers?)\s*:$/i;
-export const SYSINFO_STRUCTURED_KEY_PATTERN = /^(?:ip(?: address)?|country|region|city|postal code|zip|location|hwid|guid|machine guid|machine id|machine name|build(?: id)?|os(?: name)?|os version|platform|architecture|arch|username|user name|computer name|pc name|host(?:name)?|local time|utc|timezone|time zone|language|languages|keyboard(?:s)?|laptop|running path|cpu|processor|cores?|threads?|ram|memory|display(?: resolution)?|screen(?: resolution)?|gpu|video card|mac(?: address)?|bios|antivirus|defender|domain|monitor|board|motherboard|drives?)$/i;
+export const SYSINFO_STRUCTURED_KEY_PATTERN = /^(?:ip(?: address)?|country|region|city|postal code|zip|location|hwid|guid|machine guid|machine id|machine name|build(?: id)?|os(?: name)?|os version|platform|architecture|arch|username|user name|computer name|pc name|host(?:name)?|(?:log |user |local |capture )?date|user time|local time|utc|timezone|time zone|traffic|geo|seller|bot id|language|languages|keyboard(?:s)?|laptop|running path|cpu|processor|cores?|threads?|ram|memory|display(?: resolution)?|screen(?: resolution)?|gpu|video card|mac(?: address)?|bios|antivirus|defender|domain|monitor|board|motherboard|drives?)$/i;
 export const SYSINFO_MULTILINE_KEY_PATTERN = /^(?:gpu|video card|display adapters?|dns servers?|installed (?:apps|software|programs)|process(?: list|es)|user agents?)$/i;
+export const LINE_CONTAINS_HOST = /[a-z0-9-]+\.[a-z]{2,}/i;
 
 const PASSWORD_SITE_KEYS = new Set([
   'url', 'uri', 'link', 'originurl', 'host', 'hostname', 'site', 'website',
@@ -44,7 +47,8 @@ export function normaliseSeparators(text) {
 }
 
 export function normaliseText(text) {
-  return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
 }
 
 export function decodeHtmlEntities(text) {
@@ -63,6 +67,8 @@ export function isPromotionalNoiseLine(line) {
   if (/^[*=_~#-]{3,}$/.test(trimmed) || /^\*+\s*$/.test(trimmed)) return true;
   if (/^[\\/()|_ \-]{6,}$/.test(trimmed)) return true;
   if (/ottoman|cloudbot/i.test(trimmed)) return true;
+  if (/daisy\s*cloud/i.test(trimmed)) return true;
+  if (/\b(?:price|priced|sold|seller|shop|store)\b.*\$\d/i.test(trimmed)) return true;
   if (/these logs belong to/i.test(trimmed)) return true;
   if (/buy daily fresh logs/i.test(trimmed)) return true;
   if (/subscribe today for fresh daily logs/i.test(trimmed)) return true;
@@ -95,7 +101,7 @@ export function stripLeadingNoiseLines(text) {
       continue;
     }
 
-    if (isPromotionalNoiseLine(trimmed)) {
+    if (isPromotionalNoiseLine(trimmed) && !LINE_CONTAINS_HOST.test(trimmed)) {
       start++;
       continue;
     }
@@ -134,7 +140,12 @@ export function canonicalisePasswordExtraHeader(key) {
 
 // CSV generation (RFC 4180)
 export function toCSV(parsed) {
-  const escape = (cell) => `"${String(cell).replace(/"/g, '""')}"`;
+  const escape = (cell) => {
+    let s = String(cell);
+    // Neutralise spreadsheet formula/DDE injection on attacker-controlled cells.
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
   const headerLine = parsed.headers.map(escape).join(',');
   const dataLines = parsed.rows.map(row => row.map(escape).join(','));
   return [headerLine, ...dataLines].join('\n');

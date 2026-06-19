@@ -4,8 +4,6 @@
 import {
   KV_PATTERN,
   HISTORY_URL_PATTERN,
-  DOMAIN_DETECT_LABELED_ENTRY,
-  DOMAIN_DETECT_UNLABELED_ENTRY,
   CLIPBOARD_URL_PATTERN,
   BOOKMARK_HTML_PATTERN,
   JWT_TOKEN_PATTERN,
@@ -23,6 +21,7 @@ import {
   stripLeadingNoiseLines,
   decodeHtmlEntities,
   isPromotionalNoiseLine,
+  LINE_CONTAINS_HOST,
 } from './shared.js';
 import {
   detectFormat,
@@ -62,11 +61,11 @@ function inferTokenKind(value, accountId = '', hint = '') {
   const lowerHint = String(hint || '').toLowerCase();
 
   if (!token && accountId) return 'Account ID';
+  if (/^1\/\//.test(token)) return 'Google OAuth refresh token';
   if (token && /restore/.test(lowerHint)) return 'Restore Token';
-  if (/^1\/\//.test(token)) return /restore/i.test(lowerHint) ? 'Restore Token' : 'Google OAuth Token';
   if (/^EAAB/i.test(token)) return 'Facebook Token';
+  if (/^eyJ/.test(token) && JWT_TOKEN_PATTERN.test(token)) return /steam/i.test(lowerHint) || accountId ? 'Steam JWT' : 'JWT';
   if (DISCORD_TOKEN_PATTERN.test(token)) return 'Discord Token';
-  if (JWT_TOKEN_PATTERN.test(token)) return /steam/i.test(lowerHint) || accountId ? 'Steam JWT' : 'JWT';
   if (accountId) return 'Token + Account ID';
   return 'Token';
 }
@@ -155,7 +154,7 @@ function splitGenericTokenPair(line) {
 function removePromotionalNoise(text) {
   return stripLeadingNoiseLines(text)
     .split('\n')
-    .filter(line => !line.trim() || !isPromotionalNoiseLine(line))
+    .filter(line => !line.trim() || !isPromotionalNoiseLine(line) || LINE_CONTAINS_HOST.test(line))
     .join('\n');
 }
 
@@ -469,30 +468,28 @@ function normaliseDomainDetectTarget(target) {
     .trim();
 }
 
+const DOMAIN_DETECT_TOKEN = /(?:\[([^\]]+)\]\s*)?([^,()[\]]+?)\s*\((\d+)\)/g;
+
+function looksLikeHostTarget(target) {
+  const host = target.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(host);
+}
+
 function extractDomainDetectEntries(segment, section) {
   const rows = [];
   const clean = segment.trim();
   if (!clean) return rows;
 
   let matched = false;
-  DOMAIN_DETECT_LABELED_ENTRY.lastIndex = 0;
+  let lastLabel = '';
+  DOMAIN_DETECT_TOKEN.lastIndex = 0;
   let match;
-  while ((match = DOMAIN_DETECT_LABELED_ENTRY.exec(clean)) !== null) {
-    const label = match[1].trim();
+  while ((match = DOMAIN_DETECT_TOKEN.exec(clean)) !== null) {
+    if (match[1] != null) lastLabel = match[1].trim();
     const target = normaliseDomainDetectTarget(match[2]);
     const count = match[3] || '1';
     if (!target || isPromotionalNoiseLine(target)) continue;
-    rows.push([section || 'General', label, target, count]);
-    matched = true;
-  }
-  if (matched) return rows;
-
-  DOMAIN_DETECT_UNLABELED_ENTRY.lastIndex = 0;
-  while ((match = DOMAIN_DETECT_UNLABELED_ENTRY.exec(clean)) !== null) {
-    const target = normaliseDomainDetectTarget(match[2]);
-    const count = match[3] || '1';
-    if (!target || isPromotionalNoiseLine(target)) continue;
-    rows.push([section || 'General', '', target, count]);
+    rows.push([section || 'General', lastLabel || '', target, count]);
     matched = true;
   }
   if (matched) return rows;
@@ -500,7 +497,7 @@ function extractDomainDetectEntries(segment, section) {
   const plainTargets = clean
     .split(/\s*,\s*/)
     .map(normaliseDomainDetectTarget)
-    .filter(target => target && !isPromotionalNoiseLine(target));
+    .filter(target => target && !isPromotionalNoiseLine(target) && looksLikeHostTarget(target));
   for (const target of plainTargets) {
     rows.push([section || 'General', '', target, '1']);
   }
@@ -529,7 +526,8 @@ export function parseDomainDetectFile(text) {
 
   for (const rawLine of clean.split('\n')) {
     const line = rawLine.trim();
-    if (!line || isPromotionalNoiseLine(line)) continue;
+    if (!line) continue;
+    if (isPromotionalNoiseLine(line) && !LINE_CONTAINS_HOST.test(line)) continue;
 
     const sectionLine = splitDomainDetectSection(line);
     if (sectionLine) {
@@ -680,8 +678,14 @@ export function parseBookmarkFile(text) {
       if (!kv) continue;
       const key = kv[1].trim().toLowerCase();
       const value = kv[2].trim();
-      if (key === 'url') url = value;
-      else if (key === 'title' || key === 'name') title = value;
+      if (key === 'url') {
+        if (url) {
+          blockRows.push([url, title, folder]);
+          title = '';
+          folder = '';
+        }
+        url = value;
+      } else if (key === 'title' || key === 'name') title = value;
       else if (key === 'folder' || key === 'path') folder = value;
     }
     if (url) blockRows.push([url, title, folder]);
