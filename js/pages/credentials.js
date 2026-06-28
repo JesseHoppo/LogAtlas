@@ -12,6 +12,7 @@ import { parseNoteArtifact, summariseNotes } from '../analysis/contextArtifacts.
 import {
   collectHintedNodes,
   checkCookieValidity,
+  deriveCaptureDate,
   baseDomainFromUrl,
   SHARED_TEXT_DECODER,
 } from '../core/shared.js';
@@ -288,6 +289,7 @@ async function loadCookiesData(fileTree, rootName) {
   const expiresIdx = headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
   const nameIdx = headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
   const domainIdx = headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+  const captureDate = deriveCaptureDate(nodes, rootName);
   const rows = [];
 
   for (const { parsed, columnMap } of parsedFiles) {
@@ -298,7 +300,7 @@ async function loadCookiesData(fileTree, rootName) {
       const cookieDomain = domainIdx >= 0 ? normalisedRow[domainIdx] : '';
       rows.push({
         row: normalisedRow,
-        validity: checkCookieValidity(expiresVal),
+        validity: checkCookieValidity(expiresVal, captureDate),
         sessionType: classifyCookie(cookieName, cookieDomain),
         headers,
       });
@@ -436,7 +438,7 @@ function buildPasswordParseIssuesHtml(failedFiles) {
   const remaining = failedFiles.length - visible.length;
   return `
     <div class="data-page-warning">
-      <div class="data-page-warning-title">${failedFiles.length.toLocaleString()} password file(s) could not be parsed cleanly</div>
+      <div class="data-page-warning-title">${failedFiles.length.toLocaleString()} password file(s) could not be parsed</div>
       <ul class="data-page-warning-list">
         ${visible.map(({ path, reason }) => `<li><strong>${escapeHtml(trimRootPath(path))}</strong>${reason ? ` <span>${escapeHtml(reason)}</span>` : ''}</li>`).join('')}
       </ul>
@@ -508,7 +510,7 @@ function cookieRowBuilder({ row, validity, sessionType }) {
     html += `<td title="${escapeHtml(cell)}">${escapeHtml(cell)}</td>`;
   }
   html += `<td><span class="validity-badge validity-badge-${validity.status}">${escapeHtml(validity.label)}</span></td>`;
-  if (sessionType) {
+  if (sessionType === 'auth' || sessionType === 'session') {
     const label = sessionType === 'auth' ? 'Auth' : 'Session';
     html += `<td><span class="session-badge session-badge-${sessionType}">${label}</span></td>`;
   } else {
@@ -571,7 +573,7 @@ function renderPasswordsPage(searchQuery = '') {
     const footprintHtml = buildCredentialFootprintHtml();
     summary.textContent = failedFiles.length > 0
       ? `No account credentials found (${failedFiles.length.toLocaleString()} candidate file(s) skipped)`
-      : footprintHtml ? 'No account credentials, but recovered artifacts found' : 'No passwords found';
+      : footprintHtml ? 'No account credentials; recovered artifacts only' : 'No passwords found';
     addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
     stats.innerHTML = '';
     content.innerHTML = footprintHtml
@@ -659,7 +661,7 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
 
   let filtered = cookiesData.rows;
   if (validOnly) filtered = filtered.filter(r => r.validity.status === 'valid');
-  if (sessionOnly) filtered = filtered.filter(r => r.sessionType);
+  if (sessionOnly) filtered = filtered.filter(r => r.sessionType === 'auth' || r.sessionType === 'session');
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(r => r.row.some(cell => cell.toLowerCase().includes(q)));

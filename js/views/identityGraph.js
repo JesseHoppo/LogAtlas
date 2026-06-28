@@ -50,11 +50,10 @@ function buildCookieLookup(cookiesData) {
     const { validity, sessionType } = rowData;
     const domain = extractBaseDomain(getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase());
     if (!domain) continue;
-    if (!lookup.has(domain)) lookup.set(domain, { hasValidSession: false, hasValidCookies: false });
+    if (!lookup.has(domain)) lookup.set(domain, { hasValidSession: false });
     const entry = lookup.get(domain);
     if (validity.status === 'valid') {
-      entry.hasValidCookies = true;
-      if (sessionType) entry.hasValidSession = true;
+      if (sessionType === 'auth' || sessionType === 'session') entry.hasValidSession = true;
     }
   }
   return lookup;

@@ -273,7 +273,7 @@ function ipToInt(octets) {
 
 function inCidr(value, base, prefix) {
   const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
-  return (value & mask) >>> 0 === (base & mask) >>> 0;
+  return ((value & mask) >>> 0) === ((base & mask) >>> 0);
 }
 
 const PUBLIC_DNS_IPS = new Set([
@@ -646,17 +646,15 @@ function classifyAutofillEntries(entries, maxOther = 20) {
     }
   }
 
-  const otherAll = other;
-
   return {
     emails: dedupeAutofillStrings(emails, canonicaliseAutofillEmail),
     phones: dedupeAutofillStrings(phones, canonicaliseAutofillPhone),
     names: dedupeAutofillStrings(names),
     addresses: dedupeAutofillStrings(addresses),
-    other: otherAll.slice(0, maxOther),
-    otherAll,
-    otherTotal: otherAll.length,
-    otherTruncated: otherAll.length > maxOther,
+    other: other.slice(0, maxOther),
+    otherAll: other,
+    otherTotal: other.length,
+    otherTruncated: other.length > maxOther,
   };
 }
 
@@ -835,6 +833,20 @@ function checkCookieValidity(expiresValue, referenceDate) {
   return { status: 'valid', label: `Valid until ${formatRelativeTime(expiryDate)}` };
 }
 
+// Best-effort capture date for validity: archive name timestamp, else the
+// newest cookie-file modification time. Cookie expiry is then judged against
+// when the log was taken, not analysis-time now.
+function deriveCaptureDate(nodes, rootName) {
+  const fromName = parseArchiveTimestamp(rootName);
+  if (fromName) return fromName;
+  let newest = 0;
+  for (const { node } of nodes) {
+    const m = Number(node?.lastModified);
+    if (m && m > newest) newest = m;
+  }
+  return newest ? new Date(newest) : null;
+}
+
 function formatRelativeTime(date) {
   const now = new Date();
   const diff = date - now;
@@ -848,11 +860,10 @@ function formatRelativeTime(date) {
   return date.toLocaleDateString();
 }
 
-// Random password via rejection sampling (uniform over the 62-char charset).
-
 const PASSWORD_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const PASSWORD_REJECT_THRESHOLD = 4 * PASSWORD_CHARSET.length; // 248
 
+// Random password via rejection sampling (uniform over the 62-char charset).
 function randomPassword(length = 16) {
   const out = [];
   const buf = new Uint8Array(length * 2);
@@ -1234,6 +1245,7 @@ export {
   parseNodeCached,
   yieldToEventLoop,
   checkCookieValidity,
+  deriveCaptureDate,
   downloadBlob,
   topN,
   showNotification,

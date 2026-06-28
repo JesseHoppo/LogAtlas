@@ -126,7 +126,6 @@ function extractCookieEvents(cookiesData, captureTime) {
     else if (validity.status === 'expired') entry.expired++;
     if ((sessionType === 'auth' || sessionType === 'session') && validity.status === 'valid') entry.validSessions++;
 
-    // Parse expiration date
     const expiresDate = parseTimestampValue(getFieldByPattern(rowData, FIELD_PATTERNS.expires));
     if (expiresDate && (!entry.latestExpiry || expiresDate > entry.latestExpiry)) {
       entry.latestExpiry = expiresDate;
@@ -140,6 +139,7 @@ function extractCookieEvents(cookiesData, captureTime) {
     .slice(0, LIMITS.topTimelineCookieDomains);
 
   const events = [];
+  if (!captureTime) return events;
   for (const [domain, stats] of sorted) {
     let detail = `${stats.valid} valid, ${stats.expired} expired`;
     if (stats.validSessions > 0) {
@@ -149,7 +149,7 @@ function extractCookieEvents(cookiesData, captureTime) {
       detail += ` - latest expiry: ${formatDateLabel(stats.latestExpiry)}`;
     }
     events.push({
-      time: captureTime || stats.latestExpiry,
+      time: captureTime,
       category: 'cookie',
       title: domain,
       detail,
@@ -162,10 +162,9 @@ function extractCookieEvents(cookiesData, captureTime) {
 function extractHistoryEvents(historyData) {
   if (!historyData || historyData.entries.length === 0) return [];
 
-  // Collect entries that have parseable timestamps
   const dated = [];
   for (const entry of historyData.entries) {
-    const d = entry.lastVisitDate || parseTimestampValue(entry.lastVisit);
+    const d = entry.lastVisitDate;
     if (d) {
       dated.push({ ...entry, _date: d });
     }
@@ -173,7 +172,6 @@ function extractHistoryEvents(historyData) {
 
   if (dated.length === 0) return [];
 
-  // Aggregate by day
   const dayMap = {};
   for (const entry of dated) {
     const key = dateKey(entry._date);
@@ -269,7 +267,6 @@ function buildTimeline() {
   events.push(...extractGrabbedFileEvents(getGrabbedFilesData()));
   events.push(...extractScreenshotEvents(getScreenshotsData()));
 
-  // Sort newest first
   events.sort((a, b) => b.time - a.time);
 
   timelineEvents = events;
@@ -428,7 +425,7 @@ function renderTimelinePage(searchQuery = '') {
   const total = timelineEvents.length;
   summary.textContent = filtered.length !== total
     ? `Showing ${filtered.length} of ${total} events`
-    : `${total} events reconstructed from archive data`;
+    : `${total} events`;
 
   renderStats(filtered);
   renderFilters();

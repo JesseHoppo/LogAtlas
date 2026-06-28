@@ -9,7 +9,7 @@ import {
   copyToClipboard,
   baseDomainFromUrl,
   randomPassword,
-  showNotification,
+  showNotification as notify,
 } from '../core/shared.js';
 import {
   buildCsvText,
@@ -53,10 +53,6 @@ function maskPassword(pw) {
   if (!pw || pw.length === 0) return '****';
   if (pw.length <= 2) return '****';
   return pw[0] + '*'.repeat(Math.min(pw.length - 2, 6)) + pw[pw.length - 1];
-}
-
-function notify(message, type = 'info') {
-  showNotification(message, type);
 }
 
 // Obfuscated Credentials CSV
@@ -139,8 +135,8 @@ function gatherReportData() {
     const valid = cookies.rows.filter(r => r.validity.status === 'valid').length;
     const expired = cookies.rows.filter(r => r.validity.status === 'expired').length;
     const session = cookies.rows.filter(r => r.validity.status === 'session').length;
-    const sessionTokens = cookies.rows.filter(r => r.sessionType).length;
-    const validSessionTokens = cookies.rows.filter(r => r.sessionType && r.validity.status === 'valid').length;
+    const sessionTokens = cookies.rows.filter(r => r.sessionType === 'auth' || r.sessionType === 'session').length;
+    const validSessionTokens = cookies.rows.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
     const domainCounts = {};
     for (const rowData of cookies.rows) {
       const d = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase();
@@ -295,7 +291,7 @@ function buildLogSummaryHtml(data) {
         <div class="stat"><span class="stat-num">${cs.total.toLocaleString()}</span> total entries</div>
         <div class="stat"><span class="stat-num">${cs.fileCount}</span> source file(s)</div>
       </div>
-      <p class="note">Passwords are not included in this report for security.</p>
+      <p class="note">Passwords are not included in this report.</p>
       <h3>Top Credential Domains</h3>
       ${domainTable(cs.topDomains)}
     </section>`;
@@ -681,7 +677,7 @@ async function exportParsedDataZip() {
     const zipBlob = await blobWriter.getData();
 
     downloadBlob(zipBlob, 'parsed_data.zip', 'application/zip');
-    notify('Parsed data package downloaded. Remember to securely share the password.');
+    notify('Parsed data package downloaded. Share the password over a separate channel.');
   } catch (err) {
     notify(`Failed to generate data package: ${err.message}`, 'error');
   }
