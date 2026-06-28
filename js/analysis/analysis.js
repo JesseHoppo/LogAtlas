@@ -119,6 +119,7 @@ function isRecoveredPasswordNoise(line) {
   const t = String(line || '').trim();
   if (!t) return true;
   if (/[A-Za-z0-9]/.test(t)) return isPromotionalNoiseLine(t);
+  if (/[─-▟]/.test(t)) return true;
   let letters = 0;
   let nonSpace = 0;
   for (const ch of t) {
@@ -127,6 +128,10 @@ function isRecoveredPasswordNoise(line) {
     if (/\p{L}/u.test(ch)) letters++;
   }
   if (letters >= 2 && letters * 2 >= nonSpace) return false;
+  // No Latin/CJK letters: keep a single dense symbol token (no internal
+  // whitespace, 4-32 chars, not a repeated divider) as a plausible symbolic
+  // password. Box/FIGlet art carries internal spaces, box glyphs or repeats.
+  if (!/\s/.test(t) && t.length >= 4 && t.length <= 32 && !/^(.)\1*$/.test(t)) return false;
   return true;
 }
 
