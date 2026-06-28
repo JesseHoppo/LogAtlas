@@ -72,9 +72,9 @@
       </div>
       <div class="upload-info" id="uploadInfo">
         <p>All processing in this tool is done client-side, with no information transmitted or stored.</p>
-        <p>You can upload an infostealer log archive, or individual files that you want to analyse. This tool will help with things such as exploring a logs content and transforming common files into easier formats.</p>
+        <p>Upload an infostealer log archive or individual files to analyse. Explore the log's contents and convert common files into more usable formats.</p>
         <p>Detection and parsing may not be perfect. You should conduct further analysis and verification for incident response.</p>
-        <p>Browser sandboxing should provide some protection from malicious files, but caution should still be taken.</p>
+        <p>Browser sandboxing offers some protection from malicious files, but exercise caution.</p>
       </div>
       <div class="reset-zone" id="resetZone">
         <div class="current-file">
@@ -140,7 +140,7 @@
           </div>
           <div class="dash-section hidden" id="dashCredIntel">
             <div class="dash-section-title">Credential Intelligence</div>
-            <div class="dash-section-subtitle dash-loading" id="dashCredSummary">Analyzing credential files...</div>
+            <div class="dash-section-subtitle dash-loading" id="dashCredSummary">Analysing credential files...</div>
             <div class="dash-intel-grid">
               <div class="dash-intel-col">
                 <div class="dash-intel-heading">Top Domains</div>
@@ -158,7 +158,7 @@
           </div>
           <div class="dash-section hidden" id="dashCookieIntel">
             <div class="dash-section-title">Cookie Intelligence</div>
-            <div class="dash-section-subtitle dash-loading" id="dashCookieSummary">Analyzing cookie files...</div>
+            <div class="dash-section-subtitle dash-loading" id="dashCookieSummary">Analysing cookie files...</div>
             <div class="dash-intel-grid">
               <div class="dash-intel-col">
                 <div class="dash-intel-heading">Top Domains</div>
@@ -168,13 +168,13 @@
           </div>
           <div class="dash-section hidden" id="dashAutofillIntel">
             <div class="dash-section-title">Autofill Data</div>
-            <div class="dash-section-subtitle dash-loading" id="dashAutofillSummary">Analyzing autofill files...</div>
+            <div class="dash-section-subtitle dash-loading" id="dashAutofillSummary">Analysing autofill files...</div>
             <div id="dashAutofillBody"></div>
           </div>
 
           <div class="dash-section hidden" id="dashDownloadIntel">
             <div class="dash-section-title">Download Activity</div>
-            <div class="dash-section-subtitle" id="dashDownloadSummary">Analyzing download files...</div>
+            <div class="dash-section-subtitle" id="dashDownloadSummary">Analysing download files...</div>
             <div class="dash-bar-list" id="dashDownloadBody"></div>
           </div>
           <div class="dash-section hidden" id="dashDomainDetect">
@@ -195,7 +195,7 @@
         </div>
         <div class="page" id="pageSysInfo">
           <h2 class="page-title">System Information</h2>
-          <div class="dash-section" id="dashSysInfo">
+          <div class="dash-section">
             <div class="dash-section-header sysinfo-toolbar">
               <button class="sysinfo-open-btn hidden" id="sysInfoOpenBtn">View Source File</button>
               <div class="sysinfo-actions hidden" id="sysInfoActions">
@@ -308,7 +308,7 @@
               <span class="preview-title-size" id="previewSize">0 KB</span>
             </div>
             <div class="preview-search hidden" id="previewSearch">
-              <input type="text" id="previewSearchInput" class="preview-search-input" placeholder="Search..." autocomplete="off">
+              <input type="text" id="previewSearchInput" class="preview-search-input" placeholder="Search..." autocomplete="off" aria-label="Search within file">
               <span class="preview-search-count" id="previewSearchCount"></span>
               <button class="preview-search-nav" id="previewSearchPrev" title="Previous (Shift+Enter)">Prev</button>
               <button class="preview-search-nav" id="previewSearchNext" title="Next (Enter)">Next</button>
@@ -362,7 +362,7 @@
             <label for="pasteTextName">Name</label>
             <input type="text" id="pasteTextName" class="paste-text-name" placeholder="Pasted Text" autocomplete="off">
           </div>
-          <textarea id="pasteTextArea" class="paste-text-area" rows="10" placeholder="Paste text here..."></textarea>
+          <textarea id="pasteTextArea" class="paste-text-area" rows="10" placeholder="Paste text here..." aria-label="Pasted content"></textarea>
           <div class="paste-type-options" id="pasteTypeOptions"></div>
           <div class="modal-actions">
             <button class="modal-btn modal-btn-cancel" id="pasteTextCancel">Cancel</button>
@@ -387,7 +387,7 @@
               <label><input type="radio" name="mapperDelimiter" value=";"> Semicolon</label>
               <label><input type="radio" name="mapperDelimiter" value=" "> Space</label>
               <label><input type="radio" name="mapperDelimiter" value="custom"> Custom:</label>
-              <input type="text" id="mapperCustomDelimiter" class="mapper-custom-input" maxlength="3" size="3">
+              <input type="text" id="mapperCustomDelimiter" class="mapper-custom-input" maxlength="3" size="3" aria-label="Custom delimiter">
             </div>
             <label class="mapper-header-toggle">
               <input type="checkbox" id="mapperHasHeader"> First row is header
