@@ -5,6 +5,7 @@ import { loadFileContent } from '../files/extractor.js';
 import { escapeHtml, capitalise } from '../core/utils.js';
 import {
   classifyAutofillEntries,
+  credentialColumnIndices,
   downloadBlob,
   copyToClipboard,
   baseDomainFromUrl,
@@ -87,9 +88,7 @@ function exportObfuscatedCredentials() {
     return;
   }
 
-  const urlIdx = data.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-  const userIdx = data.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
-  const passIdx = data.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+  const { urlIdx, userIdx, passIdx } = credentialColumnIndices(data.headers);
 
   const seen = new Set();
   const uniqueRows = [];
@@ -122,9 +121,7 @@ function gatherReportData() {
 
   let credStats = null;
   if (passwords.rows.length > 0) {
-    const urlIdx = passwords.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-    const userIdx = passwords.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
-    const passIdx = passwords.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+    const { urlIdx, userIdx, passIdx } = credentialColumnIndices(passwords.headers);
     const domainCounts = {};
     const seen = new Set();
     for (const { row } of passwords.rows) {

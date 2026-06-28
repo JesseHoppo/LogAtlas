@@ -85,6 +85,14 @@ const AUTOFILL_NAME_ENTITY_FIELD_TOKENS = new Set([
   'username',
 ]);
 
+function credentialColumnIndices(headers) {
+  return {
+    urlIdx: headers.findIndex(h => FIELD_PATTERNS.url.test(h)),
+    userIdx: headers.findIndex(h => FIELD_PATTERNS.username.test(h)),
+    passIdx: headers.findIndex(h => FIELD_PATTERNS.password.test(h)),
+  };
+}
+
 function collectHintedNodes(node, hint, path, results) {
   if (!node) return;
   if (node[hint]) results.push({ node, path });
@@ -1253,6 +1261,7 @@ export {
   decodeBufferWithFallback,
   canonicaliseAutofillPhone,
   classifyAutofillEntries,
+  credentialColumnIndices,
   collectHintedNodes,
   collectFileNodes,
   extractDomain,

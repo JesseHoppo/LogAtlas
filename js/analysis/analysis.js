@@ -27,6 +27,7 @@ import { parseNoteArtifact, summariseNotes, classifyGrabbedFile, summariseGrabbe
 import {
   canonicaliseAutofillPhone,
   classifyAutofillEntries,
+  credentialColumnIndices,
   decodeBufferWithFallback,
   extractBaseDomain,
   baseDomainFromUrl,
@@ -216,9 +217,7 @@ async function analyseCredentials(nodes) {
         continue;
       }
 
-      const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-      const userIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
-      const passIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+      const { urlIdx, userIdx, passIdx } = credentialColumnIndices(parsed.headers);
 
       // Passwords-only dumps (unique_passwords.txt / Brute.txt): no account
       // context, so surface them as recovered plaintext rather than dropping.

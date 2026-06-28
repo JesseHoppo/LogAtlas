@@ -34,8 +34,8 @@ function buildNoteIndicatorSummary({ urls, emails, phones, credentialHints, wall
   return parts.join(' \u00B7 ') || 'Plain text note';
 }
 
-function classifyNoteType({ urls, emails, credentialHints, walletHints, structuredPii }) {
-  if (hasStructuredPii(structuredPii)) return 'Structured PII';
+function classifyNoteType({ urls, emails, credentialHints, walletHints, hasPii }) {
+  if (hasPii) return 'Structured PII';
   if (walletHints > 0) return 'Wallet / recovery note';
   if (credentialHints > 0 || (emails.length > 0 && urls.length > 0)) return 'Credential / account note';
   if (urls.length > 0 || emails.length > 0) return 'Web / account reference';
@@ -52,6 +52,7 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
   const credentialHints = countMatches(clean, CREDENTIAL_HINT_REGEX, { dedupe: false });
   const walletHints = countMatches(clean, WALLET_HINT_REGEX, { dedupe: false });
   const structuredPii = detectStructuredPii(clean);
+  const hasPii = hasStructuredPii(structuredPii);
   const domains = [];
   for (const url of urls) {
     const domain = baseDomainFromUrl(url);
@@ -62,7 +63,7 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
     title: buildNoteTitle(fileName, clean),
     preview: truncateText(clean, 180),
     text: clean,
-    noteType: classifyNoteType({ urls, emails, credentialHints, walletHints, structuredPii }),
+    noteType: classifyNoteType({ urls, emails, credentialHints, walletHints, hasPii }),
     indicators: buildNoteIndicatorSummary({ urls, emails, phones, credentialHints, walletHints, structuredPii }),
     urls,
     emails,
@@ -71,7 +72,7 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
     credentialHints,
     walletHints,
     structuredPii,
-    hasStructuredPii: hasStructuredPii(structuredPii),
+    hasStructuredPii: hasPii,
     source: normalisePath(sourcePath || fileName),
     modifiedDate: parseTimestampValue(lastModified),
   };

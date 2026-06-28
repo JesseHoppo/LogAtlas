@@ -14,6 +14,7 @@ import { parseNoteArtifact, summariseNotes } from '../analysis/contextArtifacts.
 import {
   collectHintedNodes,
   checkCookieValidity,
+  credentialColumnIndices,
   deriveCaptureDate,
   baseDomainFromUrl,
   decodeBufferWithFallback,
@@ -171,9 +172,7 @@ async function loadPasswordsData(fileTree, rootName) {
         continue;
       }
 
-      const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-      const userIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
-      const passIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+      const { urlIdx, userIdx, passIdx } = credentialColumnIndices(parsed.headers);
 
       if (passIdx < 0 || (urlIdx < 0 && userIdx < 0)) {
         failedFiles.push({ path: sourcePath, reason: 'Missing credential columns after parsing' });
@@ -233,9 +232,7 @@ async function loadPasswordsData(fileTree, rootName) {
     source: [...sources].join('; '),
   }));
 
-  const passIdx = headers.findIndex(h => FIELD_PATTERNS.password.test(h));
-  const urlColIdx = headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-  const userColIdx = headers.findIndex(h => FIELD_PATTERNS.username.test(h));
+  const { urlIdx: urlColIdx, userIdx: userColIdx, passIdx } = credentialColumnIndices(headers);
   const domains = new Set();
   const usernames = new Set();
   let withPasswords = 0;

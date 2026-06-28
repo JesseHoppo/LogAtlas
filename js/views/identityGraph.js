@@ -2,7 +2,7 @@ import { on, emit } from '../core/state.js';
 import { bindDebouncedInput, downloadCsvRows, getFieldByPattern } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData } from '../pages/credentials.js';
 import { getAccountTokensData } from '../pages/assets.js';
-import { extractBaseDomain, baseDomainFromUrl } from '../core/shared.js';
+import { credentialColumnIndices, extractBaseDomain, baseDomainFromUrl } from '../core/shared.js';
 import { escapeHtml } from '../core/utils.js';
 import { FIELD_PATTERNS, EMAIL_REGEX, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
 
@@ -218,9 +218,7 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
   const tokenLookup = buildTokenLookup(accountTokensData);
 
   // Credential domains with usernames (skip empty rows)
-  const urlIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-  const userIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.username.test(h));
-  const passIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
+  const { urlIdx, userIdx, passIdx } = credentialColumnIndices(passwordsData.headers);
   const domainUsernames = new Map(); // domain -> Set<username>
   const passwordDomains = new Set();
   for (const { row } of passwordsData.rows) {
