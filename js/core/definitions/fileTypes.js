@@ -243,11 +243,11 @@ export const FILE_TYPE_PATTERNS = {
 
   grabbedFiles: {
     folderPatterns: [
-      /^filegrabber$/i,
+      /^file ?grabber$/i,
       /^important files$/i,
     ],
     pathPatterns: [
-      /(^|\/)filegrabber\//i,
+      /(^|\/)file ?grabber\//i,
       /(^|\/)important files\//i,
       /(^|\/)files\/(?:desktop|downloads?|documents?)\//i,
     ],

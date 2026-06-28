@@ -104,6 +104,32 @@ function buildHighlights({ emails, urls, ethAddresses, btcAddresses, tokenCount,
   return parts.join(' | ') || 'Raw store present';
 }
 
+// macOS keychain dumps list many per-service records; parse them so the single
+// wallet row reflects the actual record count/contents instead of one opaque entry.
+function unwrapByteString(value) {
+  const m = String(value || '').trim().match(/^b'(.*)'$/s) || String(value || '').trim().match(/^b"(.*)"$/s);
+  return (m ? m[1] : String(value || '')).replace(/\\x[0-9a-f]{2}/gi, '').trim();
+}
+
+function parseKeychainRecords(text) {
+  const blocks = String(text || '').split(/^\[\+\]\s.*$/m).slice(1);
+  const records = [];
+  for (const block of blocks) {
+    const rec = { service: '', account: '', hasSecret: false };
+    for (const line of block.split('\n')) {
+      const m = line.match(/^\s*\[-\]\s*([^:]+):\s*(.*)$/);
+      if (!m) continue;
+      const key = m[1].trim().toLowerCase();
+      const val = m[2];
+      if (key === 'service') rec.service = unwrapByteString(val);
+      else if (key === 'account') rec.account = unwrapByteString(val);
+      else if (/password/.test(key) && unwrapByteString(val)) rec.hasSecret = true;
+    }
+    if (rec.service || rec.account || rec.hasSecret) records.push(rec);
+  }
+  return records;
+}
+
 function parseWalletArtifact(content, fileName, sourcePath) {
   if (!content) return null;
 
@@ -115,6 +141,34 @@ function parseWalletArtifact(content, fileName, sourcePath) {
   const normalisedPath = normalisePath(sourcePath || fileName);
   const storeType = detectStoreType(fileName, normalisedPath, bytes);
   const artifactType = detectArtifactType(fileName, normalisedPath, storeType);
+
+  if (artifactType === 'Keychain Dump' && text) {
+    const records = parseKeychainRecords(text);
+    if (records.length > 0) {
+      const services = uniqueLimited(records.map(r => r.service).filter(Boolean), 6);
+      const accounts = uniqueLimited(records.map(r => r.account).filter(Boolean), 6);
+      const withSecret = records.filter(r => r.hasSecret).length;
+      const parts = [`${records.length} keychain record${records.length === 1 ? '' : 's'}`];
+      if (services.length) parts.push(`services: ${summariseList(services)}`);
+      if (accounts.length) parts.push(`accounts: ${summariseList(accounts)}`);
+      return {
+        service: service.name,
+        category: service.category,
+        artifactType,
+        storeType,
+        browser: inferBrowserFromPath(normalisedPath),
+        profile: inferProfileFromPath(normalisedPath),
+        highlights: parts.join(' | '),
+        records,
+        recordCount: records.length,
+        emailCount: 0,
+        addressCount: 0,
+        tokenCount: withSecret,
+        seedHints: 0,
+        source: sourcePath,
+      };
+    }
+  }
 
   let jsonSignals = { emails: [], urls: [], ids: [], tokenCount: 0, seedHints: 0 };
   if (text && /\.json$/i.test(fileName) && text.length <= LIMITS.jsonParseMaxBytes) {

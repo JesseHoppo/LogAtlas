@@ -107,7 +107,8 @@ function splitGrabCollection(pathText) {
     };
   }
 
-  const grabMatch = normalised.match(/^(.*?)(?:\/|^)(FileGrabber)\/(.+)$/i);
+  // tolerate the spaced folder form "File Grabber"
+  const grabMatch = normalised.match(/^(.*?)(?:\/|^)(File ?Grabber)\/(.+)$/i);
   if (grabMatch) {
     return {
       collection: 'FileGrabber',
