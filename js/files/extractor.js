@@ -109,7 +109,7 @@ function insertPath(root, pathSegments, nodeData) {
   return current.children ? current.children[leafName] : current;
 }
 
-function getUniqueChildName(parent, desiredName) {
+export function getUniqueChildName(parent, desiredName) {
   if (!parent?.children?.[desiredName]) return desiredName;
 
   const extIndex = desiredName.lastIndexOf('.');

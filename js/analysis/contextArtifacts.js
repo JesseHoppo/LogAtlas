@@ -1,17 +1,10 @@
 import { getFileExtension, formatBytes } from '../core/utils.js';
-import { baseDomainFromUrl, parseTimestampValue, normalisePath, truncateText, collectUniqueMatches } from '../core/shared.js';
+import { baseDomainFromUrl, parseTimestampValue, normalisePath, truncateText, collectUniqueMatches, countMatches } from '../core/shared.js';
 import { URL_REGEX, SCAN_EMAIL_REGEX, SCAN_PHONE_REGEX } from '../core/definitions/patterns.js';
 import { detectStructuredPii, hasStructuredPii } from './structuredPii.js';
 
 const CREDENTIAL_HINT_REGEX = /(password|passcode|passphrase|pwd\b|username|login|credential|account|token|backup code|recovery code|密码|用户名|账号|登录名|登陆名|口令)/gi;
 const WALLET_HINT_REGEX = /(wallet|seed phrase|mnemonic|private key|secret recovery|metamask|phantom|bitcoin|ethereum|solana|助记词|私钥|\b(?:btc|eth|ltc|xrp|sol|usdt|tron|bch)\b)/gi;
-
-function countMatches(text, regex) {
-  let count = 0;
-  regex.lastIndex = 0;
-  while (regex.exec(text) !== null) count++;
-  return count;
-}
 
 function buildNoteTitle(fileName, text) {
   const baseName = String(fileName || '').replace(/\.[^.]+$/, '').trim();
@@ -56,8 +49,8 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
   const urls = collectUniqueMatches(clean, URL_REGEX, 6);
   const emails = collectUniqueMatches(clean, SCAN_EMAIL_REGEX, 6);
   const phones = collectUniqueMatches(clean, SCAN_PHONE_REGEX, 6);
-  const credentialHints = countMatches(clean, CREDENTIAL_HINT_REGEX);
-  const walletHints = countMatches(clean, WALLET_HINT_REGEX);
+  const credentialHints = countMatches(clean, CREDENTIAL_HINT_REGEX, { dedupe: false });
+  const walletHints = countMatches(clean, WALLET_HINT_REGEX, { dedupe: false });
   const structuredPii = detectStructuredPii(clean);
   const domains = [];
   for (const url of urls) {

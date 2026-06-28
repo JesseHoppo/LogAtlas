@@ -1,6 +1,5 @@
 // Asset pages: Tokens, Services, Wallets, Credit Cards
 
-import { loadFileContent } from '../files/extractor.js';
 import { escapeHtml } from '../core/utils.js';
 import {
   parseAccountTokenFile,
@@ -9,11 +8,9 @@ import {
 import { parseCreditCardFile } from '../transforms/cards.js';
 import { parseWalletArtifact } from '../analysis/walletArtifacts.js';
 import {
-  collectHintedNodes,
   inferBrowserFromPath,
   inferProfileFromPath,
   inferServiceFromPath,
-  SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import { serviceFromTokenType } from '../core/serviceRegistry.js';
 import {
@@ -28,6 +25,7 @@ import {
   extractCardLast4,
   downloadCsvRows,
   createPagedCollectionRegistry,
+  collectAndParse,
 } from './shared.js';
 
 let accountTokensData = { entries: [], fileCount: 0 };
@@ -105,109 +103,67 @@ const pageRegistry = createPagedCollectionRegistry({
 });
 
 async function loadAccountTokensData(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_accountTokenHint', rootName, nodes);
-  if (nodes.length === 0) { accountTokensData = { entries: [], fileCount: 0 }; return; }
-  const entries = [];
-  let fileCount = 0;
-  for (const { node, path } of nodes) {
-    try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseAccountTokenFile(text, path || node.name);
-      if (!parsed || parsed.rows.length === 0) continue;
-      fileCount++;
-      const pathService = inferServiceFromPath(path || node.name);
-      const browser = inferBrowserFromPath(path || node.name);
-      const profile = inferProfileFromPath(path || node.name);
-      for (const row of parsed.rows) {
-        const type = (row[0] || '').trim();
-        const value = (row[1] || '').trim();
-        const accountId = (row[2] || '').trim();
-        const note = (row[3] || '').trim();
-        if (!value && !accountId) continue;
-        const service = pathService || serviceFromTokenType(type) || 'Unknown';
-        entries.push({ service, type, value, accountId, browser, profile, note, source: path });
-      }
-    } catch { /* skip */ }
-  }
-  accountTokensData = { entries, fileCount };
+  accountTokensData = await collectAndParse(fileTree, rootName, '_accountTokenHint', (text, node, path) => {
+    const parsed = parseAccountTokenFile(text, path || node.name);
+    if (!parsed || parsed.rows.length === 0) return null;
+    const pathService = inferServiceFromPath(path || node.name);
+    const browser = inferBrowserFromPath(path || node.name);
+    const profile = inferProfileFromPath(path || node.name);
+    const rows = [];
+    for (const row of parsed.rows) {
+      const type = (row[0] || '').trim();
+      const value = (row[1] || '').trim();
+      const accountId = (row[2] || '').trim();
+      const note = (row[3] || '').trim();
+      if (!value && !accountId) continue;
+      const service = pathService || serviceFromTokenType(type) || 'Unknown';
+      rows.push({ service, type, value, accountId, browser, profile, note, source: path });
+    }
+    return rows;
+  });
 }
 
 async function loadServiceArtifactsData(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_serviceArtifactHint', rootName, nodes);
-  if (nodes.length === 0) { serviceArtifactsData = { entries: [], fileCount: 0 }; return; }
-  const entries = [];
-  let fileCount = 0;
-  for (const { node, path } of nodes) {
-    try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseServiceArtifactFile(text);
-      if (!parsed || parsed.rows.length === 0) continue;
-      fileCount++;
-      const service = inferServiceFromPath(path || node.name) || 'Unknown';
-      const artifactType = inferServiceArtifactType(path || node.name);
-      for (const row of parsed.rows) {
-        const section = (row[0] || '').trim();
-        const key = (row[1] || '').trim();
-        const value = (row[2] || '').trim();
-        if (!key && !value) continue;
-        entries.push({ service, artifactType, section, key, value, source: path });
-      }
-    } catch { /* skip */ }
-  }
-  serviceArtifactsData = { entries, fileCount };
+  serviceArtifactsData = await collectAndParse(fileTree, rootName, '_serviceArtifactHint', (text, node, path) => {
+    const parsed = parseServiceArtifactFile(text);
+    if (!parsed || parsed.rows.length === 0) return null;
+    const service = inferServiceFromPath(path || node.name) || 'Unknown';
+    const artifactType = inferServiceArtifactType(path || node.name);
+    const rows = [];
+    for (const row of parsed.rows) {
+      const section = (row[0] || '').trim();
+      const key = (row[1] || '').trim();
+      const value = (row[2] || '').trim();
+      if (!key && !value) continue;
+      rows.push({ service, artifactType, section, key, value, source: path });
+    }
+    return rows;
+  });
 }
 
 async function loadWalletArtifactsData(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_cryptoWalletHint', rootName, nodes);
-  if (nodes.length === 0) { walletArtifactsData = { entries: [], fileCount: 0 }; return; }
-  const entries = [];
-  let fileCount = 0;
-  for (const { node, path } of nodes) {
-    try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const parsed = parseWalletArtifact(content, node.name, path);
-      if (!parsed) continue;
-      fileCount++;
-      entries.push(parsed);
-    } catch { /* skip */ }
-  }
-  walletArtifactsData = { entries, fileCount };
+  walletArtifactsData = await collectAndParse(fileTree, rootName, '_cryptoWalletHint', (content, node, path) => {
+    const parsed = parseWalletArtifact(content, node.name, path);
+    return parsed || null;
+  }, { decode: false });
 }
 
 async function loadCreditCardsData(fileTree, rootName) {
-  const nodes = [];
-  collectHintedNodes(fileTree, '_creditCardHint', rootName, nodes);
-  if (nodes.length === 0) { creditCardsData = { entries: [], fileCount: 0 }; return; }
-  const entries = [];
-  let fileCount = 0;
-  for (const { node, path } of nodes) {
-    try {
-      const content = await loadFileContent(node);
-      if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseCreditCardFile(text);
-      if (!parsed || parsed.rows.length === 0) continue;
-      fileCount++;
-      for (const row of parsed.rows) {
-        const cardNumber = (row[0] || '').trim();
-        const nameOnCard = (row[1] || '').trim();
-        const cvc = (row[2] || '').trim();
-        const expiration = (row[3] || '').trim();
-        const filePath = (row[4] || '').trim();
-        if (!cardNumber && !nameOnCard && !cvc && !expiration && !filePath) continue;
-        entries.push({ cardNumber, last4: extractCardLast4(cardNumber), nameOnCard, cvc, expiration, filePath, browser: inferBrowserFromPath(filePath || path), source: path });
-      }
-    } catch { /* skip */ }
-  }
-  creditCardsData = { entries, fileCount };
+  creditCardsData = await collectAndParse(fileTree, rootName, '_creditCardHint', (text, node, path) => {
+    const parsed = parseCreditCardFile(text);
+    if (!parsed || parsed.rows.length === 0) return null;
+    const rows = [];
+    for (const row of parsed.rows) {
+      const cardNumber = (row[0] || '').trim();
+      const nameOnCard = (row[1] || '').trim();
+      const cvc = (row[2] || '').trim();
+      const expiration = (row[3] || '').trim();
+      const filePath = (row[4] || '').trim();
+      if (!cardNumber && !nameOnCard && !cvc && !expiration && !filePath) continue;
+      rows.push({ cardNumber, last4: extractCardLast4(cardNumber), nameOnCard, cvc, expiration, filePath, browser: inferBrowserFromPath(filePath || path), source: path });
+    }
+    return rows;
+  });
 }
 
 function accountTokenRowBuilder({ service, type, value, accountId, browser, profile, note, source }) {

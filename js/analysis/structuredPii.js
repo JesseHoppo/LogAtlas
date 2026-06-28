@@ -1,5 +1,6 @@
 import { NATIONAL_ID_PATTERNS } from '../core/definitions/patterns.js';
 import { BIP39_WORDS } from '../core/definitions/bip39.js';
+import { countMatches } from '../core/shared.js';
 
 const PAN_REGEX = /\b(?:\d[ -]?){13,19}\b/g;
 const IBAN_REGEX = /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g;
@@ -72,29 +73,13 @@ function detectSeedPhrase(text) {
   return false;
 }
 
-function countMatches(text, regex, filter) {
-  const value = String(text || '');
-  regex.lastIndex = 0;
-  let count = 0;
-  let match;
-  const seen = new Set();
-  while ((match = regex.exec(value)) !== null) {
-    const raw = match[0];
-    if (filter && !filter(raw)) continue;
-    if (seen.has(raw)) continue;
-    seen.add(raw);
-    count++;
-  }
-  return count;
-}
-
 function detectStructuredPii(text) {
   const value = String(text || '');
-  const panCount = countMatches(value, PAN_REGEX, (m) => {
+  const panCount = countMatches(value, PAN_REGEX, { filter: (m) => {
     const d = m.replace(/[ -]/g, '');
     return d.length >= 13 && d.length <= 19 && isLuhnValid(d);
-  });
-  const ibanCount = countMatches(value.replace(/(?<=[A-Z0-9])[ ]+(?=[A-Z0-9])/g, ''), IBAN_REGEX, (m) => ibanMod97Valid(m));
+  } });
+  const ibanCount = countMatches(value.replace(/(?<=[A-Z0-9])[ ]+(?=[A-Z0-9])/g, ''), IBAN_REGEX, { filter: (m) => ibanMod97Valid(m) });
   const cryptoAddrCount = countMatches(value, ETH_ADDRESS_REGEX) + countMatches(value, BTC_ADDRESS_REGEX);
   const seedPhrase = detectSeedPhrase(value);
   const nationalIds = detectNationalIds(value);

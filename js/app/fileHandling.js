@@ -1,29 +1,9 @@
 import { state, emit, resetState, setMultiFileMode } from '../core/state.js';
-import { extractFile, flattenTree, addFilesToTree, applyManualType } from '../files/extractor.js';
+import { extractFile, flattenTree, addFilesToTree, applyManualType, getUniqueChildName } from '../files/extractor.js';
 import { formatBytes, isArchiveFile } from '../core/utils.js';
 import { showNotification } from '../core/shared.js';
 import { promptForFileType } from '../files/fileTypeModal.js';
 import { openPasteModal } from '../files/pasteText.js';
-
-function getUniqueRootName(fileName) {
-  if (!state.fileTree?.children || !state.fileTree.children[fileName]) {
-    return fileName;
-  }
-
-  const extIndex = fileName.lastIndexOf('.');
-  const hasExtension = extIndex > 0;
-  const baseName = hasExtension ? fileName.slice(0, extIndex) : fileName;
-  const extension = hasExtension ? fileName.slice(extIndex) : '';
-
-  let suffix = 2;
-  let uniqueName = `${baseName} ${suffix}${extension}`;
-  while (state.fileTree.children[uniqueName]) {
-    suffix += 1;
-    uniqueName = `${baseName} ${suffix}${extension}`;
-  }
-
-  return uniqueName;
-}
 
 function updateMultiFileSummary() {
   const totalFiles = state.flatFiles.filter((file) => file.type === 'file').length;
@@ -129,7 +109,7 @@ async function handlePasteText({ resetUI }) {
 
   const { text, name, type } = result;
   const baseFileName = /\.[^./\\]+$/.test(name) ? name : `${name}.txt`;
-  const fileName = getUniqueRootName(baseFileName);
+  const fileName = getUniqueChildName(state.fileTree, baseFileName);
 
   const file = new File([text], fileName, { type: 'text/plain' });
 

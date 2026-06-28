@@ -49,6 +49,27 @@ let identityResult = null;
 
 const DEDUPE_KEY_SEP = '\u0000';
 
+function collectAllDatasets() {
+  return {
+    passwords: getPasswordsData(),
+    cookies: getCookiesData(),
+    autofills: getAutofillsData(),
+    notes: getNotesData(),
+    history: getHistoryData(),
+    bookmarks: getBookmarksData(),
+    browserMetadata: getBrowserMetadataData(),
+    accountTokens: getAccountTokensData(),
+    serviceArtifacts: getServiceArtifactsData(),
+    wallets: getWalletArtifactsData(),
+    downloads: getDownloadsData(),
+    detections: getDomainDetectionsData(),
+    clipboard: getClipboardData(),
+    grabbedFiles: getGrabbedFilesData(),
+    cards: getCreditCardsData(),
+    screenshots: getScreenshotsData(),
+  };
+}
+
 function maskPassword(pw) {
   if (!pw || pw.length === 0) return '****';
   if (pw.length <= 2) return '****';
@@ -90,22 +111,12 @@ function exportObfuscatedCredentials() {
 // Log Summary Report (HTML)
 
 function gatherReportData() {
-  const passwords = getPasswordsData();
-  const cookies = getCookiesData();
-  const autofills = getAutofillsData();
-  const notes = getNotesData();
-  const history = getHistoryData();
-  const bookmarks = getBookmarksData();
-  const browserMetadata = getBrowserMetadataData();
-  const accountTokens = getAccountTokensData();
-  const serviceArtifacts = getServiceArtifactsData();
-  const wallets = getWalletArtifactsData();
-  const downloads = getDownloadsData();
-  const detections = getDomainDetectionsData();
-  const clipboard = getClipboardData();
-  const grabbedFiles = getGrabbedFilesData();
-  const cards = getCreditCardsData();
-  const screenshots = getScreenshotsData();
+  const ds = collectAllDatasets();
+  const {
+    passwords, cookies, autofills, notes, history, bookmarks,
+    browserMetadata, accountTokens, serviceArtifacts, wallets,
+    downloads, detections, clipboard, grabbedFiles, cards, screenshots,
+  } = ds;
 
   let credStats = null;
   if (passwords.rows.length > 0) {
@@ -479,22 +490,11 @@ function showPasswordModal(password) {
 }
 
 async function exportParsedDataZip() {
-  const passwords = getPasswordsData();
-  const cookies = getCookiesData();
-  const autofills = getAutofillsData();
-  const notes = getNotesData();
-  const history = getHistoryData();
-  const bookmarks = getBookmarksData();
-  const browserMetadata = getBrowserMetadataData();
-  const accountTokens = getAccountTokensData();
-  const serviceArtifacts = getServiceArtifactsData();
-  const wallets = getWalletArtifactsData();
-  const downloads = getDownloadsData();
-  const detections = getDomainDetectionsData();
-  const clipboard = getClipboardData();
-  const grabbedFiles = getGrabbedFilesData();
-  const cards = getCreditCardsData();
-  const screenshots = getScreenshotsData();
+  const {
+    passwords, cookies, autofills, notes, history, bookmarks,
+    browserMetadata, accountTokens, serviceArtifacts, wallets,
+    downloads, detections, clipboard, grabbedFiles, cards, screenshots,
+  } = collectAllDatasets();
 
   const hasData = passwords.rows.length > 0 || cookies.rows.length > 0 ||
                   autofills.entries.length > 0 || notes.entries.length > 0 || history.entries.length > 0 ||
@@ -701,22 +701,11 @@ function initExports() {
 
   // Update export card counts when data is loaded
   on('data:loaded', () => {
-    const passwords = getPasswordsData();
-    const cookies = getCookiesData();
-    const autofills = getAutofillsData();
-    const notes = getNotesData();
-    const history = getHistoryData();
-    const bookmarks = getBookmarksData();
-    const browserMetadata = getBrowserMetadataData();
-    const accountTokens = getAccountTokensData();
-    const serviceArtifacts = getServiceArtifactsData();
-    const wallets = getWalletArtifactsData();
-    const downloads = getDownloadsData();
-    const detections = getDomainDetectionsData();
-    const clipboard = getClipboardData();
-    const grabbedFiles = getGrabbedFilesData();
-    const cards = getCreditCardsData();
-    const screenshots = getScreenshotsData();
+    const {
+      passwords, cookies, autofills, notes, history, bookmarks,
+      browserMetadata, accountTokens, serviceArtifacts, wallets,
+      downloads, detections, clipboard, grabbedFiles, cards, screenshots,
+    } = collectAllDatasets();
 
     const parts = [];
     if (passwords.rows.length > 0) parts.push(`${passwords.rows.length} credentials`);

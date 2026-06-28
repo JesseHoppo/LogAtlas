@@ -247,6 +247,31 @@ export function trimRootPath(path) {
   return path;
 }
 
+// Walk a hint, load each file, and parse it. parseFn(textOrBytes, node, path)
+// returns the row(s) to keep: an array (possibly empty), a single entry, or
+// null/undefined to skip the file entirely. A non-null return counts the file
+// even when it yields zero entries (e.g. all rows filtered out). With
+// decode:false parseFn receives the raw bytes instead of decoded text.
+export async function collectAndParse(fileTree, rootName, hintKey, parseFn, { decode = true } = {}) {
+  const nodes = [];
+  collectHintedNodes(fileTree, hintKey, rootName, nodes);
+  const entries = [];
+  let fileCount = 0;
+  for (const { node, path } of nodes) {
+    try {
+      const content = await loadFileContent(node);
+      if (!content) continue;
+      const input = decode ? SHARED_TEXT_DECODER.decode(content) : content;
+      const result = parseFn(input, node, path);
+      if (result == null) continue;
+      fileCount++;
+      if (Array.isArray(result)) entries.push(...result);
+      else entries.push(result);
+    } catch { /* skip */ }
+  }
+  return { entries, fileCount };
+}
+
 export function createPagedCollectionRegistry(definitions) {
   return {
     handleShowMore(pageId) {

@@ -962,6 +962,28 @@ function truncateText(value, max = 120) {
   return text.slice(0, max - 1) + '\u2026';
 }
 
+// dedupe=true counts distinct match strings (optionally filtered); dedupe=false
+// counts every hit. Callers rely on a global regex.
+function countMatches(text, regex, { filter, dedupe = true } = {}) {
+  const value = String(text || '');
+  regex.lastIndex = 0;
+  let count = 0;
+  let match;
+  if (!dedupe) {
+    while ((match = regex.exec(value)) !== null) count++;
+    return count;
+  }
+  const seen = new Set();
+  while ((match = regex.exec(value)) !== null) {
+    const raw = match[0];
+    if (filter && !filter(raw)) continue;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    count++;
+  }
+  return count;
+}
+
 function collectUniqueMatches(text, regex, limit = 5) {
   const seen = new Set();
   const matches = [];
@@ -1268,6 +1290,7 @@ export {
   normalisePath,
   truncateText,
   collectUniqueMatches,
+  countMatches,
   uniqueLimited,
   summariseList,
   randomPassword,
