@@ -107,7 +107,7 @@ export async function autoLoadFromQuery(handleFiles) {
       const segment = parsed.pathname.split('/').filter(Boolean).pop() || '';
       fileName = decodeURIComponent(segment);
     } catch { /* malformed escape; fall through to default */ }
-    if (!fileName) fileName = parsed.hostname || 'download.zip';
+    if (!fileName) fileName = 'download.zip';
     const file = new File([blob], fileName, { type: blob.type });
 
     loading.classList.remove('visible');
