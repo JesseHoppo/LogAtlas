@@ -463,7 +463,7 @@ function renderTriageOverview() {
       : Math.max(notes.credentialNotes || 0, notes.walletNotes || 0);
     riskItems.push(`Notes contain credential or wallet language in ${pluralise(notableNoteCount, 'file')}.`);
   } else if (notes?.totalNotes > 0) {
-    riskItems.push(`${pluralise(notes.totalNotes, 'note file')} may contain victim context, account notes, or operator comments.`);
+    riskItems.push(`${pluralise(notes.totalNotes, 'note file')} may contain victim or operator context.`);
   }
   if (grabbed?.fileCount > 0) {
     riskItems.push(`${pluralise(grabbed.fileCount, 'grabbed file')} recovered from FileGrabber / Important Files.`);
@@ -826,7 +826,6 @@ export function initDashboard() {
     </div>`
     ).join('');
 
-    // Show sysinfo actions toolbar
     actions.classList.remove('hidden');
 
     const resolvedSourcePath = resolveSysInfoSourcePath(data.sourceFiles);
@@ -925,7 +924,7 @@ export function initDashboard() {
     if (!data || data.totalDownloads === 0) {
       section.classList.add('hidden');
       body.innerHTML = '';
-      summaryEl.textContent = 'Analyzing download files...';
+      summaryEl.textContent = 'Analysing download files...';
       return;
     }
 

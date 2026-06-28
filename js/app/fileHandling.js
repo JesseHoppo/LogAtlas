@@ -110,7 +110,7 @@ async function handleAddMoreFiles(files) {
 
     loading.classList.remove('visible');
     emit('reanalyze');
-    showNotification(`Added ${fileArray.length} file(s). Analysis updated.`, 'info');
+    showNotification(`Added ${fileArray.length} file(s).`, 'info');
   } catch (err) {
     loading.classList.remove('visible');
     showNotification(`Failed to add files: ${err.message}`, 'error');
@@ -150,7 +150,7 @@ async function handlePasteText({ resetUI }) {
 
       loading.classList.remove('visible');
       emit('reanalyze');
-      showNotification(`Added "${fileName}". Analysis updated.`, 'info');
+      showNotification(`Added "${fileName}".`, 'info');
     } catch (err) {
       loading.classList.remove('visible');
       showNotification(`Failed to add pasted text: ${err.message}`, 'error');

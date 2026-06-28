@@ -18,10 +18,10 @@ const HIDDEN_SECTIONS = [
 ];
 
 const TEXT_RESETS = [
-  { id: 'dashCredSummary', text: 'Analyzing credential files...', loading: true },
-  { id: 'dashCookieSummary', text: 'Analyzing cookie files...', loading: true },
-  { id: 'dashAutofillSummary', text: 'Analyzing autofill files...', loading: true },
-  { id: 'dashDownloadSummary', text: 'Analyzing download files...' },
+  { id: 'dashCredSummary', text: 'Analysing credential files...', loading: true },
+  { id: 'dashCookieSummary', text: 'Analysing cookie files...', loading: true },
+  { id: 'dashAutofillSummary', text: 'Analysing autofill files...', loading: true },
+  { id: 'dashDownloadSummary', text: 'Analysing download files...' },
 ];
 
 const HTML_RESETS = [

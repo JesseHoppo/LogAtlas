@@ -443,6 +443,9 @@ body {
   gap: 0.75rem;
   min-width: 0;
 }
+.current-file-info > div {
+  min-width: 0;
+}
 .current-file-name {
   font-weight: 500;
   font-size: 0.9rem;
@@ -1199,10 +1202,6 @@ body {
 .file-item.selected .file-select-cb {
   opacity: 1;
 }
-.file-item.selected {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-}
 
 /* List view checkbox */
 .file-list-item .file-select-cb {
@@ -1606,7 +1605,7 @@ body {
   min-height: 65vh;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: white;
+  background: white; /* PDF pages render on white regardless of theme */
 }
 
 /* Preview states */
@@ -1713,7 +1712,6 @@ body {
   font-weight: 600;
   color: var(--accent);
   border-bottom: 2px solid var(--border);
-  white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-size: 0.65rem;
@@ -3033,8 +3031,8 @@ body {
 }
 
 .timeline-event.tl-history::before {
-  background: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
+  background: var(--zip-color);
+  box-shadow: 0 0 0 2px var(--zip-color);
 }
 
 .timeline-event-header {
@@ -3080,8 +3078,8 @@ body {
 }
 
 .timeline-event-badge-history {
-  background: var(--accent-dim);
-  color: var(--accent);
+  background: rgba(124, 58, 237, 0.12);
+  color: var(--zip-color);
 }
 
 .timeline-event-title {
@@ -4239,7 +4237,6 @@ body {
   vertical-align: middle;
 }
 
-.lab-bucket-dot,
 .lab-action-dot {
   display: inline-block;
   width: 9px;
@@ -4248,11 +4245,8 @@ body {
   background: var(--text-muted);
   flex: 0 0 auto;
 }
-.lab-bucket-dot.lab-bucket-likely-current { background: var(--success); }
-.lab-bucket-dot.lab-bucket-review { background: var(--warning); }
-.lab-bucket-dot.lab-bucket-weak { background: var(--text-muted); }
 
-/* Actionability: what the analyst really wants to scan for */
+/* Action buckets: live / recent / stored / legacy */
 .lab-action-dot.lab-action-live {
   background: var(--error);
   box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.18);
@@ -4294,7 +4288,7 @@ body {
 }
 .lab-bar-empty { opacity: 0.5; }
 .lab-bar-seg { display: block; height: 100%; }
-.lab-bar-identity { background: var(--accent); }
+.lab-bar-identity { background: var(--text-secondary); }
 .lab-bar-site { background: var(--success); }
 .lab-bar-tenant { background: var(--zip-color); }
 .lab-bar-platform { background: var(--warning); }
@@ -4393,7 +4387,7 @@ body {
 .lab-tag.lab-tone-warning { color: var(--warning); border-color: rgba(217, 119, 6, 0.4); }
 .lab-tag.lab-tone-danger { color: var(--error); border-color: rgba(220, 38, 38, 0.4); }
 .lab-tag.lab-tone-accent { color: var(--accent); border-color: rgba(37, 99, 235, 0.4); }
-.lab-tag.lab-bar-identity { color: var(--accent); }
+.lab-tag.lab-bar-identity { color: var(--text-secondary); }
 .lab-tag.lab-bar-site { color: var(--success); }
 .lab-tag.lab-bar-tenant { color: var(--zip-color); }
 .lab-tag.lab-bar-platform { color: var(--warning); }

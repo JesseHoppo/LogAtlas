@@ -148,7 +148,7 @@ function classifyGrabbedFile(sourcePath, sizeBytes = 0, lastModified = null) {
 
   const relativePath = pathInfo.relativePath;
   const name = relativePath.split('/').pop() || relativePath;
-  const extension = getFileExtension(name).toLowerCase();
+  const extension = getFileExtension(name);
   const highValue = matchHighValue(relativePath, name);
 
   return {

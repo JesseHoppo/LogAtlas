@@ -1,5 +1,3 @@
-// Misc utility functions.
-
 import { LIMITS } from './definitions/patterns.js';
 
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };

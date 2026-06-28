@@ -358,8 +358,8 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     statsId: 'identityStats',
     beforeContentHtml: '<div id="identityPrimary"></div>',
     contentId: 'identityContent',
-    emptyText: 'No identity data available.',
     afterContentHtml: '<div id="identityEmailMap"></div>',
+    emptyText: 'No identity data available.',
   },
   {
     name: 'currentnesslab',

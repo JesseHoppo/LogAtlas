@@ -15,8 +15,8 @@ export const FILE_TYPE_PATTERNS = {
       /^filezilla\.(txt|tsv|csv)$/i,
       /^brute\.txt$/i,
     ],
-    // Aggregate summary files. Only promoted when no per-profile file exists,
-    // otherwise they'd double-count. See reconcileAggregatePasswordFiles.
+    // Aggregate summary files (e.g. `All Passwords.txt`); promoted to real password
+    // files by reconcileAggregatePasswordFiles, with dedup at the credential layer.
     aggregatePatterns: [
       /^(?:all|unique|icloud)[\s_-]*passwords?(?:\([^)]+\))?\.(txt|tsv|csv)$/i,
       /^passwords?[\s_-]*(?:unique|all)\.(txt|tsv|csv)$/i,

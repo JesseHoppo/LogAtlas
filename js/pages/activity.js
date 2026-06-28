@@ -726,7 +726,7 @@ function renderClipboardPage(searchQuery = '') {
   const lureCats = Object.entries(cached.lureCategories || {}).sort((a, b) => b[1] - a[1]);
   if (lureCats.length > 0) {
     const chips = lureCats.map(([cat, count]) => `<span class="dash-ioc-family">${escapeHtml(LURE_LABELS[cat] || cat)} ${count}</span>`).join(' ');
-    html += `<div class="data-page-warning"><div class="data-page-warning-title">Clipboard social-engineering / clipper activity</div><div class="data-page-warning-more">Clipboard captures match known lure patterns.</div><div class="identity-service-tags">${chips}</div></div>`;
+    html += `<div class="data-page-warning"><div class="data-page-warning-title">Clipboard social-engineering / clipper activity</div><div class="data-page-warning-more">Matches known lure patterns.</div><div class="identity-service-tags">${chips}</div></div>`;
   }
 
   html += '<div class="data-table-container"><table class="data-table">';

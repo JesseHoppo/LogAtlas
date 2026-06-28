@@ -20,8 +20,6 @@ const FILES = {
   ddns:            'data/site-domains/ddns.txt',
   rmm:             'data/site-domains/rmm.txt',
   gambling:        'data/site-domains/gambling.txt',
-  emailFree:       'data/email-domains/free-providers.txt',
-  emailDisposable: 'data/email-domains/disposable.txt',
 };
 
 const CATEGORY_LABELS = {
@@ -41,8 +39,6 @@ const CATEGORY_LABELS = {
   rmm:             'Remote Access',
   gambling:        'Gambling',
   sensitive:       'Sensitive',
-  emailFree:       'Email (free)',
-  emailDisposable: 'Email (disposable)',
 };
 
 // Site categories ranked by source precision (cleanest list first). When a
@@ -99,7 +95,6 @@ function matchSuffixCategory(host) {
 
 const sets = {};
 let loadingPromise = null;
-let loaded = false;
 
 // Index each entry verbatim (lowercased, www-stripped). The lookup walks up
 // labels, so a list entry like `gemini.google.com` matches `gemini.google.com`
@@ -131,7 +126,6 @@ function* hostAncestors(host) {
     if (dot < 0) break;
     cur = cur.slice(dot + 1);
     if (cur && cur !== cleanHost) yield cur;
-    if (cur === base) break;
   }
 }
 
@@ -160,15 +154,10 @@ function loadDomainCategories() {
       fetchSet(url).then((set) => { sets[name] = set; })
     )
   ).then(() => {
-    loaded = true;
     emit('domains:categoriesLoaded', { sizes: getSizes() });
     return sets;
   });
   return loadingPromise;
-}
-
-function isCategoriesLoaded() {
-  return loaded;
 }
 
 function getSizes() {
@@ -201,23 +190,6 @@ function classifySiteDomain(host) {
   };
 }
 
-function classifyEmailDomain(domain) {
-  const cleanHost = normaliseHost(domain);
-  if (!cleanHost) return { base: '', categories: [], primaryKey: null, primaryLabel: '' };
-  const base = extractBaseDomain(cleanHost) || cleanHost;
-  const categories = [];
-  // Disposable wins over free if both ever match.
-  if (setMatchesHost(sets.emailDisposable, cleanHost)) categories.push('emailDisposable');
-  if (setMatchesHost(sets.emailFree, cleanHost)) categories.push('emailFree');
-  const primaryKey = categories[0] || null;
-  return {
-    base,
-    categories,
-    primaryKey,
-    primaryLabel: primaryKey ? CATEGORY_LABELS[primaryKey] : '',
-  };
-}
-
 function getCategoryLabel(key) {
   return CATEGORY_LABELS[key] || '';
 }
@@ -225,10 +197,8 @@ function getCategoryLabel(key) {
 export {
   loadDomainCategories,
   classifySiteDomain,
-  classifyEmailDomain,
   getCategoryLabel,
   matchSuffixCategory,
-  isCategoriesLoaded,
   getSizes,
   SITE_CATEGORY_PRIORITY,
 };

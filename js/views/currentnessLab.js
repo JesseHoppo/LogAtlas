@@ -253,7 +253,7 @@ function buildCandidatesPanel(summary) {
       .map((src) => `<span class="lab-tag">${escapeHtml(src)}</span>`)
       .join('');
     return `
-      <li class="lab-candidate" data-tone="${tone}">
+      <li class="lab-candidate">
         <span class="lab-candidate-domain">${escapeHtml(entry.domain)}</span>
         <span class="lab-candidate-status lab-tone-${tone}">${escapeHtml(entry.statusLabel)}</span>
         <span class="lab-candidate-counts">${escapeHtml(counts)}</span>

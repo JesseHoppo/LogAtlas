@@ -630,7 +630,7 @@ export const SIGNATURES = {
         label: 'Structure: _Information.txt (underscore prefix)',
       },
     ],
-    require: ({ ctx, matchedCounts }) => {
+    require: ({ ctx }) => {
       if (/^UserName \(ComputerName\):/mi.test(ctx.sysinfoText || '')) return true;
       return (ctx.sysinfoKeys || []).some(k => /^(UserName \(ComputerName\)|isGodMod|isAdmin|UserAgent|Keyboard Languages)$/i.test(k));
     },

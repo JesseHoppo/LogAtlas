@@ -75,7 +75,7 @@ export const FIELD_PATTERNS = {
   url:        /^(url|uri|link|domain|host(?:name)?|site|origin|website|address|web\s*address|login\s*page|homepage)$/i,
   username:   /^(user(?:name)?|login(?:\s*(?:name|id))?|email(?:\s*address)?|mail|account(?:\s*name)?|user\s*id)$/i,
   password:   /^(pass(?:word)?|passwd|pwd|passcode|pin(?:code)?)$/i,
-  expires:    /^(expires?|expir)/i,
+  expires:    /^expir/i,
   cookieDomain: /^(domain|host)$/i,
   cookieName: /^name$/i,
   email:      /email|e-mail/i,

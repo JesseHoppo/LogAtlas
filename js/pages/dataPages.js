@@ -69,7 +69,7 @@ const COLLECTION_MODULES = [
 ];
 
 let credentialsController = null;
-let collectionControllers = {};
+let collectionControllers;
 
 // Unified show-more handler
 

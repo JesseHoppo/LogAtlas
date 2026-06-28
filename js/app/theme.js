@@ -43,8 +43,7 @@ export function initThemeToggle() {
   const themeToggle = document.getElementById('themeToggle');
   if (!themeToggle) return;
 
-  // The inline pre-paint script in index.html sets data-theme before CSS
-  // applies; this just brings the toggle button label into agreement.
+  // theme-bootstrap.js sets data-theme before CSS applies; this just brings the toggle button label into agreement.
   const stored = readStoredTheme();
   const initial = stored === 'dark' || stored === 'light'
     ? stored

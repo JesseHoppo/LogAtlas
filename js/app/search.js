@@ -189,6 +189,5 @@ export function initSearch(navigateToPage) {
     }
   });
 
-  // Return references needed by other modules
   return { globalSearchInput, searchResults, searchStatus };
 }

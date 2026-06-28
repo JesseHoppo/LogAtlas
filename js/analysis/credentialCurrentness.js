@@ -297,9 +297,6 @@ const TENANT_FULL_HOST_PROVIDER_KEYS = new Set([
   'microsoft', // sharepoint.com, onmicrosoft.com tenants
 ]);
 
-// CAPTURE_TIME_KEYS comes from definitions/patterns.js; single source of
-// truth shared with the Timeline view and IOC_KEY_MAP[Log Date].
-
 const LOGIN_HINT_PATTERN = /(login|log in|signin|sign in|auth|sso|oauth|account|portal|dashboard|mail|webmail|workspace|okta|adfs|saml|office|outlook)/i;
 
 function normaliseText(value) {
@@ -984,13 +981,10 @@ function buildSiteIndexes({ cookies, history, notes, downloads, bookmarks }) {
       const baseDomain = extractBaseDomain(domain) || domain;
       if (!baseDomain) continue;
       if (!noteByBase.has(baseDomain)) {
-        noteByBase.set(baseDomain, { count: 0, recentCount: 0 });
+        noteByBase.set(baseDomain, { count: 0 });
       }
       const summary = noteByBase.get(baseDomain);
       summary.count += 1;
-      if (entry.modifiedDate instanceof Date && !isNaN(entry.modifiedDate.getTime())) {
-        summary.recentCount += 1;
-      }
     }
   }
 
@@ -1511,7 +1505,6 @@ function buildPrimaryIdentity({ rows, identityDomains, identitySets, sysinfoEntr
   const dominant = identityDomains.dominantCorporateDomain;
 
   if (dominant) {
-    // Pick the most frequent email at this domain
     const counts = new Map();
     for (const row of rows) {
       if (row.usernameDomain !== dominant.domain) continue;
@@ -1710,4 +1703,4 @@ function buildCredentialCurrentnessModel(input) {
   };
 }
 
-export { buildCredentialCurrentnessModel, inferCaptureContext };
+export { buildCredentialCurrentnessModel };

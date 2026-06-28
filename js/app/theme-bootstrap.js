@@ -5,5 +5,5 @@
     if (stored === 'dark' || (stored == null && prefersDark)) {
       document.documentElement.setAttribute('data-theme', 'dark');
     }
-  } catch (_) {}
+  } catch {}
 })();

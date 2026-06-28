@@ -23,8 +23,8 @@ function isLikelyPasswordFilename(name, parentDir, fullPath = '') {
   return FILE_TYPE_PATTERNS.password.patterns.some(rx => rx.test(trimmedName));
 }
 
-// `All Passwords.txt`-style files. Only promoted to a real password file
-// when no per-profile file is present (see reconcileAggregatePasswordFiles).
+// `All Passwords.txt`-style aggregate files; promoted to a real password file by
+// reconcileAggregatePasswordFiles, with dedup at the credential layer.
 function isLikelyAggregatePasswordFile(name) {
   const trimmedName = String(name || '').trim();
   const patterns = FILE_TYPE_PATTERNS.password.aggregatePatterns || [];
@@ -172,12 +172,12 @@ function isLikelyNoteFile(name, parentDir, fullPath) {
   return notes.pathPatterns.some(rx => rx.test(normalisedPath)) && TEXT_EXTENSIONS.test(name);
 }
 
-function isLikelyKeylogFile(name, parentDir, fullPath) {
+function isLikelyKeylogFile(_name, _parentDir, fullPath) {
   const normalisedPath = normalisePath(fullPath);
   return FILE_TYPE_PATTERNS.keylog.pathPatterns.some(rx => rx.test(normalisedPath));
 }
 
-function isLikelyGrabbedFile(name, parentDir, fullPath) {
+function isLikelyGrabbedFile(_name, parentDir, fullPath) {
   const grabbed = FILE_TYPE_PATTERNS.grabbedFiles;
   const normalisedPath = normalisePath(fullPath);
   if (parentDir && grabbed.folderPatterns.some(rx => rx.test(parentDir))) return true;

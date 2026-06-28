@@ -65,7 +65,7 @@ function initFileTypeModal() {
     }
 
     // Number shortcuts 1-9 map to the visible option keys.
-    const num = parseInt(e.key);
+    const num = parseInt(e.key, 10);
     if (num >= 1 && num <= 9) {
       e.preventDefault();
       const button = [...elOptions.querySelectorAll('.filetype-option')]
