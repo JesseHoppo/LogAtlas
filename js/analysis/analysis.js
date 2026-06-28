@@ -38,7 +38,6 @@ import {
   extractCountryFromFilename,
   inferBrowserFromPath,
   inferBrowserFromContent,
-  inferServiceFromPath,
   isLikelyAutofillPhone,
   isPlaceholderUserName,
   isValidCountryCode,
@@ -59,7 +58,7 @@ import {
 // single very large file doesn't block paint. High enough that ordinary files
 // never yield.
 const ROW_YIELD_INTERVAL = 5000;
-import { serviceFromTokenType } from '../core/serviceRegistry.js';
+import { inferServiceFromPath, serviceFromTokenType } from '../core/serviceRegistry.js';
 import { classifyCookie } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
 import { classifySiteDomain } from '../core/domainCategories.js';

@@ -239,6 +239,39 @@ export function downloadCsvRows(filename, headers, rows) {
   downloadBlob(buildCsvText(headers, rows), filename, 'text/csv');
 }
 
+export function sessionTypeLabel(t) {
+  if (t === 'auth') return 'Auth';
+  if (t === 'session') return 'Session';
+  if (t === 'tracking') return 'Tracking';
+  return '';
+}
+
+export function shapeCookiesCsv(cookiesData) {
+  return {
+    headers: [...cookiesData.headers, 'Status', 'Session Type'],
+    rows: cookiesData.rows.map(({ row, validity, sessionType }) =>
+      [...row, validity.label, sessionTypeLabel(sessionType)]),
+  };
+}
+
+export function shapeNotesCsv(notesData) {
+  return {
+    headers: ['Title', 'Type', 'Indicators', 'Preview', 'URLs', 'Emails', 'Phones', 'Credential Hints', 'Wallet Hints', 'Source'],
+    rows: notesData.entries.map((entry) => [
+      entry.title,
+      entry.noteType,
+      entry.indicators,
+      entry.preview,
+      (entry.urls || []).join('; '),
+      (entry.emails || []).join('; '),
+      (entry.phones || []).join('; '),
+      entry.credentialHints,
+      entry.walletHints,
+      entry.source,
+    ]),
+  };
+}
+
 export function trimRootPath(path) {
   if (!path) return '';
   if (state.rootZipName && path.startsWith(state.rootZipName + '/')) {

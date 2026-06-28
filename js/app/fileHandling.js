@@ -15,12 +15,34 @@ function updateMultiFileSummary() {
   document.getElementById('currentFileSize').textContent = formatBytes(totalSize);
 }
 
+function startFreshUI({ name, sizeBytes, multiFile }) {
+  resetState();
+  setMultiFileMode(multiFile);
+
+  document.getElementById('dropZone').style.display = 'none';
+  document.getElementById('uploadInfo').style.display = 'none';
+  document.getElementById('resetZone').classList.add('visible');
+
+  document.getElementById('currentFileName').textContent = name;
+  document.getElementById('currentFileSize').textContent = formatBytes(sizeBytes);
+
+  const addMoreBtn = document.getElementById('addMoreBtn');
+  const pasteMoreBtn = document.getElementById('pasteMoreBtn');
+  if (multiFile) {
+    addMoreBtn.classList.remove('hidden');
+    pasteMoreBtn.classList.remove('hidden');
+  } else {
+    addMoreBtn.classList.add('hidden');
+    pasteMoreBtn.classList.add('hidden');
+  }
+
+  document.getElementById('results').classList.remove('visible');
+  document.getElementById('errorList').classList.remove('visible');
+  document.getElementById('loading').classList.add('visible');
+}
+
 async function handleFiles(files, { resetUI }) {
-  const dropZone = document.getElementById('dropZone');
-  const uploadInfo = document.getElementById('uploadInfo');
-  const resetZone = document.getElementById('resetZone');
   const loading = document.getElementById('loading');
-  const results = document.getElementById('results');
 
   const fileArray = Array.from(files);
   if (fileArray.length === 0) return;
@@ -33,31 +55,13 @@ async function handleFiles(files, { resetUI }) {
     return;
   }
 
-  resetState();
-  setMultiFileMode(isMultiFile);
-
-  dropZone.style.display = 'none';
-  uploadInfo.style.display = 'none';
-  resetZone.classList.add('visible');
-
-  const addMoreBtn = document.getElementById('addMoreBtn');
-  if (isMultiFile) {
-    const totalSize = fileArray.reduce((sum, f) => sum + f.size, 0);
-    document.getElementById('currentFileName').textContent =
-      fileArray.length === 1 ? fileArray[0].name : `${fileArray.length} files`;
-    document.getElementById('currentFileSize').textContent = formatBytes(totalSize);
-    addMoreBtn.classList.remove('hidden');
-    document.getElementById('pasteMoreBtn').classList.remove('hidden');
-  } else {
-    document.getElementById('currentFileName').textContent = fileArray[0].name;
-    document.getElementById('currentFileSize').textContent = formatBytes(fileArray[0].size);
-    addMoreBtn.classList.add('hidden');
-    document.getElementById('pasteMoreBtn').classList.add('hidden');
-  }
-
-  results.classList.remove('visible');
-  document.getElementById('errorList').classList.remove('visible');
-  loading.classList.add('visible');
+  const name = isMultiFile
+    ? (fileArray.length === 1 ? fileArray[0].name : `${fileArray.length} files`)
+    : fileArray[0].name;
+  const sizeBytes = isMultiFile
+    ? fileArray.reduce((sum, f) => sum + f.size, 0)
+    : fileArray[0].size;
+  startFreshUI({ name, sizeBytes, multiFile: isMultiFile });
 
   try {
     if (isMultiFile) {
@@ -97,12 +101,19 @@ async function handleAddMoreFiles(files) {
   }
 }
 
+async function ingestPastedFile(file, fileName, type) {
+  await addFilesToTree([file]);
+
+  const node = state.fileTree.children[fileName];
+  if (node) {
+    applyManualType(node, type);
+  }
+
+  state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
+}
+
 async function handlePasteText({ resetUI }) {
-  const dropZone = document.getElementById('dropZone');
-  const uploadInfo = document.getElementById('uploadInfo');
-  const resetZone = document.getElementById('resetZone');
   const loading = document.getElementById('loading');
-  const results = document.getElementById('results');
 
   const result = await openPasteModal();
   if (!result) return;
@@ -117,14 +128,7 @@ async function handlePasteText({ resetUI }) {
     // Add to existing analysis
     loading.classList.add('visible');
     try {
-      await addFilesToTree([file]);
-
-      const node = state.fileTree.children[fileName];
-      if (node) {
-        applyManualType(node, type);
-      }
-
-      state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
+      await ingestPastedFile(file, fileName, type);
 
       updateMultiFileSummary();
 
@@ -137,31 +141,10 @@ async function handlePasteText({ resetUI }) {
     }
   } else {
     // Start new analysis
-    resetState();
-    setMultiFileMode(true);
-
-    dropZone.style.display = 'none';
-    uploadInfo.style.display = 'none';
-    resetZone.classList.add('visible');
-
-    document.getElementById('currentFileName').textContent = fileName;
-    document.getElementById('currentFileSize').textContent = formatBytes(file.size);
-    document.getElementById('addMoreBtn').classList.remove('hidden');
-    document.getElementById('pasteMoreBtn').classList.remove('hidden');
-
-    results.classList.remove('visible');
-    document.getElementById('errorList').classList.remove('visible');
-    loading.classList.add('visible');
+    startFreshUI({ name: fileName, sizeBytes: file.size, multiFile: true });
 
     try {
-      await addFilesToTree([file]);
-
-      const node = state.fileTree.children[fileName];
-      if (node) {
-        applyManualType(node, type);
-      }
-
-      state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
+      await ingestPastedFile(file, fileName, type);
       emit('extracted');
     } catch (err) {
       loading.classList.remove('visible');

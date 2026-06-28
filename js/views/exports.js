@@ -15,6 +15,8 @@ import {
   buildCsvText,
   downloadCsvRows,
   getFieldByPattern,
+  shapeCookiesCsv,
+  shapeNotesCsv,
 } from '../pages/shared.js';
 import {
   getPasswordsData,
@@ -534,13 +536,8 @@ async function exportParsedDataZip() {
     }
 
     if (cookies.rows.length > 0) {
-      await addCsvFile('cookies.csv', [...cookies.headers, 'Status', 'Session Type'], cookies.rows.map(({ row, validity, sessionType }) => {
-        const typeLabel = sessionType === 'auth' ? 'Auth'
-          : sessionType === 'session' ? 'Session'
-          : sessionType === 'tracking' ? 'Tracking'
-          : '';
-        return [...row, validity.label, typeLabel];
-      }));
+      const shaped = shapeCookiesCsv(cookies);
+      await addCsvFile('cookies.csv', shaped.headers, shaped.rows);
     }
 
     if (autofills.entries.length > 0) {
@@ -550,19 +547,8 @@ async function exportParsedDataZip() {
     }
 
     if (notes.entries.length > 0) {
-      await addCsvFile('notes.csv', ['Title', 'Type', 'Indicators', 'Preview', 'URLs', 'Emails', 'Phones', 'Credential Hints', 'Wallet Hints', 'Source'], notes.entries.map((entry) => [
-          entry.title,
-          entry.noteType,
-          entry.indicators,
-          entry.preview,
-          (entry.urls || []).join('; '),
-          (entry.emails || []).join('; '),
-          (entry.phones || []).join('; '),
-          entry.credentialHints,
-          entry.walletHints,
-          entry.source,
-        ]
-      ));
+      const shaped = shapeNotesCsv(notes);
+      await addCsvFile('notes.csv', shaped.headers, shaped.rows);
     }
 
     if (history.entries.length > 0) {

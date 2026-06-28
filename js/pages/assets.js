@@ -10,9 +10,8 @@ import { parseWalletArtifact } from '../analysis/walletArtifacts.js';
 import {
   inferBrowserFromPath,
   inferProfileFromPath,
-  inferServiceFromPath,
 } from '../core/shared.js';
-import { serviceFromTokenType } from '../core/serviceRegistry.js';
+import { inferServiceFromPath, serviceFromTokenType } from '../core/serviceRegistry.js';
 import {
   PAGE_SIZE,
   buildShowMoreButton,

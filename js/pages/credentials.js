@@ -31,6 +31,8 @@ import {
   maskValue,
   addAdjustColumnsBtn,
   downloadCsvRows,
+  shapeCookiesCsv,
+  shapeNotesCsv,
 } from './shared.js';
 
 // Auth/SSO subdomains whose base domain doesn't name the consumer service.
@@ -878,11 +880,8 @@ function exportPasswordsCSV() {
 
 function exportCookiesCSV() {
   if (cookiesData.rows.length === 0) return;
-  const headers = [...cookiesData.headers, 'Status', 'Session Type'];
-  downloadCsvRows('cookies.csv', headers, cookiesData.rows.map(({ row, validity, sessionType }) => {
-    const typeLabel = sessionType === 'auth' ? 'Auth' : sessionType === 'session' ? 'Session' : '';
-    return [...row, validity.label, typeLabel];
-  }));
+  const { headers, rows } = shapeCookiesCsv(cookiesData);
+  downloadCsvRows('cookies.csv', headers, rows);
 }
 
 function exportAutofillsCSV() {
@@ -894,20 +893,8 @@ function exportAutofillsCSV() {
 
 function exportNotesCSV() {
   if (notesData.entries.length === 0) return;
-  downloadCsvRows('notes.csv', ['Title', 'Type', 'Indicators', 'Preview', 'URLs', 'Emails', 'Phones', 'Credential Hints', 'Wallet Hints', 'Source'], notesData.entries.map(
-    (entry) => [
-      entry.title,
-      entry.noteType,
-      entry.indicators,
-      entry.preview,
-      (entry.urls || []).join('; '),
-      (entry.emails || []).join('; '),
-      (entry.phones || []).join('; '),
-      entry.credentialHints,
-      entry.walletHints,
-      entry.source,
-    ]
-  ));
+  const { headers, rows } = shapeNotesCsv(notesData);
+  downloadCsvRows('notes.csv', headers, rows);
 }
 
 // Show-more handler

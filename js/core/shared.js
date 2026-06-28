@@ -1,5 +1,4 @@
 import { EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
-import { inferServiceFromPath } from './serviceRegistry.js';
 
 const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
 const WIN1252_TEXT_DECODER = new TextDecoder('windows-1252');
@@ -1267,7 +1266,6 @@ export {
   inferBrowserFromPath,
   inferBrowserFromContent,
   inferProfileFromPath,
-  inferServiceFromPath,
   extractCountryFromFilename,
   isLikelyAutofillPhone,
   isPlaceholderUserName,
