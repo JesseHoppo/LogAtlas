@@ -14,7 +14,8 @@ import {
   checkCookieValidity,
   deriveCaptureDate,
   baseDomainFromUrl,
-  SHARED_TEXT_DECODER,
+  decodeBufferWithFallback,
+  parseNodeCached,
 } from '../core/shared.js';
 import { classifyCookie } from '../analysis/sessionCookies.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
@@ -162,8 +163,8 @@ async function loadPasswordsData(fileTree, rootName) {
         failedFiles.push({ path: sourcePath, reason: 'Unreadable or empty file' });
         continue;
       }
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parsePasswordFile(text, node._parseConfig || null);
+      const text = decodeBufferWithFallback(content);
+      const parsed = parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) {
         failedFiles.push({ path: sourcePath, reason: 'No credentials parsed' });
         continue;
@@ -272,8 +273,8 @@ async function loadCookiesData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseCookieFile(text, node._parseConfig || null);
+      const text = decodeBufferWithFallback(content);
+      const parsed = parseNodeCached(node, 'cookie', parseCookieFile, text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         fileCount++;
         const columnMap = getCookieColumnMap(parsed.headers, parsed.rows[0]?.length || 0);
@@ -341,8 +342,8 @@ async function loadAutofillsData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseAutofillFile(text, node._parseConfig || null);
+      const text = decodeBufferWithFallback(content);
+      const parsed = parseNodeCached(node, 'autofill', parseAutofillFile, text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         for (const row of parsed.rows) {
           const name = (row[0] || '').trim();
@@ -390,7 +391,7 @@ async function loadNotesData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
+      const text = decodeBufferWithFallback(content);
       const entry = parseNoteArtifact(text, node.name || '', path, node.lastModified);
       if (!entry) continue;
 
