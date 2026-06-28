@@ -414,7 +414,6 @@ function parseLooseAutofillLine(line) {
 export function parsePasswordFile(text, config) {
   const clean = normaliseSeparators(normaliseText(text));
 
-  // If explicit config from column mapper, use it directly
   if (config) return finaliseCredentialDataset(parseWithConfig(clean, config));
 
   const format = detectFormat(clean);
@@ -552,11 +551,35 @@ function findCookieArrayInObject(text) {
   } catch { return null; }
 }
 
+function decodeCookieValue(raw) {
+  try {
+    return decodeURIComponent(raw);
+  } catch (_) {
+    return raw;
+  }
+}
+
+// Bring manually-mapped cookie rows up to parity with the auto path: normalise
+// the Expiration column (epoch -> ISO) and URL-decode the Value column.
+function normaliseConfigCookies(parsed) {
+  if (!parsed || !parsed.rows) return parsed;
+  const expiryIdx = parsed.headers.findIndex(h => h === 'Expiration');
+  const valueIdx = parsed.headers.findIndex(h => h === 'Value');
+  if (expiryIdx < 0 && valueIdx < 0) return parsed;
+
+  const rows = parsed.rows.map((row) => {
+    const next = row.slice();
+    if (expiryIdx >= 0) next[expiryIdx] = convertCookieTimestamp(next[expiryIdx] ?? '');
+    if (valueIdx >= 0) next[valueIdx] = decodeCookieValue(next[valueIdx] ?? '');
+    return next;
+  });
+  return { headers: parsed.headers, rows };
+}
+
 export function parseCookieFile(text, config) {
   const clean = normaliseText(text);
 
-  // If explicit config from column mapper, use it directly
-  if (config) return parseWithConfig(clean, config);
+  if (config) return normaliseConfigCookies(parseWithConfig(clean, config));
 
   const sanitised = stripLeadingNoiseLines(clean).trim();
 

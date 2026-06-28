@@ -153,6 +153,9 @@ function closeMapper(result) {
 
 // fileType: 'credentials' | 'cookies' | 'history' | 'autofill'
 function openColumnMapper(text, fileName, fileType) {
+  // A second open before the first resolves would orphan the prior awaiter:
+  // settle it as cancelled and tear down the modal before reopening.
+  if (mapperResolver) closeMapper(null);
   return new Promise((resolve) => {
     mapperResolver = resolve;
     currentText = text;

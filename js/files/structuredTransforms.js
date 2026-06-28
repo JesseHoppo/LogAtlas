@@ -88,7 +88,7 @@ function parseStructuredFile({
     case 'downloads':
       return parseDownloadFile(getText());
     case 'cards':
-      return parseCreditCardFile(getText(), config);
+      return parseCreditCardFile(getText());
     case 'clipboard':
       return parseClipboardFile(getText());
     case 'detections':

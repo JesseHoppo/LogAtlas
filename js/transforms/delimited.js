@@ -253,7 +253,7 @@ export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
   return { columnMap, confidence };
 }
 
-// Returns { type: 'block', headers } | { type: 'delimited', delimiter, columns, hasHeaderRow, dropColumns, confidence } | null
+// Block-vs-delimited sniffing; null when neither shape is confident.
 export function detectFormat(text) {
   const lines = text.split('\n');
   const sample = lines.slice(0, 100);
@@ -385,13 +385,18 @@ export function parseWithConfig(text, config) {
   if (lines.length === 0) return null;
 
   const sampleCols = Math.max(...lines.slice(0, 50).map(l => splitFn(l).length));
+  // The mapper may have keyed columns off a wider preview sample than the first
+  // 50 lines yield, so honour every explicitly mapped index too.
+  const mappedKeys = Object.keys(columnMap || {}).map(Number).filter(n => Number.isInteger(n) && n >= 0);
+  const maxMappedCol = mappedKeys.length ? Math.max(...mappedKeys) + 1 : 0;
+  const totalCols = Math.max(sampleCols, maxMappedCol);
   const startIdx = hasHeaderRow ? 1 : 0;
 
   // role 'skip' excludes a column
   const keepIndices = [];
   const headers = [];
-  for (let i = 0; i < sampleCols; i++) {
-    const role = columnMap[i] || columnMap[String(i)];
+  for (let i = 0; i < totalCols; i++) {
+    const role = columnMap[i];
     if (role === 'skip') continue;
     keepIndices.push(i);
     headers.push(role ? (ROLE_TO_HEADER[role] || `Column ${i + 1}`) : `Column ${i + 1}`);
