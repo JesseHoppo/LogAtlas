@@ -1816,9 +1816,6 @@ async function analyseProcessList(nodes) {
   emit('analysis:processList', { fileCount: parsedCount, entries, totalCount: entries.length, uniqueCount });
 }
 
-// Kick off all analyses. Returns a promise resolved once every task settles;
-// `analysis:complete` fires from the resolution.
-
 // Descend through aggregate wrapper layers (outer → data.zip → case/) so
 // consumers see the real case root, not a lone wrapper folder. Stops at the
 // first directory holding more than one child or any file.
@@ -1880,4 +1877,4 @@ function runAnalysis(fileTree, rootName) {
   });
 }
 
-export { runAnalysis, extractIOCs };
+export { runAnalysis };

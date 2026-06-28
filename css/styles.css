@@ -3103,7 +3103,7 @@ body {
   padding-left: 0.1rem;
 }
 
-/* Domain bar visualization (for history/cookies) */
+/* Domain bar visualisation (for history/cookies) */
 .domain-bars {
   display: flex;
   flex-direction: column;
