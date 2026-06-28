@@ -665,6 +665,23 @@ function classifyAutofillEntries(entries, maxOther = 20) {
   };
 }
 
+// Civil-time zone abbreviations -> UTC offset in hours. Logs only carry the
+// abbreviation, so DST variants are listed explicitly. Ambiguous ones (CST/IST
+// across regions) follow the North-American/EU reading dominant in the corpus.
+const TZ_OFFSET_HOURS = {
+  UTC: 0, GMT: 0, Z: 0,
+  MSK: 3, MSD: 4,
+  CET: 1, CEST: 2,
+  EET: 2, EEST: 3,
+  WET: 0, WEST: 1,
+  BST: 1, IST: 5.5,
+  EST: -5, EDT: -4,
+  CST: -6, CDT: -5,
+  MST: -7, MDT: -6,
+  PST: -8, PDT: -7,
+  AEST: 10, AEDT: 11,
+};
+
 function buildLocalDate(year, month, day, hour = 0, minute = 0, second = 0) {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
@@ -782,10 +799,23 @@ function parseTimestampValue(value) {
     return native;
   }
 
-  const dMonY = str.match(/^(\d{1,2})\s+(\w{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  const dMonY = str.match(/^(\d{1,2})\s+(\w{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s+([A-Za-z]{2,5}))?/);
   if (dMonY) {
-    let year = dMonY[3];
-    if (year.length === 2) year = '20' + year;
+    let year = Number(dMonY[3]);
+    if (year < 100) year += 2000;
+    // Resolve month name via a throwaway Date; UTC noon avoids any zone roll.
+    const monthIdx = new Date(`${dMonY[2]} 1 2000 12:00 UTC`).getUTCMonth();
+    if (!isNaN(monthIdx)) {
+      const tz = (dMonY[7] || '').toUpperCase();
+      // Known abbreviation -> deterministic UTC instant; unknown/absent zones
+      // fall through to the host-local native parse below (no regression).
+      if (Object.prototype.hasOwnProperty.call(TZ_OFFSET_HOURS, tz)) {
+        const offset = TZ_OFFSET_HOURS[tz];
+        const offMin = Math.round(offset * 60);
+        const date = new Date(Date.UTC(year, monthIdx, Number(dMonY[1]), Number(dMonY[4]), Number(dMonY[5]) - offMin, Number(dMonY[6] || 0)));
+        if (!isNaN(date.getTime())) return date;
+      }
+    }
     const date = new Date(`${dMonY[2]} ${dMonY[1]} ${year} ${dMonY[4]}:${dMonY[5]}:${dMonY[6] || '00'}`);
     if (!isNaN(date.getTime())) return date;
   }
