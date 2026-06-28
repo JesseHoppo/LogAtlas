@@ -51,6 +51,7 @@ import {
   parseNodeCached,
   yieldToEventLoop,
   checkCookieValidity,
+  collapseSingleWrapper,
   topN,
 } from '../core/shared.js';
 
@@ -1817,19 +1818,6 @@ async function analyseProcessList(nodes) {
 
   const uniqueCount = new Set(entries.map(e => (e.name || e.commandLine || '').toLowerCase())).size;
   emit('analysis:processList', { fileCount: parsedCount, entries, totalCount: entries.length, uniqueCount });
-}
-
-// Descend through aggregate wrapper layers (outer → data.zip → case/) so
-// consumers see the real case root, not a lone wrapper folder. Stops at the
-// first directory holding more than one child or any file.
-function collapseSingleWrapper(root) {
-  let node = root;
-  while (node?.children) {
-    const children = Object.values(node.children);
-    if (children.length !== 1 || children[0].type !== 'directory') break;
-    node = children[0];
-  }
-  return node;
 }
 
 function runAnalysis(fileTree, rootName) {

@@ -847,6 +847,20 @@ function deriveCaptureDate(nodes, rootName) {
   return newest ? new Date(newest) : null;
 }
 
+// Descend through single-directory wrapper layers so consumers see the real
+// case root rather than a lone wrapper folder.
+function collapseSingleWrapper(root) {
+  let node = root;
+  while (node && node.children) {
+    const childNames = Object.keys(node.children);
+    if (childNames.length !== 1) break;
+    const child = node.children[childNames[0]];
+    if (!child || child.type !== 'directory') break;
+    node = child;
+  }
+  return node;
+}
+
 function formatRelativeTime(date) {
   const now = new Date();
   const diff = date - now;
@@ -1246,6 +1260,7 @@ export {
   yieldToEventLoop,
   checkCookieValidity,
   deriveCaptureDate,
+  collapseSingleWrapper,
   downloadBlob,
   topN,
   showNotification,

@@ -12,6 +12,7 @@ import { promptForPassword, isRememberChecked } from './password.js';
 import { applyDetectionHints, reconcileAggregatePasswordFiles } from '../analysis/detection.js';
 import { HINT_KEYS, FILE_TYPE_TO_HINT } from './fileTypeRegistry.js';
 import { LIMITS } from '../core/definitions/patterns.js';
+import { collapseSingleWrapper } from '../core/shared.js';
 
 const MAX_DEPTH = 10;
 
@@ -503,18 +504,6 @@ function flattenTree(root, basePath = '') {
     }
   }
   return result;
-}
-
-function collapseSingleWrapper(root) {
-  let node = root;
-  while (node && node.children) {
-    const childNames = Object.keys(node.children);
-    if (childNames.length !== 1) break;
-    const child = node.children[childNames[0]];
-    if (!child || child.type !== 'directory') break;
-    node = child;
-  }
-  return node;
 }
 
 function applyManualType(node, fileType) {
