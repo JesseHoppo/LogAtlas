@@ -378,7 +378,8 @@ function parseLooseAutofillLine(line) {
 
   const buildRow = (rawName, rawValue) => {
     const name = normaliseAutofillFieldName(rawName);
-    const value = String(rawValue || '').trim();
+    // Drop a trailing tab-delimited count column (name\t\tvalue\t\tcount).
+    const value = String(rawValue || '').split('\t')[0].trim();
     if (!name || !value) return null;
     if (AUTOFILL_INLINE_EXCLUDED_KEYS.has(normaliseAutofillRecordLabel(name))) return null;
     return [name, value];
@@ -401,10 +402,11 @@ function parseLooseAutofillLine(line) {
   }
 
   const numericMatch = trimmed.match(AUTOFILL_NUMERIC_NAME_PATTERN);
-  if (numericMatch && isLikelyAutofillFieldValue(numericMatch[2].trim())) {
+  const numericValue = numericMatch ? numericMatch[2].split('\t')[0].trim() : '';
+  if (numericMatch && isLikelyAutofillFieldValue(numericValue)) {
     const name = normaliseAutofillFieldName(numericMatch[1].replace(/^:+/, ''));
     if (isLikelyAutofillFieldName(name) && !AUTOFILL_INLINE_EXCLUDED_KEYS.has(normaliseAutofillRecordLabel(name))) {
-      return [name, numericMatch[2].trim()];
+      return [name, numericValue];
     }
   }
 
