@@ -47,7 +47,7 @@ import {
   normaliseTimeZone,
   parseSoftwareLine,
   parseTimestampValue,
-  parseArchiveTimestamp,
+  deriveCaptureDate,
   parseNodeCached,
   yieldToEventLoop,
   checkCookieValidity,
@@ -107,6 +107,27 @@ const PLACEHOLDER_USERNAMES = new Set(['unknown', 'unk', 'n/a', 'none', 'null', 
 
 // Dumps that are bare password lists with no account context.
 const RECOVERED_PASSWORD_FILE = /(?:unique[_-]?passwords|brute|all[_-]?passwords|passwords?[_-]?only|wordlist)/i;
+
+// Recovered-password dumps from resale brands (OTTOMAN, Daisy Cloud, …) prepend
+// an ASCII/FIGlet/box-drawing banner; those decorative lines must not count as
+// recovered passwords. ASCII-bearing lines defer to the corpus-tuned classifier;
+// lines with no ASCII alphanumerics are kept only when they are mostly letters,
+// so genuine non-Latin passwords (Arabic/CJK/Thai/…) survive while pure
+// box-drawing/FIGlet art is dropped.
+function isRecoveredPasswordNoise(line) {
+  const t = String(line || '').trim();
+  if (!t) return true;
+  if (/[A-Za-z0-9]/.test(t)) return isPromotionalNoiseLine(t);
+  let letters = 0;
+  let nonSpace = 0;
+  for (const ch of t) {
+    if (/\s/.test(ch)) continue;
+    nonSpace++;
+    if (/\p{L}/u.test(ch)) letters++;
+  }
+  if (letters >= 2 && letters * 2 >= nonSpace) return false;
+  return true;
+}
 
 function isPlaceholderTopUsername(value) {
   const v = String(value || '').trim().toLowerCase();
@@ -169,6 +190,9 @@ async function analyseCredentials(nodes) {
     try {
       const text = await loadFileContent(node).then(c => c == null ? null : decodeBufferWithFallback(c));
       if (text == null) {
+        // Surface on the global read-error channel like every other analyser,
+        // while keeping the local list for the credentials page's parse reasons.
+        recordReadFailure(node, path);
         failedFiles.push({ path, reason: 'Unreadable or empty file' });
         continue;
       }
@@ -179,6 +203,7 @@ async function analyseCredentials(nodes) {
           for (const line of text.split('\n')) {
             const pass = line.trim();
             if (!pass || pass.startsWith('#') || /^[-=*#]{3,}$/.test(pass) || recoveredSeen.has(pass)) continue;
+            if (isRecoveredPasswordNoise(pass)) continue;
             any = true;
             recoveredSeen.add(pass);
             recoveredTotal++;
@@ -202,6 +227,7 @@ async function analyseCredentials(nodes) {
         for (const row of parsed.rows) {
           const pass = (row[passIdx] || '').trim();
           if (!pass || recoveredSeen.has(pass)) continue;
+          if (isRecoveredPasswordNoise(pass)) continue;
           any = true;
           recoveredSeen.add(pass);
           recoveredTotal++;
@@ -304,20 +330,6 @@ async function analyseCredentials(nodes) {
 }
 
 // Cookies
-
-// Best-effort capture date for validity: archive name timestamp, else the
-// newest cookie-file modification time. Cookie expiry is then judged against
-// when the log was taken, not analysis-time now.
-function deriveCaptureDate(nodes, rootName) {
-  const fromName = parseArchiveTimestamp(rootName);
-  if (fromName) return fromName;
-  let newest = 0;
-  for (const { node } of nodes) {
-    const m = Number(node?.lastModified);
-    if (m && m > newest) newest = m;
-  }
-  return newest ? new Date(newest) : null;
-}
 
 async function analyseCookies(nodes, rootName = '') {
   if (nodes.length === 0) {
@@ -530,6 +542,7 @@ async function analyseHistory(nodes) {
 async function analyseSystemInfo(nodes, rootZipName = '') {
   if (nodes.length === 0) {
     emit('analysis:sysinfo', null);
+    extractInlineSections('');
     return;
   }
 
@@ -562,6 +575,7 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
 
   if (Object.keys(merged).length === 0) {
     emit('analysis:sysinfo', null);
+    extractInlineSections('');
     return;
   }
 
@@ -642,22 +656,28 @@ function sanitiseIdentityEntries(entries, rootZipName) {
 }
 
 function extractInlineSections(text) {
-  if (!text) return;
-  const lines = text.split('\n');
+  // Empty text still falls through to emit empty inline events, so a reanalyse
+  // that no longer carries sysinfo clears any previously-emitted inline rows.
+  const lines = text ? text.split('\n') : [];
 
   const SOFTWARE_HEADER = /^Installed (?:Apps|Software|Programs)\s*:/i;
   const PROCESS_HEADER = /^Process (?:List|es)\s*:/i;
+  // XFiles opens its process list with a header that ends in `[` and runs the
+  // bare process names until a closing `]` on its own line.
+  const PROCESS_BRACKET_HEADER = /^(?:Windows )?Processes?\s*\[\s*$/i;
   const BRACKET_SOFTWARE = /^\[Software\]/i;
   const BRACKET_PROCESS = /^\[Process(?:es)?\](?:\[\d+\])?/i;
   const BRACKET_SECTION = /^\[[A-Za-z][A-Za-z ]*\](?:\[\d+\])?$/;
   const SECTION_HEADER = /^[A-Z][A-Za-z ]+:$/;
   const SUB_HEADER = /^(?:All Users|Current User)\s*:/i;
-  const KV_LINE = /^[A-Za-z][A-Za-z0-9 _./()%-]*?\s*(?:=\s*|:\s+)/;
 
   let softwareLines = null;
   let processLines = null;
   let currentTarget = null;
-  let bracketSection = false;
+  // 'bracket' = `[Software]`/`[Processes]` block; 'fence' = XFiles `[ … ]`
+  // multi-line list ended by a lone `]`; 'colon' = `Header:` block whose
+  // entries run until a blank line or the next section header.
+  let sectionMode = null;
 
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
@@ -665,28 +685,42 @@ function extractInlineSections(text) {
     if (SOFTWARE_HEADER.test(trimmed) || BRACKET_SOFTWARE.test(trimmed)) {
       softwareLines = [];
       currentTarget = softwareLines;
-      bracketSection = BRACKET_SOFTWARE.test(trimmed);
+      sectionMode = BRACKET_SOFTWARE.test(trimmed) ? 'bracket' : 'colon';
       continue;
     }
-    if (PROCESS_HEADER.test(trimmed) || BRACKET_PROCESS.test(trimmed)) {
+    if (PROCESS_HEADER.test(trimmed) || BRACKET_PROCESS.test(trimmed) || PROCESS_BRACKET_HEADER.test(trimmed)) {
       processLines = [];
       currentTarget = processLines;
-      bracketSection = BRACKET_PROCESS.test(trimmed);
+      sectionMode = BRACKET_PROCESS.test(trimmed) ? 'bracket'
+        : PROCESS_BRACKET_HEADER.test(trimmed) ? 'fence'
+        : 'colon';
       continue;
     }
 
-    // A new section header ends the current section (bracket, colon, or KV line)
+    // A fenced (`[ … ]`) list ends only at its closing bracket.
+    if (currentTarget && sectionMode === 'fence') {
+      if (trimmed === ']') { currentTarget = null; sectionMode = null; continue; }
+      if (trimmed && !isPromotionalNoiseLine(trimmed)) currentTarget.push(trimmed);
+      continue;
+    }
+
+    // A new section header ends the current section.
     if (currentTarget && trimmed) {
       if (BRACKET_SECTION.test(trimmed) || (!rawLine.startsWith('\t') && SECTION_HEADER.test(trimmed) && !SUB_HEADER.test(trimmed))) {
         currentTarget = null;
+        sectionMode = null;
         continue;
       }
-      // Bracket-delimited lists may hold colon-bearing app names, so only
-      // colon/KV lines in colon-headed sections end the section.
-      if (!bracketSection && KV_LINE.test(trimmed)) {
-        currentTarget = null;
-        continue;
-      }
+    }
+
+    // Colon-headed lists run as one block: entries (incl. colon-bearing app
+    // names) until the first blank line. Sub-headers like "All Users:" don't
+    // count as blanks. Bracket lists ignore blank lines and end at the next
+    // bracket/section header handled above.
+    if (currentTarget && sectionMode === 'colon' && !trimmed) {
+      currentTarget = null;
+      sectionMode = null;
+      continue;
     }
 
     // Skip sub-headers
@@ -1131,7 +1165,7 @@ async function analyseCreditCards(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseCreditCardFile(text, node._parseConfig || null);
+      const parsed = parseCreditCardFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
