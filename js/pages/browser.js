@@ -186,7 +186,7 @@ async function loadBrowserMetadataData(fileTree, rootName) {
 
 function historyRowBuilder({ url, title, visitCount, lastVisit, lastVisitDate }) {
   const displayLastVisit = lastVisitDate ? formatTimestampDisplay(lastVisitDate) : lastVisit;
-  return `<tr><td title="${escapeHtml(url)}">${escapeHtml(url)}</td><td title="${escapeHtml(title)}">${escapeHtml(title)}</td><td>${visitCount}</td><td title="${escapeHtml(lastVisit || displayLastVisit || '')}">${escapeHtml(displayLastVisit || '')}</td></tr>`;
+  return `<tr><td title="${escapeHtml(url)}">${escapeHtml(url)}</td><td title="${escapeHtml(title)}">${escapeHtml(title)}</td><td>${visitCount}</td><td title="${escapeHtml(lastVisit || '')}">${escapeHtml(displayLastVisit || '')}</td></tr>`;
 }
 
 function renderHistoryPage(searchQuery = '') {
@@ -463,12 +463,6 @@ export function initBrowserPages() {
   };
 }
 
-function getHistoryData() { return historyData; }
-function getBookmarksData() { return bookmarksData; }
-function getBrowserMetadataData() { return browserMetadataData; }
-
-export {
-  getHistoryData,
-  getBookmarksData,
-  getBrowserMetadataData,
-};
+export function getHistoryData() { return historyData; }
+export function getBookmarksData() { return bookmarksData; }
+export function getBrowserMetadataData() { return browserMetadataData; }

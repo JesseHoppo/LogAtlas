@@ -8,7 +8,6 @@ import {
 import {
   detectFormat,
   parseDelimited,
-  parseWithConfig,
 } from './delimited.js';
 
 function buildCreditCardRowsFromBlocks(clean) {
@@ -161,7 +160,8 @@ function parsePipeDelimitedCardLine(line) {
       expiration = part;
       continue;
     }
-    if (!cvc && /^\d{3,4}$/.test(part)) {
+    // only a captured PAN disambiguates a short numeric field as CVC, else it may be the card number
+    if (cardNumber && !cvc && /^\d{3,4}$/.test(part)) {
       cvc = part;
       continue;
     }
@@ -174,13 +174,8 @@ function parsePipeDelimitedCardLine(line) {
   return [cardNumber, nameOnCard, cvc, expiration, ''];
 }
 
-export function parseCreditCardFile(text, config) {
+export function parseCreditCardFile(text) {
   const clean = normaliseSeparators(normaliseText(text));
-
-  if (config) {
-    const parsed = parseWithConfig(clean, config);
-    return mapCreditCardHeaders(parsed) || mapCreditCardRowsByContent(parsed) || parsed;
-  }
 
   const blockRows = buildCreditCardRowsFromBlocks(clean);
   if (blockRows.length > 0) {

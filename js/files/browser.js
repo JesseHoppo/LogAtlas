@@ -8,7 +8,7 @@ import {
   formatBytes,
   getFileIcon,
 } from '../core/utils.js';
-import { downloadBlob, copyToClipboard, randomPassword } from '../core/shared.js';
+import { downloadBlob, copyToClipboard, randomPassword, showNotification } from '../core/shared.js';
 import { toCSV } from '../transforms/shared.js';
 import { buildFileTypeOptionsHtml } from './fileTypeRegistry.js';
 import { canOfferTransformAction, parseStructuredFile } from './structuredTransforms.js';
@@ -16,7 +16,6 @@ import { canOfferTransformAction, parseStructuredFile } from './structuredTransf
 let elBreadcrumb;
 let elFileGrid;
 let elFileList;
-let elFileBrowser;
 let elSearchInput;
 
 const selectedFiles = new Set();
@@ -273,7 +272,7 @@ function activateItem(el) {
     navigateTo([...state.currentPath, el.dataset.name]);
   } else {
     const name = el.dataset.name;
-    const size = parseInt(el.dataset.size) || 0;
+    const size = parseInt(el.dataset.size, 10) || 0;
     emit('preview:open', { name, size, path: [...state.currentPath] });
   }
 }
@@ -504,8 +503,8 @@ async function exportSelectedZip() {
     await writer.close();
     const zipBlob = await blobWriter.getData();
     downloadBlob(zipBlob, 'selected_files.zip', 'application/zip');
-  } catch {
-    // notify handled upstream
+  } catch (err) {
+    showNotification(`Failed to export ZIP: ${err.message}`, 'error');
   }
 }
 
@@ -552,7 +551,6 @@ function initBrowser() {
   elBreadcrumb = document.getElementById('breadcrumb');
   elFileGrid = document.getElementById('fileGrid');
   elFileList = document.getElementById('fileList');
-  elFileBrowser = document.getElementById('fileBrowser');
   elSearchInput = document.getElementById('searchInput');
 
   elBreadcrumb.addEventListener('click', onBreadcrumbClick);

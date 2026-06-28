@@ -1,5 +1,5 @@
 import { inferBrowserFromPath, inferProfileFromPath, normalisePath, collectUniqueMatches, uniqueLimited, summariseList } from '../core/shared.js';
-import { URL_REGEX, SCAN_EMAIL_REGEX, JWT_SCAN_REGEX, LIMITS } from '../core/definitions/patterns.js';
+import { URL_REGEX, SCAN_EMAIL_REGEX, EMAIL_REGEX, JWT_SCAN_REGEX, LIMITS } from '../core/definitions/patterns.js';
 import { inferStoreService } from '../core/serviceRegistry.js';
 
 const ETH_ADDRESS_REGEX = /\b0x[a-fA-F0-9]{40}\b/g;
@@ -76,7 +76,7 @@ function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: []
       const lowerKey = key.toLowerCase();
       if (/token/.test(lowerKey) && typeof child === 'string' && child.trim()) results.tokenCount++;
       if (/(?:mnemonic|seed|recovery)/.test(lowerKey) && child) results.seedHints++;
-      if (/(?:email|mail)/.test(lowerKey) && typeof child === 'string') results.emails.push(child);
+      if (/(?:email|mail)/.test(lowerKey) && typeof child === 'string' && EMAIL_REGEX.test(child.trim())) results.emails.push(child.trim());
       if (/(?:^|_)(?:url|server|vault|api|identity)(?:$|_|s$)/.test(lowerKey) && typeof child === 'string') results.urls.push(child);
       if ((/(?:^|_)(?:id|uuid)$/i.test(key) || /[a-z](?:Id|Uuid|UUID)$/.test(key)) && typeof child === 'string' && UUID_REGEX.test(child)) results.ids.push(child);
       collectJsonFieldValues(child, results, depth + 1);

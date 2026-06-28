@@ -2,18 +2,16 @@ import { showNotification } from '../core/shared.js';
 import { escapeHtml, formatBytes } from '../core/utils.js';
 import { LIMITS } from '../core/definitions/patterns.js';
 
-function confirmRemoteDownload(parsedUrl, sizeBytes) {
+function confirmRemoteDownload(parsedUrl) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay visible';
     overlay.id = 'autoLoadConfirmModal';
-    const sizeLabel = sizeBytes > 0 ? formatBytes(sizeBytes) : 'unknown size';
     overlay.innerHTML = `
       <div class="modal">
         <h3>Download remote file?</h3>
-        <p>Log Atlas was opened with a <code>?file=</code> URL. The file will be downloaded into your browser for analysis. No data will be sent anywhere.</p>
+        <p>Log Atlas was opened with a <code>?file=</code> URL. The file is downloaded into this browser for analysis. Nothing is uploaded.</p>
         <p><strong>Source:</strong> <code>${escapeHtml(parsedUrl.host)}</code></p>
-        <p><strong>Size:</strong> ${escapeHtml(sizeLabel)}</p>
         <p style="font-size:0.8rem;color:var(--text-muted);">URL: ${escapeHtml(parsedUrl.href)}</p>
         <div class="modal-actions">
           <button class="modal-btn modal-btn-cancel" id="autoLoadCancel">Cancel</button>
@@ -61,7 +59,7 @@ export async function autoLoadFromQuery(handleFiles) {
   const loading = document.getElementById('loading');
   const loadingText = document.getElementById('loadingText');
 
-  const proceed = await confirmRemoteDownload(parsed, -1);
+  const proceed = await confirmRemoteDownload(parsed);
   if (!proceed) return;
 
   dropZone.style.display = 'none';
@@ -89,7 +87,7 @@ export async function autoLoadFromQuery(handleFiles) {
       if (done) break;
       received += value.byteLength;
       if (received > LIMITS.autoLoadMaxBytes) {
-        try { await reader.cancel(); } catch (_) { /* ignore */ }
+        try { await reader.cancel(); } catch { /* reader already closed */ }
         throw new Error(
           `Remote file exceeded ${formatBytes(LIMITS.autoLoadMaxBytes)} cap (cancelled at ${formatBytes(received)}).`
         );
@@ -103,7 +101,13 @@ export async function autoLoadFromQuery(handleFiles) {
     }
 
     const blob = new Blob(chunks, { type: response.headers.get('content-type') || 'application/octet-stream' });
-    const fileName = decodeURIComponent(fileUrl.split('/').pop().split('?')[0]) || 'download.zip';
+    // Trailing-slash / empty paths and malformed escapes must not sink a good download.
+    let fileName = '';
+    try {
+      const segment = parsed.pathname.split('/').filter(Boolean).pop() || '';
+      fileName = decodeURIComponent(segment);
+    } catch { /* malformed escape; fall through to default */ }
+    if (!fileName) fileName = parsed.hostname || 'download.zip';
     const file = new File([blob], fileName, { type: blob.type });
 
     loading.classList.remove('visible');

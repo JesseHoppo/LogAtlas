@@ -135,8 +135,8 @@ async function extractWordOpenXmlPreview(entryMap, budgetState) {
   const paragraphs = Array.from(doc.getElementsByTagNameNS('*', 'p'));
   const blocks = [];
   for (const paragraph of paragraphs) {
-    const text = normaliseExtractedText(collectXmlText(paragraph));
-    if (text) blocks.push(text);
+    const paragraphText = normaliseExtractedText(collectXmlText(paragraph));
+    if (paragraphText) blocks.push(paragraphText);
   }
 
   return blocks.join('\n\n');
@@ -456,23 +456,59 @@ function performSearch(query) {
     return;
   }
 
-  let html = '';
-  let lastEnd = 0;
-  for (let i = 0; i < matchPositions.length; i++) {
-    const start = matchPositions[i];
-    const end = start + query.length;
-    html += escapeHtml(visibleText.substring(lastEnd, start));
-    const matchClass = i === 0 ? 'preview-search-match preview-search-match-current' : 'preview-search-match';
-    html += `<span class="${matchClass}">${escapeHtml(visibleText.substring(start, end))}</span>`;
-    lastEnd = end;
+  // JSON keeps its syntax highlighting; matches are wrapped over the highlighted DOM.
+  if (getFileExtension(currentFile?.name || '') === 'json') {
+    textContent.innerHTML = formatPreviewTextContent(visibleText, currentFile?.name || '');
+    highlightMatchesInElement(textContent, lowerQuery);
+  } else {
+    let html = '';
+    let lastEnd = 0;
+    for (let i = 0; i < matchPositions.length; i++) {
+      const start = matchPositions[i];
+      const end = start + query.length;
+      html += escapeHtml(visibleText.substring(lastEnd, start));
+      html += `<span class="preview-search-match">${escapeHtml(visibleText.substring(start, end))}</span>`;
+      lastEnd = end;
+    }
+    html += escapeHtml(visibleText.substring(lastEnd));
+    textContent.innerHTML = html;
   }
-  html += escapeHtml(visibleText.substring(lastEnd));
 
-  textContent.innerHTML = html;
   searchMatches = textContent.querySelectorAll('.preview-search-match');
-  currentMatchIndex = 0;
-  elSearchCount.textContent = `1 / ${matchPositions.length}`;
+  currentMatchIndex = searchMatches.length > 0 ? 0 : -1;
+  elSearchCount.textContent = `${searchMatches.length > 0 ? 1 : 0} / ${searchMatches.length}`;
   scrollToCurrentMatch();
+}
+
+// Wrap query matches within text nodes, leaving existing highlight markup intact.
+function highlightMatchesInElement(root, lowerQuery) {
+  const queryLen = lowerQuery.length;
+  if (queryLen < 1) return;
+
+  const textNodes = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+
+  for (const textNode of textNodes) {
+    const value = textNode.nodeValue || '';
+    const lower = value.toLowerCase();
+    if (lower.indexOf(lowerQuery) === -1) continue;
+
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    let idx;
+    while ((idx = lower.indexOf(lowerQuery, last)) !== -1) {
+      if (idx > last) frag.appendChild(document.createTextNode(value.slice(last, idx)));
+      const span = document.createElement('span');
+      span.className = 'preview-search-match';
+      span.textContent = value.slice(idx, idx + queryLen);
+      frag.appendChild(span);
+      last = idx + queryLen;
+    }
+    if (last < value.length) frag.appendChild(document.createTextNode(value.slice(last)));
+    textNode.parentNode.replaceChild(frag, textNode);
+  }
 }
 
 function scrollToCurrentMatch() {
@@ -556,7 +592,7 @@ function renderUnsupported(fileName) {
     `<div class="preview-unsupported-icon">?</div>` +
     `<h3>Preview not available</h3>` +
     `<p>${ext ? `".${escapeHtml(ext)}" files` : 'This file type'} cannot be previewed in the browser.</p>` +
-    `<p style="margin-top: 1rem; font-size: 0.8rem;">You can download the file to view it.</p></div>`;
+    `<p style="margin-top: 1rem; font-size: 0.8rem;">Download to view.</p></div>`;
 }
 
 function renderLoading() {
@@ -798,7 +834,7 @@ async function showPreview(name, size, pathSegments) {
       const text = normaliseExtractedText(await extractOfficeOpenXmlPreview(content, name));
       if (requestId !== previewRequestId) return;
       if (!text) {
-        elBody.innerHTML = renderError('Limited preview is not available for this Office file.');
+        elBody.innerHTML = renderError('No preview available for this Office file.');
         return;
       }
 
@@ -822,7 +858,6 @@ async function showPreview(name, size, pathSegments) {
       elBody.innerHTML = renderError('Failed to decode file content.');
     }
   } else if (looksLikeText(content)) {
-    // Extension not recognised but content looks like text
     try {
       const text = SHARED_TEXT_DECODER.decode(content);
       currentDecodedText = text;

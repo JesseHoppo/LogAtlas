@@ -25,6 +25,12 @@ function resetExtractionBudget() {
   _budgetReported = false;
 }
 
+// Latch only: byte/entry accumulators stay session-global to bound total
+// main-thread memory, but each top-level archive gets a fresh overflow error.
+function resetBudgetReport() {
+  _budgetReported = false;
+}
+
 function withinBudget(extraBytes) {
   if (_entriesUsed >= LIMITS.maxEntries) return false;
   if (_bytesUsed + (extraBytes || 0) > LIMITS.maxDecompressedBytes) return false;
@@ -237,7 +243,7 @@ async function extractIntoTree(root, zipData, basePath, depth) {
             await extractIntoTree(node, nestedData.buffer, fullPath, depth + 1);
           } else {
             const nestedFile = new File([nestedData], leafName);
-            await extractArchiveIntoTree(node, nestedFile, fullPath, depth + 1);
+            await extractArchiveIntoTree(node, nestedFile, fullPath, depth + 1, password);
           }
         } catch (err) {
           addError(`Failed to extract nested archive: ${fullPath} - ${err.message}`);
@@ -263,11 +269,11 @@ function walkExtractedFiles(obj, depth, root, parentPath) {
     if (isJunkFile(key.toLowerCase())) continue;
 
     if (value instanceof File) {
-      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); return; }
+      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); continue; }
       _bytesUsed += value.size || 0;
       _entriesUsed += 1;
     } else if (value && typeof value === 'object') {
-      if (!withinBudget(0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); return; }
+      if (!withinBudget(0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); continue; }
       _entriesUsed += 1;
     }
 
@@ -297,7 +303,7 @@ function walkExtractedFiles(obj, depth, root, parentPath) {
   }
 }
 
-async function extractArchiveIntoTree(root, file, basePath, depth) {
+async function extractArchiveIntoTree(root, file, basePath, depth, parentPassword = null) {
   if (depth > MAX_DEPTH) {
     addError(`Max depth exceeded at: ${basePath}`);
     return;
@@ -315,7 +321,9 @@ async function extractArchiveIntoTree(root, file, basePath, depth) {
       const hasEncrypted = await archive.hasEncryptedData();
 
       if (hasEncrypted) {
-        let password = invalidPassword ? null : state.rememberedPassword;
+        // Carry the parent archive's password into the first attempt so a nested
+        // archive inside an encrypted zip opens without re-prompting.
+        let password = invalidPassword ? null : (parentPassword || state.rememberedPassword);
         if (!password) {
           password = await promptForPassword(basePath, { invalid: invalidPassword });
           if (password === null) {
@@ -521,6 +529,7 @@ function applyManualType(node, fileType) {
 async function addFilesToTree(files) {
   // Reset the budget only when starting a fresh container; it must accumulate
   // across repeated drops so the decompressed-size cap is per-session, not per-call.
+  resetBudgetReport();
   if (!state.fileTree) {
     resetExtractionBudget();
     state.fileTree = createNode(state.virtualContainerName || 'Uploaded Files', {
@@ -579,4 +588,4 @@ async function addFilesToTree(files) {
   return needsTypeSelection;
 }
 
-export { extractFile, getNodeAtPath, getChildrenList, countChildren, loadFileContent, flattenTree, applyManualType, addFilesToTree, collapseSingleWrapper };
+export { extractFile, getNodeAtPath, getChildrenList, countChildren, loadFileContent, flattenTree, applyManualType, addFilesToTree };

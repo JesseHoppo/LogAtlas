@@ -48,7 +48,7 @@ function detectNationalIds(text) {
       const key = `${label}:${raw}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ type: label, label, value: raw, country });
+      out.push({ type: label, value: raw, country });
     }
   }
   return out;
@@ -65,9 +65,8 @@ function detectSeedPhrase(text) {
       let len = 0;
       while (start + len < words.length && BIP39_WORDS.has(words[start + len])) len++;
       if (len < 12) { start += len; continue; }
-      for (const target of [24, 21, 18, 15, 12]) {
-        if (len >= target) return true;
-      }
+      if (SEED_LENGTHS.has(len)) return true;
+      start += len;
     }
   }
   return false;

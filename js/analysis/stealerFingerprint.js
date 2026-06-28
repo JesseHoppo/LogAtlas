@@ -133,7 +133,7 @@ function scoreFamily(familyName, sig, ctx) {
 
   const selfIdMatched = matchedCounts.selfId > 0;
 
-  return { family: familyName, score, maxScore, matched, matchedCounts, selfIdMatched, sysinfoFilename: ctx.sysinfoFilename || '' };
+  return { family: familyName, score, maxScore, matched, matchedCounts, selfIdMatched, osClass: sig.osClass || null, sysinfoFilename: ctx.sysinfoFilename || '' };
 }
 
 // Walk the file tree and collect dirs, files, sysinfo node, and credits files.
@@ -185,7 +185,7 @@ function scoreStructureOnly(familyName, sig, ctx) {
     structure: 0,
   };
 
-  for (const f of sig.folders || []) {
+  for (const f of sig.folders) {
     maxScore += W.FOLDER;
     if (ctx.dirs.some(d => f.pattern.test(d))) {
       score += W.FOLDER;
@@ -194,7 +194,7 @@ function scoreStructureOnly(familyName, sig, ctx) {
     }
   }
   let distinctive = 0;
-  for (const fp of sig.files || []) {
+  for (const fp of sig.files) {
     maxScore += W.FILE_PATTERN;
     if (ctx.files.some(f => fp.pattern.test(f))) {
       score += W.FILE_PATTERN;
@@ -203,7 +203,7 @@ function scoreStructureOnly(familyName, sig, ctx) {
       if (!GENERIC_LABELS.test(fp.label)) distinctive++;
     }
   }
-  for (const s of sig.structures || []) {
+  for (const s of sig.structures) {
     maxScore += W.STRUCTURE;
     if (s.test(ctx.dirs, ctx.files)) {
       score += W.STRUCTURE;
@@ -276,8 +276,7 @@ function fingerprintStealer(ctx) {
   const osText = ctx.combinedSysinfoText || ctx.sysinfoText || '';
   const isWindows = /\bWindows\b/i.test(osText);
   const isMacOS = !isWindows && /\b(?:mac\s?os|macos|os\s?x|darwin)\b/i.test(osText);
-  const macClass = new Set(['Atomic', 'Banshee', 'MacSync']);
-  const isMacFamily = (r) => r.osClass === 'macos' || macClass.has(r.family);
+  const isMacFamily = (r) => r.osClass === 'macos';
   const osEligible = (r) => (isMacOS ? isMacFamily(r) : isWindows ? !isMacFamily(r) : true);
 
   const best = results.find(osEligible);

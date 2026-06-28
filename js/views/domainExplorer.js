@@ -152,11 +152,16 @@ function buildDomainIndex() {
   const notes = getNotesData();
   if (notes && notes.entries.length > 0) {
     for (const note of notes.entries) {
+      const countedBases = new Set();
       for (const domain of note.domains || []) {
         const base = extractBaseDomain(domain);
         const entry = getEntry(base);
-        entry.notesCount++;
-        if (entry.notes.length < SAMPLE) entry.notes.push({ title: note.title, indicators: note.indicators });
+        // a note listing several subdomains of one base counts once for that base
+        if (!countedBases.has(base)) {
+          countedBases.add(base);
+          entry.notesCount++;
+          if (entry.notes.length < SAMPLE) entry.notes.push({ title: note.title, indicators: note.indicators });
+        }
         if (domain !== base) entry.subdomains.add(domain);
       }
     }
