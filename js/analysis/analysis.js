@@ -1572,6 +1572,9 @@ async function runFingerprint(fileTree, rootName) {
   if (ctx.sysinfoNodes.length > 0) {
     const allTexts = [];
     for (const node of ctx.sysinfoNodes) {
+      // Environment.txt dumps OS=Windows_NT; excluded from the merged profile
+      // too, so it must not skew the fingerprint's OS-class veto either.
+      if (/environment/i.test(node.name || '')) continue;
       try {
         let cached = node._parsedSysinfo;
         if (!cached) {
