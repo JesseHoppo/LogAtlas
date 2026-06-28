@@ -29,7 +29,11 @@ import {
   parseBlocks,
   parseWithConfig,
 } from './delimited.js';
-import { LIMITS } from '../core/definitions/patterns.js';
+import { LIMITS, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
+
+// Victim identity keys the downstream graph looks for; whitelisted so a bare
+// "User:"/"PC:"/"NetBIOS:" before any structured section is retained, not dropped.
+const IDENTITY_KEY_PATTERNS = Object.values(IDENTITY_SYSINFO_KEYS).flat();
 
 function flattenObjectEntries(value, prefix = '', out = [], depth = 0) {
   if (value == null) return out;
@@ -170,7 +174,9 @@ function isStructuredSysinfoSection(line) {
 }
 
 function isStructuredSysinfoKey(key) {
-  return SYSINFO_STRUCTURED_KEY_PATTERN.test(String(key || '').trim());
+  const trimmed = String(key || '').trim();
+  if (SYSINFO_STRUCTURED_KEY_PATTERN.test(trimmed)) return true;
+  return IDENTITY_KEY_PATTERNS.some(re => re.test(trimmed));
 }
 
 function parseSystemInfoTextEntries(text, requireStructuredStart = true) {
