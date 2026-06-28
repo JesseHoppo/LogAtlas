@@ -2,7 +2,7 @@
 
 import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
-import { escapeHtml } from '../core/utils.js';
+import { escapeHtml, capitalise } from '../core/utils.js';
 import {
   classifyAutofillEntries,
   downloadBlob,
@@ -222,7 +222,7 @@ function buildLogSummaryHtml(data) {
       <h2>Stealer Identification</h2>
       <div class="stat-row">
         <div class="stat" style="font-size:0.95rem;"><strong style="color:${confColor}">${e(fp.family)}</strong></div>
-        <div class="stat">${e(fp.confidence.charAt(0).toUpperCase() + fp.confidence.slice(1))} confidence (${Math.round(fp.score * 100)}%)</div>
+        <div class="stat">${e(capitalise(fp.confidence))} confidence (${Math.round(fp.score * 100)}%)</div>
         ${structureNote}
       </div>
     </section>`;

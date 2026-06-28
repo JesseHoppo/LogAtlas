@@ -12,6 +12,7 @@ import { downloadBlob, copyToClipboard, randomPassword, showNotification } from 
 import { toCSV } from '../transforms/shared.js';
 import { buildFileTypeOptionsHtml } from './fileTypeRegistry.js';
 import { canOfferTransformAction, parseStructuredFile } from './structuredTransforms.js';
+import { emitPreview } from '../pages/shared.js';
 
 let elBreadcrumb;
 let elFileGrid;
@@ -249,7 +250,7 @@ function activateItem(el) {
   } else {
     const name = el.dataset.name;
     const size = parseInt(el.dataset.size, 10) || 0;
-    emit('preview:open', { name, size, path: [...state.currentPath] });
+    emitPreview({ name, size }, [...state.currentPath]);
   }
 }
 

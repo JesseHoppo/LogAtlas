@@ -4,7 +4,7 @@ import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp, extractCountryFromFilename, isValidCountryCode, classifyIpAddress } from '../core/shared.js';
 import { CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
-import { escapeHtml, escapeAttr } from '../core/utils.js';
+import { escapeHtml, escapeAttr, capitalise } from '../core/utils.js';
 import { formatDateTimeLabel } from '../pages/shared.js';
 let sysInfoSourcePath = null;
 let overviewScreenshotUrl = null;
@@ -385,7 +385,7 @@ function renderTriageOverview() {
   }
 
   if (fingerprint) {
-    const confidenceLabel = fingerprint.confidence.charAt(0).toUpperCase() + fingerprint.confidence.slice(1);
+    const confidenceLabel = capitalise(fingerprint.confidence);
     riskItems.push(`File layout and markers most closely match ${fingerprint.family} (${confidenceLabel} confidence).`);
   }
   if (credentials?.uniqueCredentials > 0) {
@@ -945,7 +945,7 @@ export function initDashboard() {
 
     section.classList.remove('hidden');
 
-    const confidenceLabel = data.confidence.charAt(0).toUpperCase() + data.confidence.slice(1) + ' confidence';
+    const confidenceLabel = capitalise(data.confidence) + ' confidence';
     const signalsId = 'fingerprintSignals_' + Date.now();
     const structureOnly = data.source === 'structure-only'
       ? `<span class="dash-fingerprint-source" title="No sysinfo file present; family inferred from folder/file layout only.">structure-only</span>`

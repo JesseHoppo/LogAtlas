@@ -80,6 +80,14 @@ export function resolveSourcePathSegments(sourcePath) {
   return parts;
 }
 
+export function emitPreview(node, folderSegments) {
+  emit('preview:open', {
+    name: node.name,
+    size: node.size || 0,
+    path: folderSegments,
+  });
+}
+
 export function openSourcePreview(sourcePath) {
   const segments = resolveSourcePathSegments(sourcePath);
   const node = segments.length > 0 ? getNodeAtPath(segments) : null;
@@ -88,11 +96,7 @@ export function openSourcePreview(sourcePath) {
     return;
   }
 
-  emit('preview:open', {
-    name: node.name,
-    size: node.size || 0,
-    path: segments.slice(0, -1),
-  });
+  emitPreview(node, segments.slice(0, -1));
 }
 
 export const formatTimestampDisplay = formatDateTimeLabel;

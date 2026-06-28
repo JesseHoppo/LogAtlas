@@ -1,9 +1,10 @@
-import { state, emit } from '../core/state.js';
+import { state } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { collectFileNodes, SHARED_TEXT_DECODER } from '../core/shared.js';
 import { escapeHtml, isTextFile, looksLikeText } from '../core/utils.js';
 import { LIMITS } from '../core/definitions/patterns.js';
 import { navigateTo } from '../files/browser.js';
+import { emitPreview } from '../pages/shared.js';
 
 export function initSearch(navigateToPage) {
   const globalSearchInput = document.getElementById('globalSearchInput');
@@ -170,11 +171,7 @@ export function initSearch(navigateToPage) {
         navigateTo(folderPath);
         navigateToPage('browser');
 
-        emit('preview:open', {
-          name: match.node.name,
-          size: match.node.size,
-          path: folderPath,
-        });
+        emitPreview(match.node, folderPath);
       });
     });
   }

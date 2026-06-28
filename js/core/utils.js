@@ -10,6 +10,11 @@ function escapeAttr(str) {
   return escapeHtml(str);
 }
 
+function capitalise(str) {
+  const s = String(str || '');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function formatBytes(bytes) {
   const value = Number(bytes);
   if (!Number.isFinite(value) || value === 0) return '0 B';
@@ -182,6 +187,7 @@ function syntaxHighlightJSON(jsonString) {
 export {
   escapeHtml,
   escapeAttr,
+  capitalise,
   formatBytes,
   getFileExtension,
   isZipFile,

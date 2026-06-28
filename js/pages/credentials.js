@@ -7,6 +7,8 @@ import {
   parsePasswordFile,
   parseCookieFile,
   parseAutofillFile,
+  COOKIE_HEADERS,
+  JSON_COOKIE_HEADERS as COOKIE_HEADERS_NO_SUBDOMAIN,
 } from '../transforms/credentials.js';
 import { parseNoteArtifact, summariseNotes } from '../analysis/contextArtifacts.js';
 import {
@@ -30,9 +32,6 @@ import {
   addAdjustColumnsBtn,
   downloadCsvRows,
 } from './shared.js';
-
-const COOKIE_HEADERS = ['Domain', 'SubDomain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
-const COOKIE_HEADERS_NO_SUBDOMAIN = ['Domain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
 
 // Auth/SSO subdomains whose base domain doesn't name the consumer service.
 const AUTH_SUBDOMAIN_SERVICE = [
