@@ -654,6 +654,116 @@ function sanitiseIdentityEntries(entries, rootZipName) {
   return notes;
 }
 
+// Shared software/process-line parsing. Both the inline path (sysinfo
+// "Installed Apps:" / "Process List:" / "Windows Processes [ ]" sections) and
+// the standalone-file path (analyseSoftware / analyseProcessList) feed their
+// candidate lines through these so the supported formats never drift apart.
+
+const RUNNING_PROCESSES_HEADER = /^===\s*running processes\s*===$/i;
+const PROCESS_NAME_PREFIX = /^[-*•]\s+/;
+
+// Parse one process line across the union of observed formats. Returns
+// { name, pid, sessionId, commandLine } or null when nothing usable remains.
+function parseProcessLine(rawLine) {
+  const line = String(rawLine || '').trim();
+  if (!line) return null;
+
+  let name = line;
+  let pid = null;
+  let sessionId = null;
+  let commandLine = '';
+
+  const labelled = line.match(/^PID:\s*(\d+)(?:\s*,\s*SessionID:\s*([^,]+))?\s*,\s*Name:\s*([^,]+)(?:\s*,\s*CommandLine:\s*(.*))?$/i);
+  const idLabelled = labelled ? null : line.match(/^ID:\s*(\d+)\s*,\s*Name:\s*([^,]+?)(?:\s*,\s*CommandLine:\s*(.*))?$/i);
+  if (labelled) {
+    pid = labelled[1];
+    sessionId = (labelled[2] || '').trim();
+    name = labelled[3].trim();
+    commandLine = (labelled[4] || '').trim();
+  } else if (idLabelled) {
+    pid = idLabelled[1];
+    name = idLabelled[2].trim();
+    commandLine = (idLabelled[3] || '').trim();
+  } else {
+    const pidDashMatch = line.match(/^PID:\s*(\d+)\s*-\s*(.+)$/i);
+    if (pidDashMatch) {
+      pid = pidDashMatch[1];
+      name = pidDashMatch[2].trim();
+    } else {
+      const bracketPrefix = line.match(/^\[(\d+)\]\s+(.+)$/);
+      if (bracketPrefix) {
+        pid = bracketPrefix[1];
+        name = bracketPrefix[2].trim();
+      } else {
+        const bracketSuffix = line.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
+        if (bracketSuffix) {
+          name = bracketSuffix[1].trim();
+          pid = bracketSuffix[2];
+        } else {
+          const parts = line.split('\t').map(p => p.trim()).filter(Boolean);
+          if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+            name = parts[0];
+            pid = parts[1];
+            if (parts.length >= 3) commandLine = parts.slice(2).join(' ');
+          } else if (parts.length === 1) {
+            name = parts[0];
+          }
+        }
+      }
+    }
+  }
+
+  name = name.replace(PROCESS_NAME_PREFIX, '').trim();
+  if (name.length > 200) return null;
+  if (!name && !commandLine) return null;
+
+  return { name, pid, sessionId, commandLine };
+}
+
+// Collect deduped process entries from candidate lines. `lines` is an iterable
+// of raw lines (already section-bounded for the inline path, whole-file for the
+// file path). The file path strips a leading promo banner before calling.
+function parseProcessLines(lines, entryMap = new Map()) {
+  for (const rawLine of lines) {
+    const line = String(rawLine || '').trim();
+    if (!line) continue;
+    if (isPromotionalNoiseLine(line)) continue;
+    if (/^[-=*#]{3,}$/.test(line)) continue;            // separators
+    if (RUNNING_PROCESSES_HEADER.test(line)) continue;
+    if (/^(Process|Name|PID|Image)/i.test(line) && /\t/.test(line)) continue;  // header row
+
+    const parsed = parseProcessLine(line);
+    if (!parsed) continue;
+
+    const key = [parsed.name, parsed.pid || '', parsed.sessionId || '', parsed.commandLine].join(' ').toLowerCase();
+    if (!entryMap.has(key)) entryMap.set(key, parsed);
+  }
+  return entryMap;
+}
+
+// Collect deduped software entries from candidate lines.
+function parseSoftwareLines(lines, entries = [], seen = new Set()) {
+  for (const rawLine of lines) {
+    const line = String(rawLine || '').trim();
+    if (!line) continue;
+    if (line.includes('   ')) continue;
+    if (/https?:\/\//i.test(line) || /www\./i.test(line)) continue;
+    if (/(===|\*\*\*|###|\$\$\$)/.test(line)) continue;
+    if (line.length > 120) continue;
+    if (/^[-=*#]{3,}$/.test(line)) continue;
+
+    const parsed = parseSoftwareLine(line);
+    if (!parsed) continue;
+    const { name, version } = parsed;
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entries.push({ name, version });
+  }
+  return entries;
+}
+
 function extractInlineSections(text) {
   // Empty text still falls through to emit empty inline events, so a reanalyse
   // that no longer carries sysinfo clears any previously-emitted inline rows.
@@ -732,55 +842,11 @@ function extractInlineSections(text) {
 
   // Always emit the inline slot (even empty) so a vanished section clears
   // stale rows on reanalysis.
-  const softwareEntries = [];
-  if (softwareLines) {
-    const seen = new Set();
-    for (const line of softwareLines) {
-      if (line.length > 120) continue;
-      const parsed = parseSoftwareLine(line);
-      if (!parsed) continue;
-      const { name, version } = parsed;
-      if (name && !seen.has(name.toLowerCase())) {
-        seen.add(name.toLowerCase());
-        softwareEntries.push({ name, version });
-      }
-    }
-  }
+  const softwareEntries = softwareLines ? parseSoftwareLines(softwareLines) : [];
   emit('analysis:software', { fileCount: softwareEntries.length ? 1 : 0, entries: softwareEntries, totalCount: softwareEntries.length, inline: true });
 
-  const processEntries = [];
-  if (processLines) {
-    const seen = new Set();
-    for (const line of processLines) {
-      if (isPromotionalNoiseLine(line) || /^===\s*running processes\s*===$/i.test(line)) continue;
-      const cleaned = line.replace(/^[-*•]\s+/, '').trim();
-      if (!cleaned || cleaned.length > 200) continue;
-
-      let name = cleaned;
-      let pid = null;
-      // Some logs format process entries as `[pid] name`, others as
-      // `name [pid]` or `name (pid)`.
-      const bracketPrefix = cleaned.match(/^\[(\d+)\]\s+(.+)$/);
-      if (bracketPrefix) {
-        pid = bracketPrefix[1];
-        name = bracketPrefix[2].trim();
-      } else {
-        const bracketSuffix = cleaned.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
-        if (bracketSuffix) {
-          name = bracketSuffix[1].trim();
-          pid = bracketSuffix[2];
-        }
-      }
-      if (!name) continue;
-
-      const key = [name, pid || ''].join(' ').toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        processEntries.push({ name, pid });
-      }
-    }
-  }
-  const uniqueCount = new Set(processEntries.map(e => e.name.toLowerCase())).size;
+  const processEntries = processLines ? [...parseProcessLines(processLines).values()] : [];
+  const uniqueCount = new Set(processEntries.map(e => (e.name || e.commandLine || '').toLowerCase())).size;
   emit('analysis:processList', { fileCount: processEntries.length ? 1 : 0, entries: processEntries, totalCount: processEntries.length, uniqueCount, inline: true });
 }
 
@@ -1684,28 +1750,9 @@ async function analyseSoftware(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const lines = text.split('\n');
-      let found = false;
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        if (line.includes('   ')) continue;
-        if (/https?:\/\//i.test(line) || /www\./i.test(line)) continue;
-        if (/(===|\*\*\*|###|\$\$\$)/.test(line)) continue;
-        if (line.length > 120) continue;
-        if (/^[-=*#]{3,}$/.test(line)) continue;
-
-        const parsed = parseSoftwareLine(line);
-        if (!parsed) continue;
-        const { name, version } = parsed;
-        if (name && !seen.has(name.toLowerCase())) {
-          seen.add(name.toLowerCase());
-          entries.push({ name, version });
-          found = true;
-        }
-      }
-      if (found) parsedCount++;
+      const before = entries.length;
+      parseSoftwareLines(text.split('\n'), entries, seen);
+      if (entries.length > before) parsedCount++;
     } catch {
       // skip
     }
@@ -1734,74 +1781,9 @@ async function analyseProcessList(nodes) {
     try {
       const decoded = await decodeNodeText(node, path);
       if (decoded == null) continue;
-      const text = stripLeadingNoiseLines(decoded);
-      const lines = text.split('\n');
-      let found = false;
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        if (isPromotionalNoiseLine(line)) continue;
-        if (/^[-=*#]{3,}$/.test(line)) continue;  // separators
-        if (/^===\s*running processes\s*===$/i.test(line)) continue;
-        if (/^(Process|Name|PID|Image)/i.test(line) && /\t/.test(line)) continue;  // header row
-
-        let name = line;
-        let pid = null;
-        let sessionId = null;
-        let commandLine = '';
-
-        const labelled = line.match(/^PID:\s*(\d+)(?:\s*,\s*SessionID:\s*([^,]+))?\s*,\s*Name:\s*([^,]+)(?:\s*,\s*CommandLine:\s*(.*))?$/i);
-        const idLabelled = labelled ? null : line.match(/^ID:\s*(\d+)\s*,\s*Name:\s*([^,]+?)(?:\s*,\s*CommandLine:\s*(.*))?$/i);
-        if (labelled) {
-          pid = labelled[1];
-          sessionId = (labelled[2] || '').trim();
-          name = labelled[3].trim();
-          commandLine = (labelled[4] || '').trim();
-        } else if (idLabelled) {
-          pid = idLabelled[1];
-          name = idLabelled[2].trim();
-          commandLine = (idLabelled[3] || '').trim();
-        } else {
-          const pidDashMatch = line.match(/^PID:\s*(\d+)\s*-\s*(.+)$/i);
-          if (pidDashMatch) {
-            pid = pidDashMatch[1];
-            name = pidDashMatch[2].trim();
-          } else {
-            const bracketPrefix = line.match(/^\[(\d+)\]\s+(.+)$/);
-            if (bracketPrefix) {
-              pid = bracketPrefix[1];
-              name = bracketPrefix[2].trim();
-            } else {
-              const bracketMatch = line.match(/^(.+?)\s*[\[(](\d+)[\])]\s*$/);
-              if (bracketMatch) {
-                name = bracketMatch[1].trim();
-                pid = bracketMatch[2];
-              } else {
-                const parts = line.split('\t').map(p => p.trim()).filter(Boolean);
-                if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
-                  name = parts[0];
-                  pid = parts[1];
-                  if (parts.length >= 3) commandLine = parts.slice(2).join(' ');
-                } else if (parts.length === 1) {
-                  name = parts[0];
-                }
-              }
-            }
-          }
-        }
-
-        name = name.replace(/^[-*•]\s+/, '').trim();
-        if (name.length > 200) continue;
-        if (!name && !commandLine) continue;
-
-        const key = [name, pid || '', sessionId || '', commandLine].join(' ').toLowerCase();
-        if (!entryMap.has(key)) {
-          entryMap.set(key, { name, pid, sessionId, commandLine });
-        }
-        found = true;
-      }
-      if (found) parsedCount++;
+      const before = entryMap.size;
+      parseProcessLines(stripLeadingNoiseLines(decoded).split('\n'), entryMap);
+      if (entryMap.size > before) parsedCount++;
     } catch {
       // skip
     }
