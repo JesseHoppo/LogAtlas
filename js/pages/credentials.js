@@ -208,6 +208,8 @@ async function loadPasswordsData(fileTree, rootName) {
       for (const [src, dest] of colMap) {
         unified[dest] = row[src] || '';
       }
+      // URL-only saved-site stubs aren't credentials; the dashboard reports them separately.
+      if (String(unified[0] || '').trim() && !String(unified[1] || '').trim() && !String(unified[2] || '').trim()) continue;
       const key = [unified[0], unified[1], unified[2]]
         .map(cell => String(cell || '').trim().toLowerCase())
         .join('\u0000');
