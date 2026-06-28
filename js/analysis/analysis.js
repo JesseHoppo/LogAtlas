@@ -746,10 +746,25 @@ function parseProcessLines(lines, entryMap = new Map()) {
   return entryMap;
 }
 
+// Stealers append an install-path + install-date tail to each installed-app
+// line (` - C:\...\Package Cache\... - 20240925`), pushing it past the length
+// guard and dropping ~half the apps. Drop a trailing 8-digit date and/or a
+// trailing absolute-path segment, keeping name+version+vendor for the parser.
+function stripSoftwareTail(line) {
+  let out = line;
+  // trailing ` - YYYYMMDD` install date
+  out = out.replace(/\s+-\s+\d{8}\s*$/, '');
+  // trailing ` - <absolute path>` (Windows drive or POSIX root)
+  out = out.replace(/\s+-\s+(?:[A-Za-z]:[\\/]|\\\\|\/).*$/, '');
+  return out.trim();
+}
+
 // Collect deduped software entries from candidate lines.
 function parseSoftwareLines(lines, entries = [], seen = new Set()) {
   for (const rawLine of lines) {
-    const line = String(rawLine || '').trim();
+    const raw = String(rawLine || '').trim();
+    if (!raw) continue;
+    const line = stripSoftwareTail(raw);
     if (!line) continue;
     if (line.includes('   ')) continue;
     if (/https?:\/\//i.test(line) || /www\./i.test(line)) continue;
@@ -1655,7 +1670,8 @@ async function analyseSoftware(nodes) {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const before = entries.length;
-      parseSoftwareLines(text.split('\n'), entries, seen);
+      // Strip a leading ASCII banner so it doesn't leak in as a fake app.
+      parseSoftwareLines(stripLeadingNoiseLines(text).split('\n'), entries, seen);
       if (entries.length > before) parsedCount++;
     } catch {
       // skip
