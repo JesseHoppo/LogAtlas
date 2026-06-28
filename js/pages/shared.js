@@ -217,7 +217,8 @@ function escapeCSV(str) {
   if (str == null) return '';
   let s = String(str);
   // Neutralise spreadsheet formula/DDE injection: log values are attacker-controlled.
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  // Spreadsheets strip leading whitespace before evaluating, so test the trimmed value.
+  if (/^[=+\-@]/.test(s.trimStart()) || s[0] === '\t' || s[0] === '\r') s = "'" + s;
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
@@ -315,7 +316,7 @@ function chooseMapperNode(nodes, fileType) {
   });
 }
 
-export async function openMapperForHint(hintKey, fileType) {
+async function openMapperForHint(hintKey, fileType) {
   const nodes = [];
   collectHintedNodes(state.fileTree, hintKey, state.rootZipName, nodes);
   if (nodes.length === 0) return;
