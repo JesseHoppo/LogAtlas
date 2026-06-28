@@ -298,18 +298,7 @@ export function detectFormat(text) {
     const firstNonBlank = nonBlankLines[0] || '';
     const hasHeaderRow = detectHeaderRow(firstNonBlank, delim);
 
-    // Infer column roles for confidence scoring
-    const inference = inferColumnRoles(nonBlankLines, delim, hasHeaderRow);
-
-    // Confidence: high if header row detected or 3 roles inferred, medium if 2 roles, low otherwise
-    let confidence;
-    if (hasHeaderRow) confidence = 'high';
-    else if (inference.confidence === 'high') confidence = 'high';
-    else if (inference.confidence === 'medium') confidence = 'medium';
-    else if (effectiveCols === 3) confidence = 'medium'; // 3-col default heuristic
-    else confidence = 'low';
-
-    return { type: 'delimited', delimiter: delim, columns, hasHeaderRow, dropColumns, confidence };
+    return { type: 'delimited', delimiter: delim, columns, hasHeaderRow, dropColumns };
   }
 
   return null;

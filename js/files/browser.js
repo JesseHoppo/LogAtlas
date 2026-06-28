@@ -157,22 +157,23 @@ function renderItemBadges(item, badgeClass, nestedLabel) {
   return html;
 }
 
-// Grid view
+// Grid/list views share markup; they differ only by class prefix, the nested-archive
+// label, and badges-vs-meta ordering. Wrapper/back classes don't derive cleanly from
+// the child prefix, so they're passed explicitly.
 
-function renderGrid(items) {
+function renderItems(items, { prefix, itemClass, backClass, nestedLabel, badgesBeforeMeta }) {
   let html = '';
 
   if (state.currentPath.length > 0) {
-    html += `<div class="file-item back-item" data-action="back" role="button" tabindex="0" aria-label="Go up one folder">` +
-      `<div class="file-item-icon">&larr;</div>` +
-      `<div class="file-item-name">..</div>` +
-      `<div class="file-item-meta">Go back</div></div>`;
+    html += `<div class="${backClass}" data-action="back" role="button" tabindex="0" aria-label="Go up one folder">` +
+      `<div class="${prefix}-icon">&larr;</div>` +
+      `<div class="${prefix}-name">..</div>` +
+      `<div class="${prefix}-meta">Go back</div></div>`;
   }
 
   if (items.length === 0 && state.currentPath.length === 0) {
-    elFileGrid.innerHTML = `<div class="empty-folder">` +
+    return `<div class="empty-folder">` +
       `<div class="empty-folder-icon">--</div><div>No files found</div></div>`;
-    return;
   }
 
   for (const item of items) {
@@ -183,7 +184,7 @@ function renderGrid(items) {
     const selectedClass = selectedFiles.has(key) ? ' selected' : '';
     const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
 
-    html += `<div class="file-item${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
+    html += `<div class="${itemClass}${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
       `data-path="${escapeAttr(key)}" ` +
       `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeAttr(verb)}">`;
 
@@ -191,74 +192,49 @@ function renderGrid(items) {
       html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-label="Select ${escapeAttr(item.name)}">`;
     }
 
-    html += `<div class="file-item-icon">${icon}</div>` +
-      `<div class="file-item-name">${escapeHtml(item.name)}</div>`;
+    html += `<div class="${prefix}-icon">${icon}</div>` +
+      `<div class="${prefix}-name">${escapeHtml(item.name)}</div>`;
 
+    let meta = '';
     if (isDir) {
       const count = countChildren(item);
-      html += `<div class="file-item-meta">${count} item${count !== 1 ? 's' : ''}</div>`;
+      meta = `<div class="${prefix}-meta">${count} item${count !== 1 ? 's' : ''}</div>`;
     } else if (item.size > 0) {
-      html += `<div class="file-item-meta">${formatBytes(item.size)}</div>`;
+      meta = `<div class="${prefix}-meta">${formatBytes(item.size)}</div>`;
     }
 
-    html += renderItemBadges(item, 'file-item-badge', 'nested archive');
+    const badges = renderItemBadges(item, `${prefix}-badge`, nestedLabel);
+
+    html += badgesBeforeMeta ? badges + meta : meta + badges;
 
     html += `</div>`;
   }
 
-  elFileGrid.innerHTML = html;
+  return html;
+}
+
+// Grid view
+
+function renderGrid(items) {
+  elFileGrid.innerHTML = renderItems(items, {
+    prefix: 'file-item',
+    itemClass: 'file-item',
+    backClass: 'file-item back-item',
+    nestedLabel: 'nested archive',
+    badgesBeforeMeta: false,
+  });
 }
 
 // List view
 
 function renderList(items) {
-  let html = '';
-
-  if (state.currentPath.length > 0) {
-    html += `<div class="file-list-item" data-action="back" role="button" tabindex="0" aria-label="Go up one folder">` +
-      `<div class="file-list-icon">&larr;</div>` +
-      `<div class="file-list-name">..</div>` +
-      `<div class="file-list-meta">Go back</div></div>`;
-  }
-
-  if (items.length === 0 && state.currentPath.length === 0) {
-    elFileList.innerHTML = `<div class="empty-folder">` +
-      `<div class="empty-folder-icon">--</div><div>No files found</div></div>`;
-    return;
-  }
-
-  for (const item of items) {
-    const isDir = item.type === 'directory';
-    const icon = getFileIcon(item.name, isDir, item.isArchive);
-    const key = itemKey(item.name);
-    const checked = selectedFiles.has(key) ? 'checked' : '';
-    const selectedClass = selectedFiles.has(key) ? ' selected' : '';
-    const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
-
-    html += `<div class="file-list-item${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
-      `data-path="${escapeAttr(key)}" ` +
-      `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeAttr(verb)}">`;
-
-    if (!isDir) {
-      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-label="Select ${escapeAttr(item.name)}">`;
-    }
-
-    html += `<div class="file-list-icon">${icon}</div>` +
-      `<div class="file-list-name">${escapeHtml(item.name)}</div>`;
-
-    html += renderItemBadges(item, 'file-list-badge', 'nested');
-
-    if (isDir) {
-      const count = countChildren(item);
-      html += `<div class="file-list-meta">${count} item${count !== 1 ? 's' : ''}</div>`;
-    } else if (item.size > 0) {
-      html += `<div class="file-list-meta">${formatBytes(item.size)}</div>`;
-    }
-
-    html += `</div>`;
-  }
-
-  elFileList.innerHTML = html;
+  elFileList.innerHTML = renderItems(items, {
+    prefix: 'file-list',
+    itemClass: 'file-list-item',
+    backClass: 'file-list-item',
+    nestedLabel: 'nested',
+    badgesBeforeMeta: true,
+  });
 }
 
 function activateItem(el) {

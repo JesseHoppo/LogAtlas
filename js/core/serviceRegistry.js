@@ -53,19 +53,13 @@ function findServiceDefinition(value, definitions) {
 }
 
 function findStoreServiceByPath(pathText) {
+  const byPattern = findServiceDefinition(pathText, STORE_SERVICE_DEFINITIONS);
+  if (byPattern) return byPattern;
+
   const normalisedPath = normaliseServiceText(pathText);
-  if (!normalisedPath) return null;
-
-  for (const definition of STORE_SERVICE_DEFINITIONS) {
-    if (definition.patterns.some((pattern) => pattern.test(normalisedPath))) {
-      return definition;
-    }
-    if (definition.extensionIds.some((id) => normalisedPath.includes(id))) {
-      return definition;
-    }
-  }
-
-  return null;
+  return STORE_SERVICE_DEFINITIONS.find(
+    (definition) => definition.extensionIds && definition.extensionIds.some((id) => normalisedPath.includes(id)),
+  ) || null;
 }
 
 function decodeJwtPayload(token) {

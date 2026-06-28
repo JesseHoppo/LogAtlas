@@ -201,46 +201,26 @@ function extractHistoryEvents(historyData) {
   return events;
 }
 
-function extractNoteEvents(notesData) {
-  if (!notesData || notesData.entries.length === 0) return [];
-  return notesData.entries
-    .filter(entry => entry.modifiedDate instanceof Date && !isNaN(entry.modifiedDate.getTime()))
+function extractModifiedEvents(data, category, limit, pickTitle, pickDetail) {
+  if (!data || !data.entries || !data.entries.length) return [];
+  return data.entries
+    .filter(e => e.modifiedDate instanceof Date && !isNaN(e.modifiedDate.getTime()))
     .sort((a, b) => b.modifiedDate - a.modifiedDate)
-    .slice(0, 12)
-    .map(entry => ({
-      time: entry.modifiedDate,
-      category: 'notes',
-      title: entry.title,
-      detail: entry.indicators,
-    }));
+    .slice(0, limit)
+    .map(e => ({ time: e.modifiedDate, category, title: pickTitle(e), detail: pickDetail(e) }));
+}
+
+function extractNoteEvents(notesData) {
+  return extractModifiedEvents(notesData, 'notes', 12, e => e.title, e => e.indicators);
 }
 
 function extractGrabbedFileEvents(grabbedData) {
-  if (!grabbedData || grabbedData.entries.length === 0) return [];
-  return grabbedData.entries
-    .filter(entry => entry.modifiedDate instanceof Date && !isNaN(entry.modifiedDate.getTime()))
-    .sort((a, b) => b.modifiedDate - a.modifiedDate)
-    .slice(0, 12)
-    .map(entry => ({
-      time: entry.modifiedDate,
-      category: 'file',
-      title: entry.name,
-      detail: entry.relativePath,
-    }));
+  return extractModifiedEvents(grabbedData, 'file', 12, e => e.name, e => e.relativePath);
 }
 
 function extractScreenshotEvents(screenshotsData) {
-  if (!screenshotsData || screenshotsData.entries.length === 0) return [];
-  return screenshotsData.entries
-    .filter(entry => entry.modifiedDate instanceof Date && !isNaN(entry.modifiedDate.getTime()))
-    .sort((a, b) => b.modifiedDate - a.modifiedDate)
-    .slice(0, 8)
-    .map(entry => ({
-      time: entry.modifiedDate,
-      category: 'screenshots',
-      title: entry.name,
-      detail: entry.width && entry.height ? `${entry.width}x${entry.height}` : entry.sizeDisplay,
-    }));
+  return extractModifiedEvents(screenshotsData, 'screenshots', 8, e => e.name,
+    e => (e.width && e.height ? `${e.width}x${e.height}` : e.sizeDisplay));
 }
 
 function buildTimeline() {

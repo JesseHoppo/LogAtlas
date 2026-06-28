@@ -10,6 +10,11 @@ import {
   parseDelimited,
 } from './delimited.js';
 
+function isPanLength(value) {
+  const d = String(value || '').replace(/\D/g, '');
+  return d.length >= 12 && d.length <= 19;
+}
+
 function buildCreditCardRowsFromBlocks(clean) {
   const blocks = clean.split(/\n\s*\n/).filter(block => block.trim());
   const rows = [];
@@ -27,12 +32,10 @@ function buildCreditCardRowsFromBlocks(clean) {
     const year = record.year || record['exp year'] || record['expiry year'] || '';
     const nameOnCard = record.nameoncard || record['name on card'] || record.cardholder || record['card holder'] || record.name || record.holder || '';
     const cvc = record.cvc || record.cvv || record.securitycode || record['security code'] || '';
-    const expiration = record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || (month || year ? `${month}/${year}`.replace(/^\/|\/$/g, '') : '');
+    const expiration = record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || buildExpirationValue(month, year);
     const filePath = record.filepath || record['file path'] || record.path || record.target || '';
 
-    const panDigits = cardNumber.replace(/\D/g, '');
-    const validPan = panDigits.length >= 12 && panDigits.length <= 19;
-    const pan = validPan ? cardNumber : '';
+    const pan = isPanLength(cardNumber) ? cardNumber : '';
     if (!pan && !expiration && !nameOnCard && !cvc && !filePath) continue;
     rows.push([pan, nameOnCard, cvc, expiration, filePath]);
   }
@@ -68,8 +71,7 @@ function mapCreditCardHeaders(parsed) {
           (row[headerMap.expirationYear ?? -1] || '').trim(),
         );
       const rawPan = row[headerMap.number ?? -1] || '';
-      const panDigits = rawPan.replace(/\D/g, '');
-      const pan = panDigits.length >= 12 && panDigits.length <= 19 ? rawPan : '';
+      const pan = isPanLength(rawPan) ? rawPan : '';
       return [
         pan,
         row[headerMap.name ?? -1] || '',
@@ -99,8 +101,7 @@ function mapCreditCardRowsByContent(parsed) {
     const numericCandidates = [];
 
     for (const cell of cells) {
-      const digits = cell.replace(/\D/g, '');
-      if (!cardNumber && digits.length >= 12 && digits.length <= 19) {
+      if (!cardNumber && isPanLength(cell)) {
         cardNumber = cell;
         continue;
       }
@@ -151,8 +152,7 @@ function parsePipeDelimitedCardLine(line) {
   let expiration = '';
 
   for (const part of parts) {
-    const digits = part.replace(/\D/g, '');
-    if (!cardNumber && digits.length >= 12 && digits.length <= 19) {
+    if (!cardNumber && isPanLength(part)) {
       cardNumber = part;
       continue;
     }
