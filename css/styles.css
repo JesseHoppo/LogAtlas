@@ -3236,6 +3236,12 @@ body {
   margin: 0.5rem 0 1.5rem 1rem;
 }
 
+.timeline-note {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.5rem 0 1rem;
+}
+
 .timeline-date-group {
   font-family: var(--font-mono);
   font-size: 0.7rem;

@@ -338,14 +338,19 @@ function renderFilters() {
   el.innerHTML = html;
 }
 
-function renderVisualTimeline(events) {
+// Cookie events all carry the capture timestamp: they describe the state of
+// the log at collection time, not a sequence of events. Keep them out of the
+// chronology and show them as a snapshot table instead.
+const CAPTURE_STATE_CATEGORIES = new Set(['cookie']);
+
+function renderChronology(events) {
   const el = document.getElementById('timelineVisual');
   if (events.length === 0) {
-    el.innerHTML = '';
+    el.innerHTML = '<div class="timeline-note">No events with distinct timestamps. See the capture snapshot below for the state of the log at collection time.</div>';
     return;
   }
 
-  let html = '<div class="timeline-track">';
+  let html = '<div class="dash-section-title">Activity Chronology</div><div class="timeline-track">';
   let currentGroup = '';
 
   for (const ev of events) {
@@ -372,26 +377,21 @@ function renderVisualTimeline(events) {
   el.innerHTML = html;
 }
 
-function renderTable(events) {
+function renderCaptureSnapshot(events) {
   const el = document.getElementById('timelineContent');
   if (events.length === 0) {
-    el.innerHTML = '<div class="no-data">No timeline events match the current filters.</div>';
+    el.innerHTML = '';
     return;
   }
 
-  let html = '<div class="data-table-container"><table class="data-table">';
-  html += '<thead><tr><th style="width:160px">Date</th><th style="width:80px">Category</th><th style="width:200px">Event</th><th>Detail</th></tr></thead><tbody>';
-
+  const captureLabel = formatDateTimeLabel(events[0].time);
+  let html = `<div class="dash-section-title">Capture Snapshot</div>`;
+  html += `<div class="dash-section-subtitle">State of the log at collection time${captureLabel ? ` (${escapeHtml(captureLabel)})` : ''}. These share the capture instant and are not a chronology.</div>`;
+  html += '<div class="data-table-container"><table class="data-table">';
+  html += '<thead><tr><th>Domain</th><th>Cookie state at capture</th></tr></thead><tbody>';
   for (const ev of events) {
-    const info = CATEGORIES[ev.category] || CATEGORIES.file;
-    html += '<tr>';
-    html += `<td>${escapeHtml(formatDateTimeLabel(ev.time))}</td>`;
-    html += `<td><span class="timeline-event-badge ${info.badgeClass}">${info.label}</span></td>`;
-    html += `<td title="${escapeHtml(ev.title)}">${escapeHtml(ev.title)}</td>`;
-    html += `<td title="${escapeHtml(ev.detail || '')}">${escapeHtml(ev.detail || '')}</td>`;
-    html += '</tr>';
+    html += `<tr><td>${escapeHtml(ev.title)}</td><td title="${escapeHtml(ev.detail || '')}">${escapeHtml(ev.detail || '')}</td></tr>`;
   }
-
   html += '</tbody></table></div>';
   el.innerHTML = html;
 }
@@ -419,8 +419,8 @@ function renderTimelinePage(searchQuery = '') {
 
   renderStats(filtered);
   renderFilters();
-  renderVisualTimeline(filtered);
-  renderTable(filtered);
+  renderChronology(filtered.filter(e => !CAPTURE_STATE_CATEGORIES.has(e.category)));
+  renderCaptureSnapshot(filtered.filter(e => CAPTURE_STATE_CATEGORIES.has(e.category)));
 }
 
 function exportTimelineCSV() {
