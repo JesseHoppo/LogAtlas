@@ -465,9 +465,9 @@ function buildBarList(items) {
 }
 
 function buildFootprintCard(title, detail, extra = '') {
-  return `<div class="data-page-warning">
-    <div class="data-page-warning-title">${escapeHtml(title)}</div>
-    <div class="data-page-warning-more">${detail}</div>
+  return `<div class="data-page-finding">
+    <div class="data-page-finding-title">${escapeHtml(title)}</div>
+    <div class="data-page-finding-more">${detail}</div>
     ${extra}
   </div>`;
 }
@@ -551,9 +551,9 @@ function buildNotesPiiGroupHtml(entries) {
     <td title="${escapeHtml(entry.source)}">${escapeHtml(trimRootPath(entry.source))}</td>
   </tr>`).join('');
 
-  return `<div class="data-page-warning">
-    <div class="data-page-warning-title">Notes containing structured PII</div>
-    <div class="data-page-warning-more">${piiNotes.length.toLocaleString()} note(s) hold seed phrases, card numbers, IBANs, crypto addresses, or national IDs.</div>
+  return `<div class="data-page-finding">
+    <div class="data-page-finding-title">Notes containing structured PII</div>
+    <div class="data-page-finding-more">${piiNotes.length.toLocaleString()} note(s) hold seed phrases, card numbers, IBANs, crypto addresses, or national IDs.</div>
     <div class="data-table-container"><table class="data-table">
       <thead><tr><th>Title</th><th>Indicators</th><th>Source</th></tr></thead>
       <tbody>${rows}</tbody>

@@ -395,7 +395,7 @@ function currentnessRowBuilder(row) {
   return `<tr class="lab-cred${priorityClass}" tabindex="0" aria-expanded="false">
     <td class="lab-cred-site" title="${escapeHtml(row.url)}"><span class="lab-cred-site-host">${escapeHtml(row.siteHost || row.siteDomain || '—')}</span> ${catBadge}</td>
     <td class="lab-cred-user" title="${escapeHtml(row.username)}">${escapeHtml(row.username || '—')}${reuseMarker}</td>
-    <td class="lab-cred-action"><span class="lab-action-dot lab-action-${escapeAttr(action)}" title="${escapeAttr(actionDotTitle)}"></span><span class="lab-cred-score-num">${row.score}</span></td>
+    <td class="lab-cred-action" title="${escapeAttr(actionDotTitle)}"><span class="lab-cred-score-num lab-score-${escapeAttr(action)}">${row.score}</span></td>
     <td class="lab-cred-disp lab-tone-${dispositionTone}">${escapeHtml(display)}</td>
     <td class="lab-cred-bar">${renderMiniSignalBar(row)}</td>
   </tr>

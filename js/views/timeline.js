@@ -312,7 +312,7 @@ function renderStats(events) {
   if (cookies.rows.length > 0) {
     const validSessions = cookies.rows.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
     if (validSessions > 0) {
-      html += `<div class="data-page-stat"><div class="data-page-stat-value cookie-auth-valid">${validSessions}</div><div class="data-page-stat-label">Active Sessions</div></div>`;
+      html += `<div class="data-page-stat" title="Session tokens still unexpired at capture time. Validity is as of capture; confirm before relying on access."><div class="data-page-stat-value cookie-auth-valid">${validSessions}</div><div class="data-page-stat-label">Sessions Valid At Capture</div></div>`;
     }
   }
 

@@ -2626,6 +2626,27 @@ body {
   color: var(--text-secondary);
 }
 
+/* Neutral finding block: an observation, not an error. Reserve the red
+   .data-page-warning strictly for parse failures and genuine problems. */
+.data-page-finding {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.data-page-finding-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+.data-page-finding-more {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
 .data-page-actions {
   display: flex;
   align-items: center;
@@ -2890,7 +2911,7 @@ body {
   color: var(--success);
 }
 .cookie-expired {
-  color: var(--error);
+  color: var(--text-muted);
 }
 .cookie-session {
   color: var(--text-muted);
@@ -2911,8 +2932,8 @@ body {
   color: var(--success);
 }
 .validity-badge-expired {
-  background: rgba(220, 38, 38, 0.1);
-  color: var(--error);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
 }
 .validity-badge-session {
   background: var(--bg-tertiary);
@@ -2923,13 +2944,14 @@ body {
   color: var(--warning);
 }
 
-/* Session cookie badges and stats */
+/* Session cookie badges and stats. These are quantities, not statuses:
+   carry emphasis with mono weight, not with alarm colour. */
 .cookie-auth {
-  color: var(--warning);
+  color: var(--text-primary);
   font-weight: 600;
 }
 .cookie-auth-valid {
-  color: var(--error);
+  color: var(--text-primary);
   font-weight: 600;
 }
 .session-badge {
@@ -4178,7 +4200,7 @@ body {
   outline-offset: -2px;
 }
 .lab-cred-priority > td {
-  background: var(--warning-dim);
+  background: var(--neutral-dim);
 }
 .lab-cred-site {
   font-family: var(--font-mono);
@@ -4266,10 +4288,11 @@ body {
   flex: 0 0 auto;
 }
 
-/* Action buckets: live / recent / stored / legacy */
+/* Action buckets: live / recent / stored / legacy. Live access is genuine
+   risk, so it keeps red, but without the ring that made a sorted column
+   read as a wall of alarms. */
 .lab-action-dot.lab-action-live {
   background: var(--error);
-  box-shadow: 0 0 0 2px var(--error-border);
 }
 .lab-action-dot.lab-action-recent { background: var(--warning); }
 .lab-action-dot.lab-action-stored { background: var(--text-muted); }
