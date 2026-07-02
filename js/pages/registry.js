@@ -3,7 +3,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'passwords',
     pageId: 'pagePasswords',
     navId: 'navPasswords',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Passwords',
     summaryId: 'passwordsSummary',
     summaryText: 'Loading...',
@@ -22,7 +22,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'cookies',
     pageId: 'pageCookies',
     navId: 'navCookies',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Cookies',
     summaryId: 'cookiesSummary',
     summaryText: 'Loading...',
@@ -42,7 +42,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'autofills',
     pageId: 'pageAutofills',
     navId: 'navAutofills',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Autofills',
     summaryId: 'autofillsSummary',
     summaryText: 'Loading...',
@@ -58,7 +58,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'notes',
     pageId: 'pageNotes',
     navId: 'navNotes',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Notes',
     summaryId: 'notesSummary',
     summaryText: 'Loading...',
@@ -74,7 +74,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'history',
     pageId: 'pageHistory',
     navId: 'navHistory',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'History',
     summaryId: 'historySummary',
     summaryText: 'Loading...',
@@ -90,7 +90,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'bookmarks',
     pageId: 'pageBookmarks',
     navId: 'navBookmarks',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Bookmarks',
     summaryId: 'bookmarksSummary',
     summaryText: 'Loading...',
@@ -106,7 +106,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'browsermeta',
     pageId: 'pageBrowserMeta',
     navId: 'navBrowserMeta',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     navLabel: 'Browser Metadata',
     title: 'Browser Metadata',
     summaryId: 'browserMetaSummary',
@@ -123,7 +123,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'tokens',
     pageId: 'pageTokens',
     navId: 'navTokens',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     navLabel: 'Tokens',
     title: 'Account Tokens',
     summaryId: 'tokensSummary',
@@ -143,7 +143,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'services',
     pageId: 'pageServices',
     navId: 'navServices',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Services',
     summaryId: 'servicesSummary',
     summaryText: 'Loading...',
@@ -159,7 +159,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'wallets',
     pageId: 'pageWallets',
     navId: 'navWallets',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     navLabel: 'Wallets',
     title: 'Wallets & Stores',
     summaryId: 'walletsSummary',
@@ -176,7 +176,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'downloads',
     pageId: 'pageDownloads',
     navId: 'navDownloads',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Downloads',
     summaryId: 'downloadsSummary',
     summaryText: 'Loading...',
@@ -192,7 +192,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'cards',
     pageId: 'pageCards',
     navId: 'navCards',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     navLabel: 'Cards',
     title: 'Credit Cards',
     summaryId: 'cardsSummary',
@@ -212,7 +212,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'clipboard',
     pageId: 'pageClipboard',
     navId: 'navClipboard',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Clipboard',
     summaryId: 'clipboardSummary',
     summaryText: 'Loading...',
@@ -228,7 +228,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'grabbed',
     pageId: 'pageGrabbed',
     navId: 'navGrabbed',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     navLabel: 'Grabbed Files',
     title: 'Grabbed Files',
     summaryId: 'grabbedSummary',
@@ -245,7 +245,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'detections',
     pageId: 'pageDetections',
     navId: 'navDetections',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'context',
     title: 'Detections',
     summaryId: 'detectionsSummary',
     summaryText: 'Loading...',
@@ -261,7 +261,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'screenshots',
     pageId: 'pageScreenshots',
     navId: 'navScreenshots',
-    sidebarSection: 'artifacts',
+    sidebarSection: 'evidence',
     title: 'Screenshots',
     summaryId: 'screenshotsSummary',
     summaryText: 'Loading...',
@@ -277,7 +277,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'domains',
     pageId: 'pageDomains',
     navId: 'navDomains',
-    sidebarSection: 'analysis',
+    sidebarSection: 'context',
     navLabel: 'Domains',
     title: 'Domain Explorer',
     summaryId: 'domainsSummary',
@@ -294,7 +294,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'software',
     pageId: 'pageSoftware',
     navId: 'navSoftware',
-    sidebarSection: 'analysis',
+    sidebarSection: 'context',
     navLabel: 'Software',
     title: 'Installed Software',
     summaryId: 'softwareSummary',
@@ -311,7 +311,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'processes',
     pageId: 'pageProcesses',
     navId: 'navProcesses',
-    sidebarSection: 'analysis',
+    sidebarSection: 'context',
     navLabel: 'Processes',
     title: 'Running Processes',
     summaryId: 'processesSummary',
@@ -328,7 +328,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'timeline',
     pageId: 'pageTimeline',
     navId: 'navTimeline',
-    sidebarSection: 'analysis',
+    sidebarSection: 'context',
     navLabel: 'Timeline',
     title: 'Timeline',
     summaryId: 'timelineSummary',
@@ -346,7 +346,7 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'identity',
     pageId: 'pageIdentity',
     navId: 'navIdentity',
-    sidebarSection: 'analysis',
+    sidebarSection: 'evidence',
     navLabel: 'Identity',
     title: 'Identity Profile',
     summaryId: 'identitySummary',
@@ -365,9 +365,9 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     name: 'currentnesslab',
     pageId: 'pageCurrentnessLab',
     navId: 'navCurrentnessLab',
-    sidebarSection: 'experiments',
-    navLabel: 'Currentness Lab',
-    title: 'Currentness Lab',
+    sidebarSection: 'triage',
+    navLabel: 'Credential Triage',
+    title: 'Credential Triage',
     summaryId: 'currentnessLabSummary',
     summaryText: 'No credential currentness data.',
     searchId: 'currentnessLabSearch',
@@ -450,19 +450,13 @@ function renderSidebarButtons(sectionName) {
 }
 
 function renderSidebarDataNav() {
-  const artifactsMount = document.getElementById('generatedArtifactNav');
-  if (artifactsMount) {
-    artifactsMount.innerHTML = renderSidebarButtons('artifacts');
-  }
-
-  const analysisMount = document.getElementById('generatedAnalysisNav');
-  if (analysisMount) {
-    analysisMount.innerHTML = renderSidebarButtons('analysis');
-  }
-
-  const experimentsMount = document.getElementById('generatedExperimentsNav');
-  if (experimentsMount) {
-    experimentsMount.innerHTML = renderSidebarButtons('experiments');
+  const mounts = {
+    triage: document.getElementById('generatedTriageNav'),
+    evidence: document.getElementById('generatedEvidenceNav'),
+    context: document.getElementById('generatedContextNav'),
+  };
+  for (const [section, mount] of Object.entries(mounts)) {
+    if (mount) mount.innerHTML = renderSidebarButtons(section);
   }
 }
 
