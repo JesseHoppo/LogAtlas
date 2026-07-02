@@ -314,9 +314,37 @@ function initIdentityGraph() {
 }
 
 let identityData = null;
+let identityActiveEmail = null;
+let identityShowAllEmails = false;
 
 function isIdentityPageActive() {
   return document.querySelector('.sidebar-nav-item.active')?.dataset.page === 'identity';
+}
+
+// Compact, filterable index of identities. Replaces the wall of one-card-per
+// -email chip grids: clicking an identity filters the accounts table.
+function buildEmailIndex(data) {
+  const map = data.emailAccountMap;
+  if (!map.length) return '';
+  const CAP = 15;
+  const shown = identityShowAllEmails ? map : map.slice(0, CAP);
+  const rows = shown.map((entry) => {
+    const active = entry.email === identityActiveEmail ? ' active' : '';
+    const hasSession = entry.services.some((s) => s.hasValidSession);
+    const dot = hasSession ? '<span class="identity-email-dot" title="Has a session valid at capture"></span>' : '';
+    return `<button class="identity-email-row${active}" type="button" data-email="${escapeHtml(entry.email)}">
+      <span class="identity-email-addr">${escapeHtml(entry.email)}</span>
+      <span class="identity-email-count">${entry.services.length}</span>${dot}
+    </button>`;
+  }).join('');
+  const moreBtn = map.length > CAP
+    ? `<button class="identity-email-more" type="button">${identityShowAllEmails ? 'Show fewer' : `Show all ${map.length}`}</button>`
+    : '';
+  return `<div class="identity-email-index">
+    <div class="identity-subsection-title">Identities (${map.length})</div>
+    <div class="identity-email-list">${rows}</div>
+    ${moreBtn}
+  </div>`;
 }
 
 function renderIdentityPage(searchQuery = '') {
@@ -332,51 +360,50 @@ function renderIdentityPage(searchQuery = '') {
     primaryEl.innerHTML = '';
     contentEl.innerHTML = '<div class="no-data">No identity data available.</div>';
     emailMapEl.innerHTML = '';
+    identityActiveEmail = null;
     return;
   }
 
   const data = identityData;
-
-  const sessions = data.exposureSummary.servicesWithValidSessions;
-  const summaryText = `${data.exposureSummary.totalUniqueServices} exposed services \u2014 ${sessions} active session${sessions !== 1 ? 's' : ''}, ${data.exposureSummary.tokenBackedServices} token-backed service${data.exposureSummary.tokenBackedServices !== 1 ? 's' : ''}`;
-  const osFamily = data.primaryIdentity.osFamily;
-  if (osFamily) {
-    summary.innerHTML = `${escapeHtml(summaryText)} <span class="identity-os-chip" data-os="${escapeHtml(osFamily)}" style="font-family:var(--font-mono);font-size:0.6rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:3px;background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border);margin-left:0.4rem">${escapeHtml(osFamily)}</span>`;
-  } else {
-    summary.textContent = summaryText;
-  }
-
   const es = data.exposureSummary;
-  let statsHtml = '';
-  statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value">${es.totalUniqueServices}</div><div class="data-page-stat-label">Services</div></div>`;
-  statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value" style="color:var(--warning)">${es.servicesWithValidSessions}</div><div class="data-page-stat-label">Active Sessions</div></div>`;
-  statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value" style="color:var(--error)">${es.servicesWithBothPasswordAndSession}</div><div class="data-page-stat-label">Password + Session</div></div>`;
-  statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value">${es.tokenBackedServices}</div><div class="data-page-stat-label">Token-Backed</div></div>`;
-  statsHtml += `<div class="data-page-stat"><div class="data-page-stat-value">${es.uniqueEmails}</div><div class="data-page-stat-label">Email Addresses</div></div>`;
-  statsEl.innerHTML = statsHtml;
 
+  const summaryText = `${es.totalUniqueServices} exposed services across ${es.uniqueEmails} email address${es.uniqueEmails !== 1 ? 'es' : ''}; ${es.servicesWithValidSessions} with a session valid at capture`;
+  const osFamily = data.primaryIdentity.osFamily;
+  summary.innerHTML = osFamily
+    ? `${escapeHtml(summaryText)} <span class="identity-os-chip" data-os="${escapeHtml(osFamily)}">${escapeHtml(osFamily)}</span>`
+    : escapeHtml(summaryText);
+
+  // Counts are quantities, not statuses: neutral ink, weight for scanning.
+  statsEl.innerHTML = [
+    ['Services', es.totalUniqueServices],
+    ['Valid at capture', es.servicesWithValidSessions],
+    ['Password + session', es.servicesWithBothPasswordAndSession],
+    ['Token-backed', es.tokenBackedServices],
+    ['Email addresses', es.uniqueEmails],
+  ].map(([label, value]) =>
+    `<div class="data-page-stat"><div class="data-page-stat-value">${value}</div><div class="data-page-stat-label">${label}</div></div>`
+  ).join('');
+
+  // Primary identity: one compact block. Email addresses are a count that links
+  // to the Identities index below, not a wall of every address in one cell.
   const pi = data.primaryIdentity;
   const fields = [];
-  if (pi.names.length > 0) fields.push({ label: 'Name', value: pi.names.join(', ') });
-  if (pi.emails.length > 0) fields.push({ label: 'Email', value: pi.emails.join(', ') });
-  if (pi.phones.length > 0) fields.push({ label: 'Phone', value: pi.phones.join(', ') });
-  if (pi.osUsername) fields.push({ label: 'OS User', value: pi.userSource && pi.userSource !== 'sysinfo' ? `${pi.osUsername} (from ${USER_SOURCE_LABEL[pi.userSource]})` : pi.osUsername });
-  if (pi.computerName) fields.push({ label: 'Computer', value: pi.computerName });
-  if (pi.os) fields.push({ label: 'OS', value: pi.os });
-  if (pi.location) fields.push({ label: 'Location', value: pi.location });
+  if (pi.names.length > 0) fields.push(['Name', pi.names.slice(0, 3).join(', ') + (pi.names.length > 3 ? ` +${pi.names.length - 3} more` : '')]);
+  if (pi.osUsername) fields.push(['OS User', pi.userSource && pi.userSource !== 'sysinfo' ? `${pi.osUsername} (from ${USER_SOURCE_LABEL[pi.userSource]})` : pi.osUsername]);
+  if (pi.computerName) fields.push(['Computer', pi.computerName]);
+  if (pi.os) fields.push(['OS', pi.os]);
+  if (pi.location) fields.push(['Location', pi.location]);
+  if (pi.phones.length > 0) fields.push(['Phone', pi.phones.slice(0, 3).join(', ')]);
 
-  if (fields.length > 0) {
-    primaryEl.innerHTML = '<div class="identity-grid">' + fields.map(f =>
-      `<div class="identity-field">
-        <span class="identity-field-label">${escapeHtml(f.label)}</span>
-        <span class="identity-field-value">${escapeHtml(f.value)}</span>
-      </div>`
-    ).join('') + '</div>';
-  } else {
-    primaryEl.innerHTML = '';
-  }
+  const fieldsHtml = fields.length > 0
+    ? '<div class="identity-grid">' + fields.map(([label, value]) =>
+      `<div class="identity-field"><span class="identity-field-label">${escapeHtml(label)}</span><span class="identity-field-value">${escapeHtml(value)}</span></div>`
+    ).join('') + '</div>'
+    : '';
+  primaryEl.innerHTML = fieldsHtml + buildEmailIndex(data);
 
   let accounts = data.accounts;
+  if (identityActiveEmail) accounts = accounts.filter(a => a.emails.includes(identityActiveEmail));
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     accounts = accounts.filter(a =>
@@ -388,55 +415,39 @@ function renderIdentityPage(searchQuery = '') {
     );
   }
 
+  const filterCaption = identityActiveEmail
+    ? `<div class="data-table-caption">Accounts for <strong>${escapeHtml(identityActiveEmail)}</strong> <button class="identity-clear-filter" type="button">show all</button></div>`
+    : '';
+
   if (accounts.length > 0) {
-    let tableHtml = '<div class="data-table-container"><table class="data-table">';
+    const dash = '<span class="cell-empty">\u2014</span>';
+    let tableHtml = filterCaption + '<div class="data-table-container"><table class="data-table">';
     tableHtml += '<thead><tr><th>Domain</th><th>Usernames</th><th>Session</th><th>Emails</th><th>Tokens</th></tr></thead><tbody>';
     for (const acct of accounts) {
-      const sessionHtml = acct.hasValidSession
-        ? '<span class="identity-session-badge">Active</span>'
-        : '<span style="color:var(--text-muted)">\u2014</span>';
-      const usernamesHtml = acct.usernames && acct.usernames.length > 0
-        ? acct.usernames.map(u => escapeHtml(u)).join(', ')
-        : '<span style="color:var(--text-muted)">\u2014</span>';
-      const emailsHtml = acct.emails.length > 0
-        ? acct.emails.map(e => escapeHtml(e)).join(', ')
-        : '<span style="color:var(--text-muted)">\u2014</span>';
-      const tokenHtml = acct.tokenServices.length > 0 || acct.accountIds.length > 0
-        ? escapeHtml([
-          acct.tokenServices.join(', '),
-          acct.accountIds.length > 0 ? acct.accountIds.join(', ') : '',
-        ].filter(Boolean).join(' \u00B7 '))
-        : '<span style="color:var(--text-muted)">\u2014</span>';
+      const sessionHtml = acct.hasValidSession ? '<span class="identity-session-badge">valid at capture</span>' : dash;
+      const usernames = acct.usernames && acct.usernames.length > 0 ? acct.usernames.join(', ') : '';
+      const emails = acct.emails.length > 0 ? acct.emails.join(', ') : '';
+      const tokens = [acct.tokenServices.join(', '), acct.accountIds.join(', ')].filter(Boolean).join(' \u00B7 ');
       tableHtml += `<tr>
         <td><span class="identity-account-domain">${escapeHtml(acct.domain)}</span></td>
-        <td style="font-size:0.75rem">${usernamesHtml}</td>
+        <td title="${escapeHtml(usernames)}">${usernames ? escapeHtml(usernames) : dash}</td>
         <td>${sessionHtml}</td>
-        <td style="font-size:0.75rem">${emailsHtml}</td>
-        <td style="font-size:0.75rem">${tokenHtml}</td>
+        <td title="${escapeHtml(emails)}">${emails ? escapeHtml(emails) : dash}</td>
+        <td title="${escapeHtml(tokens)}">${tokens ? escapeHtml(tokens) : dash}</td>
       </tr>`;
     }
     tableHtml += '</tbody></table></div>';
     contentEl.innerHTML = tableHtml;
-  } else if (searchQuery) {
-    contentEl.innerHTML = '<div class="no-data">No accounts match the search query.</div>';
   } else {
-    contentEl.innerHTML = '<div class="no-data">No account data found.</div>';
+    contentEl.innerHTML = `${filterCaption}<div class="no-data">No accounts match the current filter.</div>`;
   }
 
-  if (data.emailAccountMap.length > 0 && !searchQuery) {
-    let mapHtml = '<div class="identity-subsection"><div class="identity-subsection-title">Email &rarr; Account Mapping</div>';
-    for (const entry of data.emailAccountMap) {
-      mapHtml += '<div class="identity-email-group">';
-      mapHtml += `<div class="identity-email-addr">${escapeHtml(entry.email)}</div>`;
-      mapHtml += '<div class="identity-service-tags">';
-      for (const svc of entry.services) {
-        const cls = svc.hasValidSession ? ' has-session' : '';
-        mapHtml += `<span class="identity-service-tag${cls}">${escapeHtml(svc.domain)}</span>`;
-      }
-      mapHtml += '</div></div>';
-    }
-    mapHtml += '</div>';
-    emailMapEl.innerHTML = mapHtml;
+  // Selected identity: full domain list as plain, copyable text, not a chip wall.
+  if (identityActiveEmail) {
+    const entry = data.emailAccountMap.find(e => e.email === identityActiveEmail);
+    emailMapEl.innerHTML = entry && entry.services.length > 0
+      ? `<div class="identity-subsection"><div class="identity-subsection-title">Domains for ${escapeHtml(identityActiveEmail)} (${entry.services.length})</div><div class="identity-domain-list">${entry.services.map(s => escapeHtml(s.domain)).join(', ')}</div></div>`
+      : '';
   } else {
     emailMapEl.innerHTML = '';
   }
@@ -472,10 +483,34 @@ function initIdentityPage() {
   const search = document.getElementById('identitySearch');
   bindDebouncedInput(search, (value) => renderIdentityPage(value));
 
+  // Identities index: select an email to filter the accounts table to it.
+  document.getElementById('identityPrimary')?.addEventListener('click', (event) => {
+    const row = event.target.closest('.identity-email-row');
+    if (row) {
+      const email = row.dataset.email;
+      identityActiveEmail = identityActiveEmail === email ? null : email;
+      renderIdentityPage(search?.value || '');
+      return;
+    }
+    if (event.target.closest('.identity-email-more')) {
+      identityShowAllEmails = !identityShowAllEmails;
+      renderIdentityPage(search?.value || '');
+    }
+  });
+
+  document.getElementById('identityContent')?.addEventListener('click', (event) => {
+    if (event.target.closest('.identity-clear-filter')) {
+      identityActiveEmail = null;
+      renderIdentityPage(search?.value || '');
+    }
+  });
+
   document.getElementById('exportIdentityCsv')?.addEventListener('click', exportIdentityCSV);
 
   on('reset', () => {
     identityData = null;
+    identityActiveEmail = null;
+    identityShowAllEmails = false;
     document.getElementById('navIdentity').disabled = true;
     const searchEl = document.getElementById('identitySearch');
     if (searchEl) searchEl.value = '';

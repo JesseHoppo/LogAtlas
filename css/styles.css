@@ -2414,9 +2414,91 @@ body {
   padding: 0.1rem 0.35rem;
   border-radius: 3px;
   text-transform: uppercase;
-  background: rgba(217, 119, 6, 0.1);
-  color: var(--warning);
+  background: var(--success-dim);
+  color: var(--success);
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Identities index (master/detail): pick an email to filter the accounts. */
+.identity-email-index {
+  margin-top: 1rem;
+}
+.identity-email-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.identity-email-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.identity-email-row:hover {
+  border-color: var(--border-strong);
+}
+.identity-email-row.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--text-primary);
+}
+.identity-email-row .identity-email-addr {
+  margin: 0;
+  font-size: 0.72rem;
+}
+.identity-email-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.identity-email-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.identity-email-more {
+  margin-top: 0.5rem;
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.identity-email-more:hover {
+  text-decoration: underline;
+}
+.identity-domain-list {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+.identity-clear-filter {
+  padding: 0;
+  margin-left: 0.4rem;
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.identity-clear-filter:hover {
+  text-decoration: underline;
+}
+.cell-empty {
+  color: var(--text-muted);
 }
 
 .identity-email-group {
