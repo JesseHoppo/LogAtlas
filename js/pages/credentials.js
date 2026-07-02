@@ -90,6 +90,7 @@ let hidePasswords = true;
 let passwordColumnIdx = -1;
 let passwordUrlIdx = -1;
 let passwordShowService = false;
+let passwordHiddenCols = new Set();
 
 function getCookieColumnMap(headers, columnCount) {
   const map = {
@@ -421,6 +422,7 @@ function passwordRowBuilder({ row }) {
     html += `<td>${svc ? `<span class="identity-service-tag">${escapeHtml(svc)}</span>` : ''}</td>`;
   }
   for (let i = 0; i < row.length; i++) {
+    if (passwordHiddenCols.has(i)) continue;
     const cell = row[i];
     if (hidePasswords && i === passwordColumnIdx) {
       html += `<td class="password-cell masked" title="Click to reveal">${escapeHtml(maskValue(cell))}</td>`;
@@ -607,6 +609,33 @@ function renderPasswordsPage(searchQuery = '') {
 
   passwordColumnIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.password.test(h));
   passwordUrlIdx = passwordsData.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
+
+  // Drop columns whose value is identical on every row (e.g. Software =
+  // "Google Chrome (Default)"): they cost width and carry no signal. Surface
+  // the constant once as a caption instead.
+  passwordHiddenCols = new Set();
+  const constantNotes = [];
+  if (passwordsFiltered.length > 1) {
+    for (let c = 0; c < passwordsData.headers.length; c++) {
+      if (c === passwordColumnIdx || c === passwordUrlIdx) continue;
+      let seen = null, constant = true, nonEmpty = 0;
+      for (const { row } of passwordsFiltered) {
+        const v = (row[c] || '').trim();
+        if (!v) continue;
+        nonEmpty++;
+        if (seen === null) seen = v;
+        else if (v !== seen) { constant = false; break; }
+      }
+      if (constant && seen && nonEmpty >= passwordsFiltered.length * 0.7) {
+        passwordHiddenCols.add(c);
+        constantNotes.push(`${passwordsData.headers[c]}: ${seen}`);
+      }
+    }
+  }
+  const constantCaption = constantNotes.length
+    ? `<div class="data-table-caption">${escapeHtml(constantNotes.join('   ·   '))}</div>`
+    : '';
+
   const cached = passwordsData.stats || { domains: 0, usernames: 0, withPasswords: 0 };
 
   stats.innerHTML = `
@@ -630,11 +659,12 @@ function renderPasswordsPage(searchQuery = '') {
 
   passwordShowService = passwordsFiltered.some(({ row }) => passwordUrlIdx >= 0 && friendlyServiceForUrl(row[passwordUrlIdx]));
 
-  let html = `${issuesHtml}${buildCredentialFootprintHtml()}<div class="data-table-container"><table class="data-table">`;
+  let html = `${issuesHtml}${buildCredentialFootprintHtml()}${constantCaption}<div class="data-table-container"><table class="data-table">`;
   html += '<thead><tr>';
   if (passwordShowService) html += '<th>Service</th>';
-  for (const h of passwordsData.headers) {
-    html += `<th>${escapeHtml(h)}</th>`;
+  for (let c = 0; c < passwordsData.headers.length; c++) {
+    if (passwordHiddenCols.has(c)) continue;
+    html += `<th>${escapeHtml(passwordsData.headers[c])}</th>`;
   }
   html += '</tr></thead><tbody>';
   html += buildRowsHtml(passwordRowBuilder, passwordsFiltered, 0, passwordsShown);

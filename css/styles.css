@@ -2989,11 +2989,22 @@ body {
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
   max-width: 24rem;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.45;
   vertical-align: top;
+}
+/* Long-form cells opt back into wrapping; everything else stays a single
+   scannable line with the full value available on hover (title=). */
+.data-table td.wrap-cell,
+.data-table td.note-preview-cell,
+.data-table td.password-cell.revealed {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .password-cell.masked {
@@ -3013,6 +3024,13 @@ body {
 
 .data-table tr:hover td {
   background: var(--bg-hover);
+}
+
+.data-table-caption {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
 }
 
 .data-table tr:last-child td {
