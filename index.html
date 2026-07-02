@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- connect-src limited to self+blob: keeps the local-only guarantee; ?file= autoload only works same-origin under this policy -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:; frame-src 'self' blob:;">
+  <!-- connect-src permits self and HTTPS so explicit ?file= autoload can fetch the confirmed archive; analysis still runs client-side. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' https: blob:; frame-src 'self' blob:;">
   <title>Log Atlas</title>
   <link rel="stylesheet" href="css/styles.css">
   <script src="js/app/theme-bootstrap.js"></script>
@@ -72,8 +72,8 @@
       </div>
       <div class="upload-info" id="uploadInfo">
         <p>All processing in this tool is done client-side, with no information transmitted or stored.</p>
-        <p>Upload an infostealer log archive or individual files to analyse. Explore the log's contents and convert common files into more usable formats.</p>
-        <p>Detection and parsing may not be perfect. You should conduct further analysis and verification for incident response.</p>
+        <p>Load an infostealer log archive or individual files to analyse. Explore the contents and convert common artifacts into structured evidence.</p>
+        <p>Detection and parsing are heuristic. Verify important findings before using them for incident response.</p>
         <p>Browser sandboxing offers some protection from malicious files, but exercise caution.</p>
       </div>
       <div class="reset-zone" id="resetZone">
@@ -329,7 +329,7 @@
           <p>This archive is encrypted:<br><span class="modal-file" id="encryptedFileName">&mdash;</span></p>
           <div class="password-input-group">
             <input type="password" class="password-input" id="passwordInput" placeholder="Enter password..." autocomplete="off" aria-label="Archive password">
-            <button class="toggle-password" id="togglePassword" type="button" aria-label="Toggle password visibility">Aa</button>
+            <button class="toggle-password" id="togglePassword" type="button" aria-label="Show password" title="Show password">Show</button>
           </div>
           <div class="password-error" id="passwordError" role="alert">Incorrect password. Please try again.</div>
           <label class="remember-password">

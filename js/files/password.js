@@ -14,6 +14,8 @@ function promptForPassword(filePath, { invalid = false } = {}) {
     elInput.value = '';
     elInput.type = 'password';
     elToggleBtn.textContent = 'Show';
+    elToggleBtn.setAttribute('aria-label', 'Show password');
+    elToggleBtn.title = 'Show password';
     elErrorEl.classList.toggle('visible', invalid);
     elModal.classList.add('visible');
     elInput.focus();
@@ -25,6 +27,8 @@ function closePasswordModal(password) {
   elInput.value = '';
   elInput.type = 'password';
   elToggleBtn.textContent = 'Show';
+  elToggleBtn.setAttribute('aria-label', 'Show password');
+  elToggleBtn.title = 'Show password';
   if (passwordResolver) {
     passwordResolver(password);
     passwordResolver = null;
@@ -60,9 +64,13 @@ function initPasswordModal() {
     if (elInput.type === 'password') {
       elInput.type = 'text';
       elToggleBtn.textContent = 'Hide';
+      elToggleBtn.setAttribute('aria-label', 'Hide password');
+      elToggleBtn.title = 'Hide password';
     } else {
       elInput.type = 'password';
       elToggleBtn.textContent = 'Show';
+      elToggleBtn.setAttribute('aria-label', 'Show password');
+      elToggleBtn.title = 'Show password';
     }
   });
 

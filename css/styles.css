@@ -78,18 +78,29 @@
   --accent-text: #2563eb;
   --accent-hover: #1d4ed8;
   --accent-dim: rgba(37, 99, 235, 0.08);
+  --accent-dim-strong: rgba(37, 99, 235, 0.2);
 
   /* Semantic */
   --success: #16a34a;
+  --success-dim: rgba(22, 163, 74, 0.08);
+  --success-dim-strong: rgba(22, 163, 74, 0.25);
   --warning: #d97706;
+  --warning-dim: rgba(217, 119, 6, 0.08);
+  --warning-dim-strong: rgba(217, 119, 6, 0.25);
   --warning-strong: #fbbf24;
   --warning-strong-text: #78350f;
   --error: #dc2626;
   --error-dim: rgba(220, 38, 38, 0.06);
   --error-border: rgba(220, 38, 38, 0.18);
+  --neutral-dim: rgba(140, 145, 156, 0.15);
+  --teal: #0d9488;
+  --teal-dim: rgba(13, 148, 136, 0.08);
+  --info: #0e7490;
+  --info-dim: rgba(14, 116, 144, 0.08);
 
   /* Category */
   --zip-color: #7c3aed;
+  --zip-dim: rgba(124, 58, 237, 0.12);
   --folder-color: #2563eb;
 
   /* Radius */
@@ -134,9 +145,18 @@
   --accent-text: #60a5fa;
   --accent-hover: #2563eb;
   --accent-dim: rgba(59, 130, 246, 0.12);
+  --accent-dim-strong: rgba(59, 130, 246, 0.24);
 
+  --success-dim: rgba(22, 163, 74, 0.12);
+  --success-dim-strong: rgba(22, 163, 74, 0.28);
+  --warning-dim: rgba(217, 119, 6, 0.12);
+  --warning-dim-strong: rgba(217, 119, 6, 0.28);
   --error-dim: rgba(220, 38, 38, 0.1);
   --error-border: rgba(220, 38, 38, 0.25);
+  --neutral-dim: rgba(140, 145, 156, 0.18);
+  --teal-dim: rgba(13, 148, 136, 0.12);
+  --info-dim: rgba(14, 116, 144, 0.12);
+  --zip-dim: rgba(124, 58, 237, 0.16);
 
   --warning-strong: #f59e0b;
   --warning-strong-text: #1a1205;
@@ -198,7 +218,7 @@ body {
   font-size: 1.15rem;
   font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
@@ -555,7 +575,7 @@ body {
   transition: background 0.15s ease;
 }
 .sysinfo-open-btn:hover {
-  background: rgba(37, 99, 235, 0.15);
+  background: var(--accent-dim-strong);
 }
 
 .sysinfo-toolbar {
@@ -674,11 +694,11 @@ body {
   border-right: none;
 }
 .dash-bar-row-stacked .dash-bar-fill-valid {
-  background: rgba(22, 163, 74, 0.25);
+  background: var(--success-dim-strong);
   border-right: 2px solid var(--success);
 }
 .dash-bar-row-stacked .dash-bar-fill-expired {
-  background: rgba(220, 38, 38, 0.25);
+  background: var(--error-border);
   border-right: 2px solid var(--error);
 }
 
@@ -702,11 +722,11 @@ body {
   border-radius: 2px;
 }
 .dash-bar-legend-valid {
-  background: rgba(22, 163, 74, 0.4);
+  background: var(--success-dim-strong);
   border: 1px solid var(--success);
 }
 .dash-bar-legend-expired {
-  background: rgba(220, 38, 38, 0.4);
+  background: var(--error-border);
   border: 1px solid var(--error);
 }
 
@@ -1381,62 +1401,62 @@ body {
   border-style: solid;
 }
 .preview-type-autofill {
-  background: rgba(22, 163, 74, 0.08);
+  background: var(--success-dim);
   border-color: var(--success);
   color: var(--success);
   border-style: solid;
 }
 .preview-type-history {
-  background: rgba(217, 119, 6, 0.08);
+  background: var(--warning-dim);
   border-color: var(--warning);
   color: var(--warning);
   border-style: solid;
 }
 .preview-type-bookmarks {
-  background: rgba(14, 116, 144, 0.08);
-  border-color: #0e7490;
-  color: #0e7490;
+  background: var(--info-dim);
+  border-color: var(--info);
+  color: var(--info);
   border-style: solid;
 }
 .preview-type-browsermeta,
 .preview-type-services {
-  background: rgba(100, 116, 139, 0.08);
-  border-color: #64748b;
-  color: #64748b;
+  background: var(--neutral-dim);
+  border-color: var(--text-muted);
+  color: var(--text-secondary);
   border-style: solid;
 }
 .preview-type-downloads,
 .preview-type-detections {
-  background: rgba(37, 99, 235, 0.08);
-  border-color: #2563eb;
-  color: #2563eb;
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
   border-style: solid;
 }
 .preview-type-tokens {
-  background: rgba(220, 38, 38, 0.08);
-  border-color: #dc2626;
-  color: #dc2626;
+  background: var(--error-dim);
+  border-color: var(--error);
+  color: var(--error);
   border-style: solid;
 }
 .preview-type-cards {
-  background: rgba(220, 38, 38, 0.08);
-  border-color: #dc2626;
-  color: #dc2626;
+  background: var(--error-dim);
+  border-color: var(--error);
+  color: var(--error);
   border-style: solid;
 }
 .preview-type-clipboard {
-  background: rgba(13, 148, 136, 0.08);
-  border-color: #0d9488;
-  color: #0d9488;
+  background: var(--teal-dim);
+  border-color: var(--teal);
+  color: var(--teal);
   border-style: solid;
 }
 .preview-type-software,
 .preview-type-processes,
 .preview-type-sysinfo,
 .preview-type-screenshot {
-  background: rgba(100, 116, 139, 0.08);
-  border-color: #64748b;
-  color: #64748b;
+  background: var(--neutral-dim);
+  border-color: var(--text-muted);
+  color: var(--text-secondary);
   border-style: solid;
 }
 
@@ -1522,11 +1542,11 @@ body {
 
 /* Search highlight in preview text */
 .preview-search-match {
-  background: rgba(37, 99, 235, 0.2);
+  background: var(--accent-dim-strong);
   border-radius: 2px;
 }
 .preview-search-match-current {
-  background: rgba(37, 99, 235, 0.5);
+  background: var(--accent-dim-strong);
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -3068,17 +3088,17 @@ body {
 }
 
 .timeline-event-badge-file {
-  background: rgba(140, 145, 156, 0.15);
+  background: var(--neutral-dim);
   color: var(--text-muted);
 }
 
 .timeline-event-badge-cookie {
-  background: rgba(217, 119, 6, 0.1);
+  background: var(--warning-dim);
   color: var(--warning);
 }
 
 .timeline-event-badge-history {
-  background: rgba(124, 58, 237, 0.12);
+  background: var(--zip-dim);
   color: var(--zip-color);
 }
 
@@ -4158,7 +4178,7 @@ body {
   outline-offset: -2px;
 }
 .lab-cred-priority > td {
-  background: rgba(217, 119, 6, 0.06);
+  background: var(--warning-dim);
 }
 .lab-cred-site {
   font-family: var(--font-mono);
@@ -4185,8 +4205,8 @@ body {
 }
 .lab-cat-tag.lab-cat-unknown {
   color: var(--warning);
-  border-color: rgba(217, 119, 6, 0.45);
-  background: rgba(217, 119, 6, 0.08);
+  border-color: var(--warning-dim-strong);
+  background: var(--warning-dim);
 }
 .lab-cat-breakdown {
   display: flex;
@@ -4209,8 +4229,8 @@ body {
 }
 .lab-cat-pill.lab-cat-unknown {
   color: var(--warning);
-  border-color: rgba(217, 119, 6, 0.4);
-  background: rgba(217, 119, 6, 0.08);
+  border-color: var(--warning-dim-strong);
+  background: var(--warning-dim);
 }
 .lab-cat-pill.lab-cat-unknown strong {
   color: var(--warning);
@@ -4249,7 +4269,7 @@ body {
 /* Action buckets: live / recent / stored / legacy */
 .lab-action-dot.lab-action-live {
   background: var(--error);
-  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.18);
+  box-shadow: 0 0 0 2px var(--error-border);
 }
 .lab-action-dot.lab-action-recent { background: var(--warning); }
 .lab-action-dot.lab-action-stored { background: var(--text-muted); }
@@ -4272,7 +4292,7 @@ body {
   font-family: var(--font-mono);
   font-size: 0.66rem;
   color: var(--warning);
-  background: rgba(217, 119, 6, 0.1);
+  background: var(--warning-dim);
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
@@ -4383,10 +4403,10 @@ body {
   border: 1px solid var(--border);
   color: var(--text-secondary);
 }
-.lab-tag.lab-tone-success { color: var(--success); border-color: rgba(22, 163, 74, 0.4); }
-.lab-tag.lab-tone-warning { color: var(--warning); border-color: rgba(217, 119, 6, 0.4); }
-.lab-tag.lab-tone-danger { color: var(--error); border-color: rgba(220, 38, 38, 0.4); }
-.lab-tag.lab-tone-accent { color: var(--accent); border-color: rgba(37, 99, 235, 0.4); }
+.lab-tag.lab-tone-success { color: var(--success); border-color: var(--success-dim-strong); }
+.lab-tag.lab-tone-warning { color: var(--warning); border-color: var(--warning-dim-strong); }
+.lab-tag.lab-tone-danger { color: var(--error); border-color: var(--error-border); }
+.lab-tag.lab-tone-accent { color: var(--accent); border-color: var(--accent-dim-strong); }
 .lab-tag.lab-bar-identity { color: var(--text-secondary); }
 .lab-tag.lab-bar-site { color: var(--success); }
 .lab-tag.lab-bar-tenant { color: var(--zip-color); }

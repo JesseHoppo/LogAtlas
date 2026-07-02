@@ -431,7 +431,8 @@ function renderTriageOverview() {
   }
   if (history?.totalEntries > 0) {
     const domainText = topValuesText(history.topDomains);
-    const latestVisit = history.mostRecent?.[0]?.lastVisit || '';
+    const latestVisitDate = history.mostRecent?.[0]?.lastVisitDate;
+    const latestVisit = latestVisitDate ? formatDateTimeLabel(new Date(latestVisitDate)) : (history.mostRecent?.[0]?.lastVisit || '');
     const recentText = latestVisit ? ` Most recent parsed visit: ${latestVisit}.` : '';
     riskItems.push(
       domainText
@@ -482,7 +483,7 @@ function renderTriageOverview() {
   }
   if (domainDetect?.totalHits > 0) {
     const categoryCount = Object.keys(domainDetect.categories || {}).length;
-    riskItems.push(`${pluralise(domainDetect.totalHits, 'domain-detection hit')} recorded across ${pluralise(categoryCount, 'category')}.`);
+    riskItems.push(`${pluralise(domainDetect.totalHits, 'domain-detection hit')} recorded across ${pluralise(categoryCount, 'category', 'categories')}.`);
   }
   if (screenshot?.entries?.length > 0) {
     riskItems.push(`${pluralise(screenshot.entries.length, 'desktop screenshot')} captured during collection.`);

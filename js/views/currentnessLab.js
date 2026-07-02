@@ -170,7 +170,7 @@ function buildHeroLine(summary) {
   // Live evidence: the most actionable summary on the page.
   const liveBits = [
     summary.liveCount > 0
-      ? `<span class="lab-hero-live"><strong>${summary.liveCount}</strong> takeover-ready</span>`
+      ? `<span class="lab-hero-live"><strong>${summary.liveCount}</strong> live-access evidence</span>`
       : '',
     summary.recentCount > 0 ? `<span><strong>${summary.recentCount}</strong> recent</span>` : '',
     summary.appCount > 0 ? `<span><strong>${summary.appCount}</strong> app-stored</span>` : '',
@@ -309,7 +309,7 @@ function renderCredDetail(row) {
     : '<li class="lab-detail-empty">No evidence captured.</li>';
 
   const actionLabel = {
-    live: 'Takeover-ready (live session or app-stored)',
+    live: 'Live-access evidence (valid session or app-stored)',
     recent: 'Used recently (history within 30 days)',
     stored: 'Stored in browser, no live evidence',
     legacy: 'Legacy / conflicting',

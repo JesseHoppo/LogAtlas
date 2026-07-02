@@ -2,20 +2,24 @@ import { showNotification } from '../core/shared.js';
 import { escapeHtml, formatBytes } from '../core/utils.js';
 import { LIMITS } from '../core/definitions/patterns.js';
 
-function confirmRemoteDownload(parsedUrl) {
+function isAllowedFileUrl(parsedUrl) {
+  return parsedUrl.protocol === 'https:' || parsedUrl.origin === window.location.origin;
+}
+
+function confirmFileLoad(parsedUrl) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay visible';
     overlay.id = 'autoLoadConfirmModal';
     overlay.innerHTML = `
       <div class="modal">
-        <h3>Download remote file?</h3>
-        <p>Log Atlas was opened with a <code>?file=</code> URL. The file is downloaded into this browser for analysis. Nothing is uploaded.</p>
+        <h3>Load file from URL?</h3>
+        <p>Log Atlas was opened with a <code>?file=</code> URL. The file will be loaded into this browser for analysis. Nothing is uploaded.</p>
         <p><strong>Source:</strong> <code>${escapeHtml(parsedUrl.host)}</code></p>
         <p style="font-size:0.8rem;color:var(--text-muted);">URL: ${escapeHtml(parsedUrl.href)}</p>
         <div class="modal-actions">
           <button class="modal-btn modal-btn-cancel" id="autoLoadCancel">Cancel</button>
-          <button class="modal-btn modal-btn-submit" id="autoLoadProceed">Download</button>
+          <button class="modal-btn modal-btn-submit" id="autoLoadProceed">Load File</button>
         </div>
       </div>
     `;
@@ -45,8 +49,8 @@ export async function autoLoadFromQuery(handleFiles) {
   let parsed;
   try {
     parsed = new URL(fileUrl);
-    if (parsed.protocol !== 'https:') {
-      showNotification('Only HTTPS file URLs are supported.', 'error');
+    if (!isAllowedFileUrl(parsed)) {
+      showNotification('Only HTTPS or same-origin file URLs are supported.', 'error');
       return;
     }
   } catch {
@@ -59,13 +63,13 @@ export async function autoLoadFromQuery(handleFiles) {
   const loading = document.getElementById('loading');
   const loadingText = document.getElementById('loadingText');
 
-  const proceed = await confirmRemoteDownload(parsed);
+  const proceed = await confirmFileLoad(parsed);
   if (!proceed) return;
 
   dropZone.style.display = 'none';
   uploadInfo.style.display = 'none';
   loading.classList.add('visible');
-  loadingText.textContent = 'Downloading file...';
+  loadingText.textContent = 'Loading file...';
 
   try {
     const response = await fetch(fileUrl);
@@ -95,7 +99,7 @@ export async function autoLoadFromQuery(handleFiles) {
       chunks.push(value);
       const now = performance.now();
       if (now - lastTextUpdate > 100) {
-        loadingText.textContent = `Downloading file... ${formatBytes(received)}`;
+        loadingText.textContent = `Loading file... ${formatBytes(received)}`;
         lastTextUpdate = now;
       }
     }

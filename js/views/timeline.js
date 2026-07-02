@@ -11,6 +11,8 @@ let sysinfoEntries = null;
 let timelineEvents = [];
 let timelineBuilt = false;
 let activeCategories = new Set(['stealer', 'file', 'cookie', 'history', 'notes', 'screenshots']);
+const MIN_TIMELINE_DATE_MS = Date.UTC(1990, 0, 1);
+const MAX_FUTURE_SKEW_MS = 366 * 24 * 60 * 60 * 1000;
 
 const CATEGORIES = {
   stealer: { label: 'Stealer', badgeClass: 'timeline-event-badge-stealer' },
@@ -23,6 +25,12 @@ const CATEGORIES = {
 
 function dateKey(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function isPlausibleTimelineDate(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return false;
+  const time = date.getTime();
+  return time >= MIN_TIMELINE_DATE_MS && time <= Date.now() + MAX_FUTURE_SKEW_MS;
 }
 
 function extractStealerEvents(entries) {
@@ -42,7 +50,7 @@ function extractStealerEvents(entries) {
     if (IGNORE_DATE_KEYS.some(rx => rx.test(key))) continue;
     if (CAPTURE_TIME_KEYS.some(rx => rx.test(key))) {
       const date = parseTimestampValue(value);
-      if (date) {
+      if (isPlausibleTimelineDate(date)) {
         let detail = `${key}: ${value}`;
         if (timezone) detail += ` (${timezone})`;
         events.push({
@@ -67,7 +75,8 @@ function extractFileEvents(fileTree, rootName) {
   let count = 0;
 
   for (const { node } of nodes) {
-    if (node.lastModified && node.lastModified > 0) {
+    const modifiedDate = node.lastModified ? new Date(node.lastModified) : null;
+    if (isPlausibleTimelineDate(modifiedDate)) {
       const ms = node.lastModified;
       if (ms < earliest) earliest = ms;
       if (ms > latest) latest = ms;
@@ -165,7 +174,7 @@ function extractHistoryEvents(historyData) {
   const dated = [];
   for (const entry of historyData.entries) {
     const d = entry.lastVisitDate;
-    if (d) {
+    if (isPlausibleTimelineDate(d)) {
       dated.push({ ...entry, _date: d });
     }
   }
@@ -204,7 +213,7 @@ function extractHistoryEvents(historyData) {
 function extractModifiedEvents(data, category, limit, pickTitle, pickDetail) {
   if (!data || !data.entries || !data.entries.length) return [];
   return data.entries
-    .filter(e => e.modifiedDate instanceof Date && !isNaN(e.modifiedDate.getTime()))
+    .filter(e => isPlausibleTimelineDate(e.modifiedDate))
     .sort((a, b) => b.modifiedDate - a.modifiedDate)
     .slice(0, limit)
     .map(e => ({ time: e.modifiedDate, category, title: pickTitle(e), detail: pickDetail(e) }));
@@ -279,6 +288,7 @@ function renderStats(events) {
   const now = Date.now();
 
   for (const ev of events) {
+    if (!isPlausibleTimelineDate(ev.time)) continue;
     const t = ev.time.getTime();
     if (t < earliest) earliest = t;
     if (t > latest && t <= now) latest = t;
