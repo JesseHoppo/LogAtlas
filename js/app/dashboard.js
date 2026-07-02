@@ -93,66 +93,99 @@ function deriveVictimCountry(sysinfo, autofill) {
   return { value: '', source: 'unknown' };
 }
 
-function inferDeviceType(sysinfo, computerName = '') {
-  const explicit = findSysinfoValue(sysinfo, [/^laptop$/i, /^device type$/i, /^form factor$/i, /^chassis$/i]);
-  if (/^(true|yes|1)$/i.test(explicit) || /laptop|notebook|portable/i.test(explicit)) return 'laptop';
-  if (/^(false|no|0)$/i.test(explicit) || /desktop|workstation/i.test(explicit)) return 'desktop';
-  if (/^laptop[-_]/i.test(computerName) || /^notebook[-_]/i.test(computerName)) return 'laptop';
-  if (/^desktop[-_]/i.test(computerName)) return 'desktop';
-  return '';
+function renderCaseContext({ computer, resolvedUser, userSource, countryInfo, exfilInfo }) {
+  const el = document.getElementById('dashCaseContext');
+  if (!el) return;
+  const items = [];
+  const push = (key, val) => items.push(`<span class="ctx-item"><span class="ctx-key">${key}</span> <span class="ctx-val">${escapeHtml(val)}</span></span>`);
+  if (computer) push('host', computer);
+  if (resolvedUser) push('user', userSource && userSource !== 'sysinfo' ? `${resolvedUser} (${userSource})` : resolvedUser);
+  if (countryInfo?.value) push('location', countryInfo.source === 'sysinfo' ? countryInfo.value : `${countryInfo.value} (${countryInfo.source})`);
+  if (exfilInfo?.date) push('captured', formatDateTimeLabel(exfilInfo.date));
+  if (state.rootZipName) push('source', state.rootZipName);
+  if (items.length === 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.classList.remove('hidden');
+  el.innerHTML = items.join('<span class="ctx-sep">·</span>');
 }
 
-function topValuesText(items, limit = 3) {
-  return joinNaturalList((items || []).slice(0, limit).map(item => item.value));
+function buildVerdictCard({ label, value, note, target }) {
+  const link = target ? `<button class="verdict-card-link" data-nav="${escapeAttr(target)}">View &rarr;</button>` : '';
+  return `<div class="verdict-card">
+    <div class="verdict-card-label">${escapeHtml(label)}</div>
+    <div class="verdict-card-value">${escapeHtml(value)}</div>
+    <div class="verdict-card-note">${escapeHtml(note)}</div>
+    ${link}
+  </div>`;
 }
 
-function buildCaseBriefing({
-  exfilInfo,
-  totalFiles,
-  computer,
-  os,
-  deviceType,
-  user,
-  credentials,
-  cookies,
-  history,
-  tokens,
-  wallets,
-  cards,
-  grabbed,
-  notes,
-  screenshot,
-}) {
-  const introParts = [];
-  if (exfilInfo?.date) {
-    introParts.push(`Likely exfil around ${formatDateTimeLabel(exfilInfo.date)}`);
-  } else {
-    introParts.push('This case appears to be a single victim log');
+// The four questions an IR responder asks first: what is still live, how wide
+// is the credential blast radius, what money/identity is exposed, what did the
+// operator capture. Each card links straight to the detail.
+function renderVerdictCards({ credentials, cookies, cards, history, grabbed, screenshot, autofill, nationalIds }) {
+  const el = document.getElementById('dashVerdictCards');
+  if (!el) return;
+  const out = [];
+
+  if (cookies?.totalCookies > 0) {
+    const live = cookies.validSessionTokens || 0;
+    out.push(buildVerdictCard({
+      label: 'Live sessions',
+      value: live.toLocaleString(),
+      note: live > 0
+        ? 'Session tokens still valid at capture. May grant account access without a password; verify before relying.'
+        : 'No session tokens were still valid at capture.',
+      target: 'cookies',
+    }));
   }
 
-  const deviceDescriptor = [os, deviceType].filter(Boolean).join(' ');
-  let deviceText = '';
-  if (computer && deviceDescriptor) deviceText = `${computer}, a ${deviceDescriptor}`;
-  else if (computer) deviceText = computer;
-  else if (deviceDescriptor) deviceText = `a ${deviceDescriptor}`;
+  if (credentials?.uniqueCredentials > 0) {
+    const topDomain = credentials.topDomains?.[0]?.value;
+    out.push(buildVerdictCard({
+      label: 'Credentials',
+      value: credentials.uniqueCredentials.toLocaleString(),
+      note: topDomain
+        ? `Recovered logins, heaviest on ${topDomain}. Rank live and reused ones in Credential Triage.`
+        : 'Recovered logins. Rank live and reused ones in Credential Triage.',
+      target: 'currentnesslab',
+    }));
+  }
 
-  if (deviceText) introParts[introParts.length - 1] += ` from ${deviceText}`;
-  if (user) introParts[introParts.length - 1] += ` used by ${user}`;
+  const finBits = [];
+  if (cards?.totalCards > 0) finBits.push(pluralise(cards.totalCards, 'stored card') + (cards.withCvc > 0 ? ' with CVC' : ''));
+  const idTotal = (nationalIds || []).reduce((sum, n) => sum + n.count, 0);
+  if (idTotal > 0) finBits.push('government IDs');
+  if (autofill?.totalEntries > 0) finBits.push(pluralise(autofill.totalEntries, 'autofill PII record'));
+  if (finBits.length > 0) {
+    const value = cards?.totalCards > 0
+      ? cards.totalCards.toLocaleString()
+      : (idTotal > 0 ? idTotal.toLocaleString() : (autofill?.totalEntries || 0).toLocaleString());
+    out.push(buildVerdictCard({
+      label: 'Financial & identity',
+      value,
+      note: `${joinNaturalList(finBits)}.`,
+      target: cards?.totalCards > 0 ? 'cards' : 'autofills',
+    }));
+  }
 
-  const scopeParts = [];
-  if (totalFiles > 0) scopeParts.push(pluralise(totalFiles, 'file'));
-  if (credentials?.uniqueCredentials > 0) scopeParts.push(pluralise(credentials.uniqueCredentials, 'unique credential'));
-  if (cookies?.validSessionTokens > 0) scopeParts.push(pluralise(cookies.validSessionTokens, 'valid browser session'));
-  if (history?.totalEntries > 0) scopeParts.push(pluralise(history.totalEntries, 'history entry', 'history entries'));
-  if (tokens?.totalEntries > 0) scopeParts.push(pluralise(tokens.totalEntries, 'token entry', 'token entries'));
-  if (wallets?.totalEntries > 0) scopeParts.push(pluralise(wallets.totalEntries, 'wallet/store artifact'));
-  if (cards?.totalCards > 0) scopeParts.push(pluralise(cards.totalCards, 'card entry', 'card entries'));
-  if (grabbed?.fileCount > 0) scopeParts.push(pluralise(grabbed.fileCount, 'grabbed file'));
-  else if (notes?.totalNotes > 0) scopeParts.push(pluralise(notes.totalNotes, 'note file'));
-  else if (screenshot?.entries?.length > 0) scopeParts.push(pluralise(screenshot.entries.length, 'screenshot'));
+  const capBits = [];
+  if (screenshot?.entries?.length > 0) capBits.push(pluralise(screenshot.entries.length, 'desktop screenshot'));
+  if (grabbed?.fileCount > 0) capBits.push(pluralise(grabbed.fileCount, 'grabbed file'));
+  if (history?.totalEntries > 0) capBits.push(pluralise(history.totalEntries, 'history entry', 'history entries'));
+  if (capBits.length > 0) {
+    const value = history?.totalEntries > 0
+      ? history.totalEntries.toLocaleString()
+      : (grabbed?.fileCount || screenshot?.entries?.length || 0).toLocaleString();
+    out.push(buildVerdictCard({
+      label: 'Capture evidence',
+      value,
+      note: `${joinNaturalList(capBits)}.`,
+      target: screenshot?.entries?.length > 0 ? 'screenshots' : 'browser',
+    }));
+  }
 
-  const scopeText = joinNaturalList(scopeParts.slice(0, 5));
-  return scopeText ? `${introParts.join('')}. It contains ${scopeText}.` : `${introParts.join('')}.`;
+  if (out.length === 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.classList.remove('hidden');
+  el.innerHTML = out.join('');
 }
 
 function renderSimpleList(container, items) {
@@ -299,194 +332,57 @@ function renderClipboardLures() {
 }
 
 function renderTriageOverview() {
-  const summarySection = document.getElementById('dashTriageSummary');
-  const summaryBody = document.getElementById('dashTriageSummaryBody');
   const riskSection = document.getElementById('dashRiskSignals');
   const riskBody = document.getElementById('dashRiskSignalsBody');
 
   const sysinfo = overviewState.sysinfo;
-  const fingerprint = overviewState.fingerprint;
   const credentials = overviewState.credentials;
   const cookies = overviewState.cookies;
   const history = overviewState.history;
-  const tokens = overviewState.accountTokens;
   const wallets = overviewState.wallets;
   const cards = overviewState.creditCards;
-  const notes = overviewState.notes;
   const grabbed = overviewState.grabbedFiles;
-  const downloads = overviewState.downloads;
-  const services = overviewState.serviceArtifacts;
-  const domainDetect = overviewState.domainDetect;
   const screenshot = overviewState.screenshot;
+  const autofill = overviewState.autofill;
   const readErrors = overviewState.readErrors;
 
-  const summaryItems = [];
   const osUser = findSysinfoValue(sysinfo, [/^user\s*name$/i, /^username$/i, /^os user$/i]);
   const pi = overviewState.identity?.primaryIdentity;
   const resolvedUser = osUser || (pi?.osUsername || '');
   const userSource = osUser ? 'sysinfo' : (pi?.userSource || null);
   const computer = findSysinfoValue(sysinfo, [/^computer\s*name$/i, /^pc\s*name$/i, /^machine\s*name$/i]);
-  const countryInfo = deriveVictimCountry(sysinfo, overviewState.autofill);
-  const os = findSysinfoValue(sysinfo, [/^os$/i, /^operating system$/i, /^system$/i]);
-  const deviceType = inferDeviceType(sysinfo, computer);
-  const totalFiles = state.flatFiles.filter(file => file.type === 'file').length;
+  const countryInfo = deriveVictimCountry(sysinfo, autofill);
   const exfilInfo = inferLikelyExfilDate(sysinfo);
 
-  if (fingerprint) summaryItems.push({ label: 'Family', value: fingerprint.family });
-  if (computer) summaryItems.push({ label: 'Host', value: computer });
-  if (resolvedUser) summaryItems.push({ label: 'User', value: userSource && userSource !== 'sysinfo' ? `${resolvedUser} (from ${userSource})` : resolvedUser });
-  if (countryInfo.value) summaryItems.push({ label: countryInfo.source === 'sysinfo' ? 'Location' : `Location (${countryInfo.source})`, value: countryInfo.value });
-  if (credentials?.uniqueCredentials > 0) summaryItems.push({ label: 'Credentials', value: credentials.uniqueCredentials.toLocaleString() });
-  if (credentials?.failedFiles?.length > 0) summaryItems.push({ label: 'Skipped Password Files', value: credentials.failedFiles.length.toLocaleString() });
-  if (readErrors?.failedFiles?.length > 0) summaryItems.push({ label: 'Unreadable Files', value: readErrors.failedFiles.length.toLocaleString() });
-  if (cookies?.validSessionTokens > 0) summaryItems.push({ label: 'Active Sessions', value: cookies.validSessionTokens.toLocaleString() });
-  if (history?.totalEntries > 0) summaryItems.push({ label: 'History', value: history.totalEntries.toLocaleString() });
-  if (tokens?.totalEntries > 0) summaryItems.push({ label: 'Tokens', value: tokens.totalEntries.toLocaleString() });
-  if (wallets?.totalEntries > 0) summaryItems.push({ label: 'Wallet Stores', value: wallets.totalEntries.toLocaleString() });
-  if (cards?.totalCards > 0) summaryItems.push({ label: 'Cards', value: cards.totalCards.toLocaleString() });
-  if (notes?.totalNotes > 0) summaryItems.push({ label: 'Notes', value: notes.totalNotes.toLocaleString() });
-  if (grabbed?.fileCount > 0) summaryItems.push({ label: 'Grabbed Files', value: grabbed.fileCount.toLocaleString() });
-  if (downloads?.totalDownloads > 0) summaryItems.push({ label: 'Downloads', value: downloads.totalDownloads.toLocaleString() });
-  if (screenshot?.entries?.length > 0) summaryItems.push({ label: 'Screenshot', value: screenshot.entries.length.toLocaleString() });
+  renderCaseContext({ computer, resolvedUser, userSource, countryInfo, exfilInfo });
+  renderVerdictCards({ credentials, cookies, cards, history, grabbed, screenshot, autofill, nationalIds: credentials?.nationalIds });
 
-  if (summaryItems.length > 0) {
-    summarySection.classList.remove('hidden');
-    summaryBody.innerHTML = summaryItems.map(item => `
-      <div class="dash-triage-item">
-        <div class="dash-triage-value">${escapeHtml(item.value)}</div>
-        <div class="dash-triage-label">${escapeHtml(item.label)}</div>
-      </div>
-    `).join('');
-  } else {
-    summarySection.classList.add('hidden');
-    summaryBody.innerHTML = '';
-  }
-
+  // Assessment: genuine, actionable findings only, never a restatement of the
+  // counts already carried by the verdict cards above.
   const riskItems = [];
-  const briefing = buildCaseBriefing({
-    exfilInfo,
-    totalFiles,
-    computer,
-    os,
-    deviceType,
-    user: resolvedUser,
-    credentials,
-    cookies,
-    history,
-    tokens,
-    wallets,
-    cards,
-    grabbed,
-    notes,
-    screenshot,
-  });
-  if (briefing) {
-    riskItems.push({ text: briefing, variant: 'brief' });
-  }
-
-  if (fingerprint) {
-    const confidenceLabel = capitalise(fingerprint.confidence);
-    riskItems.push(`File layout and markers most closely match ${fingerprint.family} (${confidenceLabel} confidence).`);
-  }
-  if (credentials?.uniqueCredentials > 0) {
-    const domainText = topValuesText(credentials.topDomains);
-    riskItems.push(
-      domainText
-        ? `${pluralise(credentials.uniqueCredentials, 'unique credential')} recovered, with the heaviest credential volume tied to ${domainText}.`
-        : `${pluralise(credentials.uniqueCredentials, 'unique credential')} recovered across the parsed credential files.`
-    );
-  }
   if (credentials?.onionCredentials > 0) {
     riskItems.push({
-      text: `Tor hidden-service (.onion) credentials present — strong indicator of darknet-market or carding activity (${pluralise(credentials.onionCredentials, 'domain')}).`,
+      text: `Tor hidden-service (.onion) credentials in ${pluralise(credentials.onionCredentials, 'domain')}: strong indicator of darknet-market or carding activity.`,
+      variant: 'warn',
+    });
+  }
+  if (clipboardLures.length > 0) {
+    riskItems.push({
+      text: 'Clipboard holds a likely social-engineering lure or clipper (ClickFix / PowerShell / address-swap).',
+      variant: 'warn',
+    });
+  }
+  if (cards?.withCvc > 0) {
+    riskItems.push({
+      text: `${pluralise(cards.withCvc, 'payment card')} recovered with a CVC value; treat as full card compromise.`,
       variant: 'warn',
     });
   }
   if (credentials?.failedFiles?.length > 0) {
-    riskItems.push(`${pluralise(credentials.failedFiles.length, 'password file')} could not be parsed cleanly and may require manual review.`);
-  }
-  if (clipboardLures.length > 0) {
-    riskItems.push({
-      text: 'Clipboard contains likely social-engineering lure or clipper activity (ClickFix / PowerShell / address-swap).',
-      variant: 'warn',
-    });
-  }
-  if (credentials?.nationalIds?.length > 0) {
-    const total = credentials.nationalIds.reduce((sum, n) => sum + n.count, 0);
-    riskItems.push({
-      text: `Possible government identifiers detected (CPF/Aadhaar/DNI/SSN) in ${pluralise(total, 'field')}.`,
-      variant: 'warn',
-    });
+    riskItems.push(`${pluralise(credentials.failedFiles.length, 'password file')} could not be parsed cleanly; review manually.`);
   }
   if (readErrors?.failedFiles?.length > 0) {
-    riskItems.push(`${pluralise(readErrors.failedFiles.length, 'file')} could not be read or decoded and were skipped during analysis.`);
-  }
-  if (cookies?.validSessionTokens > 0) {
-    const domainText = topValuesText(cookies.topDomains);
-    riskItems.push(
-      domainText
-        ? `${pluralise(cookies.validSessionTokens, 'valid browser session')} recovered, most heavily concentrated in cookies for ${domainText}.`
-        : `${pluralise(cookies.validSessionTokens, 'valid browser session')} recovered from the cookie data.`
-    );
-  }
-  if (history?.totalEntries > 0) {
-    const domainText = topValuesText(history.topDomains);
-    const latestVisitDate = history.mostRecent?.[0]?.lastVisitDate;
-    const latestVisit = latestVisitDate ? formatDateTimeLabel(new Date(latestVisitDate)) : (history.mostRecent?.[0]?.lastVisit || '');
-    const recentText = latestVisit ? ` Most recent parsed visit: ${latestVisit}.` : '';
-    riskItems.push(
-      domainText
-        ? `${pluralise(history.totalEntries, 'history entry', 'history entries')} parsed across ${pluralise(history.uniqueDomains || 0, 'domain')}, with the most visited domains including ${domainText}.${recentText}`.trim()
-        : `${pluralise(history.totalEntries, 'history entry', 'history entries')} parsed from browser history.${recentText}`.trim()
-    );
-  }
-  if (tokens?.totalEntries > 0) {
-    const servicesText = topValuesText(tokens.services);
-    riskItems.push(`Account-token material is present${servicesText ? ` for ${servicesText}` : ''}${tokens.uniqueAccounts ? ` across ${pluralise(tokens.uniqueAccounts, 'account identifier')}` : ''}.`);
-  }
-  if (wallets?.totalEntries > 0) {
-    const servicesText = topValuesText(wallets.services);
-    const extra = [];
-    if (wallets.withSeedHints > 0) extra.push(pluralise(wallets.withSeedHints, 'seed/recovery hit'));
-    if (wallets.withTokenSignals > 0) extra.push(pluralise(wallets.withTokenSignals, 'token-bearing store'));
-    riskItems.push(`${pluralise(wallets.totalEntries, 'wallet or raw-store artifact')} detected${servicesText ? ` for ${servicesText}` : ''}${extra.length ? `, including ${joinNaturalList(extra)}` : ''}.`);
-  }
-  if (cards?.totalCards > 0) {
-    const parts = [];
-    if (cards.withHolder > 0) parts.push(pluralise(cards.withHolder, 'named cardholder'));
-    if (cards.withExpiry > 0) parts.push(pluralise(cards.withExpiry, 'expiry value'));
-    if (cards.withCvc > 0) parts.push(pluralise(cards.withCvc, 'CVC value'));
-    riskItems.push(`${pluralise(cards.totalCards, 'payment-card entry', 'payment-card entries')} recovered${parts.length ? `, with ${joinNaturalList(parts)}` : ''}.`);
-  }
-  if (notes?.credentialNotes > 0 || notes?.walletNotes > 0) {
-    const notableNoteCount = notes.entries
-      ? notes.entries.filter(entry => entry.credentialHints > 0 || entry.walletHints > 0).length
-      : Math.max(notes.credentialNotes || 0, notes.walletNotes || 0);
-    riskItems.push(`Notes contain credential or wallet language in ${pluralise(notableNoteCount, 'file')}.`);
-  } else if (notes?.totalNotes > 0) {
-    riskItems.push(`${pluralise(notes.totalNotes, 'note file')} may contain victim or operator context.`);
-  }
-  if (grabbed?.fileCount > 0) {
-    riskItems.push(`${pluralise(grabbed.fileCount, 'grabbed file')} recovered from FileGrabber / Important Files.`);
-  }
-  if (services?.totalEntries > 0) {
-    const servicesText = topValuesText(services.services);
-    riskItems.push(`Service configuration artifacts present${servicesText ? ` for ${servicesText}` : ''}.`);
-  }
-  if (downloads?.totalDownloads > 0) {
-    const domainText = topValuesText(downloads.topDomains);
-    riskItems.push(
-      domainText
-        ? `${pluralise(downloads.totalDownloads, 'download entry', 'download entries')} logged, with the most common source domains including ${domainText}.`
-        : `${pluralise(downloads.totalDownloads, 'download entry', 'download entries')} logged in the recovered history.`
-    );
-  }
-  if (domainDetect?.totalHits > 0) {
-    const categoryCount = Object.keys(domainDetect.categories || {}).length;
-    riskItems.push(`${pluralise(domainDetect.totalHits, 'domain-detection hit')} recorded across ${pluralise(categoryCount, 'category', 'categories')}.`);
-  }
-  if (screenshot?.entries?.length > 0) {
-    riskItems.push(`${pluralise(screenshot.entries.length, 'desktop screenshot')} captured during collection.`);
+    riskItems.push(`${pluralise(readErrors.failedFiles.length, 'file')} could not be read or decoded and were skipped.`);
   }
 
   if (riskItems.length > 0) {
@@ -577,7 +473,7 @@ function renderConsistencyChecks({ credentials, cookies, history, countryInfo })
   if (tld && victimCode.length === 2) {
     const tldCountry = CCTLD_COUNTRY[tld];
     if (tldCountry && tldCountry !== victimCode) {
-      checks.push({ text: `Browsing/credential domains are predominantly .${tld} (${tldCountry}) but victim location resolves to ${victimCode} — verify geolocation.`, variant: 'warn' });
+      checks.push({ text: `Browsing/credential domains are predominantly .${tld} (${tldCountry}) but victim location resolves to ${victimCode}; verify geolocation.`, variant: 'warn' });
     }
   }
 
@@ -726,6 +622,14 @@ export function initDashboard() {
   bindCopy(document.getElementById('dashIOCBody'));
   bindCopy(document.getElementById('dashStealerInfraBody'));
   bindCopy(document.getElementById('dashClipboardLuresBody'));
+
+  // Verdict cards and demoted summaries drill straight into the detail page.
+  document.getElementById('pageOverview')?.addEventListener('click', (event) => {
+    const link = event.target.closest('.verdict-card-link');
+    if (!link) return;
+    const target = link.dataset.nav;
+    if (target) document.querySelector(`.sidebar-nav-item[data-page="${target}"]`)?.click();
+  });
 
   on('loading', () => {
     loadingText.textContent = state.loadingText;
@@ -879,41 +783,23 @@ export function initDashboard() {
     section.classList.remove('hidden');
     summaryEl.textContent = `${data.totalEntries} entries from ${data.fileCount} file(s)`;
 
-    let html = '<div class="dash-autofill-categories">';
-
-    if (data.emails.length > 0) {
-      html += `<div class="dash-autofill-cat">
-      <div class="dash-autofill-cat-title">Emails</div>
-      ${data.emails.map(v => `<div class="dash-autofill-entry">${escapeHtml(v)}</div>`).join('')}
-    </div>`;
-    }
-    if (data.phones.length > 0) {
-      html += `<div class="dash-autofill-cat">
-      <div class="dash-autofill-cat-title">Phone Numbers</div>
-      ${data.phones.map(v => `<div class="dash-autofill-entry">${escapeHtml(v)}</div>`).join('')}
-    </div>`;
-    }
-    if (data.names.length > 0) {
-      html += `<div class="dash-autofill-cat">
-      <div class="dash-autofill-cat-title">Names</div>
-      ${data.names.map(v => `<div class="dash-autofill-entry">${escapeHtml(v)}</div>`).join('')}
-    </div>`;
-    }
-    if (data.addresses.length > 0) {
-      html += `<div class="dash-autofill-cat">
-      <div class="dash-autofill-cat-title">Addresses</div>
-      ${data.addresses.map(v => `<div class="dash-autofill-entry">${escapeHtml(v)}</div>`).join('')}
-    </div>`;
-    }
-    if (data.other.length > 0) {
-      html += `<div class="dash-autofill-cat">
-      <div class="dash-autofill-cat-title">Other</div>
-      ${data.other.map(e => `<div class="dash-autofill-entry"><span class="dash-autofill-field">${escapeHtml(e.name)}:</span> ${escapeHtml(e.value)}</div>`).join('')}
-    </div>`;
-    }
-
-    html += '</div>';
-    body.innerHTML = html;
+    // Overview shows a counted summary and a few sample emails, not the whole
+    // PII wall. The full parsed data lives on the Autofills page.
+    const counts = [
+      ['email', data.emails.length],
+      ['phone', data.phones.length],
+      ['name', data.names.length],
+      ['address', data.addresses.length],
+      ['other field', data.other.length],
+    ].filter(([, n]) => n > 0);
+    const plural = (label, n) => label === 'address' ? (n === 1 ? 'address' : 'addresses') : (n === 1 ? label : label + 's');
+    const chips = counts.map(([label, n]) => `<span class="dash-chip">${n.toLocaleString()} ${plural(label, n)}</span>`).join('');
+    const sample = data.emails.slice(0, 3).map(v => `<span class="dash-autofill-entry">${escapeHtml(v)}</span>`).join('');
+    body.innerHTML = `
+      <div class="dash-chip-row">${chips}</div>
+      ${sample ? `<div class="dash-autofill-sample">${sample}</div>` : ''}
+      <button class="verdict-card-link" data-nav="autofills">View all autofill data &rarr;</button>
+    `;
   });
 
   on('analysis:downloads', (data) => {

@@ -826,6 +826,119 @@ body {
   color: var(--text-primary);
 }
 
+/* Case Verdict: the Overview leads with the analyst's decision. */
+.dash-verdict {
+  margin-bottom: 1rem;
+}
+.dash-verdict-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.dash-case-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+.dash-case-context .ctx-key {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+}
+.dash-case-context .ctx-val {
+  color: var(--text-primary);
+}
+.dash-case-context .ctx-sep {
+  color: var(--border-strong);
+}
+
+.dash-verdict-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.verdict-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+.verdict-card-label {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.verdict-card-value {
+  font-family: var(--font-mono);
+  font-size: 1.9rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+.verdict-card-note {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  flex: 1;
+}
+.verdict-card-link {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.verdict-card-link:hover {
+  text-decoration: underline;
+}
+
+.dash-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.dash-chip {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.dash-autofill-sample {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
 .dash-banner {
   padding: 0.7rem 1rem;
   border-radius: var(--radius-md);

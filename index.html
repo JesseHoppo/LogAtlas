@@ -100,22 +100,20 @@
         <div class="page active" id="pageOverview">
           <h2 class="page-title">Overview</h2>
           <div class="dash-banner dash-banner-critical hidden" id="dashSeedBanner" role="alert"></div>
-          <div class="dash-section dash-fingerprint hidden" id="dashFingerprint">
-            <div class="dash-section-title">Stealer Identification</div>
+          <div class="dash-verdict hidden" id="dashFingerprint">
+            <div class="dash-verdict-kicker">Verdict</div>
             <div class="dash-fingerprint-body" id="dashFingerprintBody"></div>
           </div>
 
-          <div class="dash-section hidden" id="dashTriageSummary">
-            <div class="dash-section-title">Case Summary</div>
-            <div class="dash-triage-grid" id="dashTriageSummaryBody"></div>
-          </div>
+          <div class="dash-case-context hidden" id="dashCaseContext"></div>
+          <div class="dash-verdict-cards hidden" id="dashVerdictCards"></div>
 
           <div class="dash-section hidden" id="dashRiskSignals">
-            <div class="dash-section-title">Insights</div>
+            <div class="dash-section-title">Assessment</div>
             <div class="dash-list" id="dashRiskSignalsBody"></div>
           </div>
           <div class="dash-section hidden" id="dashConsistency">
-            <div class="dash-section-title">Consistency Checks</div>
+            <div class="dash-section-title">Cross-checks</div>
             <div class="dash-list" id="dashConsistencyBody"></div>
           </div>
           <div class="dash-section hidden" id="dashScreenshot">
@@ -182,7 +180,7 @@
             <div id="dashDomainDetectBody"></div>
           </div>
           <div class="dash-section hidden" id="dashExtraIntel">
-            <div class="dash-section-title">Additional Data Detected</div>
+            <div class="dash-section-title">Other Artifacts</div>
             <div class="dash-extra-body" id="dashExtraBody"></div>
           </div>
           <div class="no-data hidden" id="overviewNoData">
