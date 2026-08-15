@@ -1,4 +1,4 @@
-import { extractBaseDomain, extractDomain, dedupeDomainKey, classifyAutofillEntries, parseTimestampValue, resolveCaptureContext, getCaptureContext } from '../core/shared.js';
+import { extractBaseDomain, extractDomain, dedupeDomainKey, classifyAutofillEntries, parseTimestampValue, resolveCaptureContext, getCaptureContext, usernameDedupeKey } from '../core/shared.js';
 import { EMAIL_REGEX, SCAN_EMAIL_REGEX } from '../core/definitions/patterns.js';
 import { classifySiteDomain } from '../core/domainCategories.js';
 import { isLiveSessionToken } from './sessionCookies.js';
@@ -1598,9 +1598,11 @@ function countReuseGroups(rows) {
 }
 
 function dedupeCredentials(credentials) {
-  // Key = base-domain + lowercased username + raw password. Cross-profile and
-  // cross-path entries collapse; case-variant emails merge; entries with no
-  // username AND no password are dropped (URL-only stub rows).
+  // Key = base-domain + username key + raw password. Cross-profile and
+  // cross-path entries collapse; emails and phone-shaped usernames fold on the
+  // same rule analysis uses, so the ranked rows and the credential totals agree
+  // on what counts as one account. Entries with no username AND no password are
+  // dropped (URL-only stub rows).
   const SEP = '\u0000';
   const seen = new Map(); // key -> index in out
   const out = [];
@@ -1613,8 +1615,7 @@ function dedupeCredentials(credentials) {
     if (!user && !pass) continue;
 
     const domainPart = dedupeDomainKey(url);
-    const userPart = user.includes('@') ? user.toLowerCase() : user;
-    const key = domainPart + SEP + userPart + SEP + pass;
+    const key = domainPart + SEP + usernameDedupeKey(user) + SEP + pass;
 
     if (seen.has(key)) {
       // Accumulate sources so cross-profile spread is visible in the Lab detail row.

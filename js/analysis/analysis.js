@@ -26,7 +26,6 @@ import { parseSoftwareLines, parseProcessLines, evaluateInlineSections } from '.
 import { parseWalletArtifact } from './walletArtifacts.js';
 import { parseNoteArtifact, summariseNotes, classifyGrabbedFile, summariseGrabbedFiles } from './contextArtifacts.js';
 import {
-  canonicaliseAutofillPhone,
   classifyAutofillEntries,
   credentialColumnIndices,
   extractBaseDomain,
@@ -39,7 +38,6 @@ import {
   extractCountryFromFilename,
   inferBrowserFromPath,
   inferBrowserFromContent,
-  isLikelyAutofillPhone,
   isPlaceholderUserName,
   isValidCountryCode,
   isLikelyCountryName,
@@ -55,6 +53,7 @@ import {
   checkCookieValidity,
   cookieColumnMap,
   cookieDedupeKey,
+  usernameDedupeKey,
   collapseSingleWrapper,
   topN,
 } from '../core/shared.js';
@@ -148,20 +147,6 @@ function isRecoveredPasswordNoise(line) {
 function isPlaceholderTopUsername(value) {
   const v = String(value || '').trim().toLowerCase();
   return v === '' || PLACEHOLDER_USERNAMES.has(v);
-}
-
-// Dedupe key only. Lowercase emails so case variants merge; phone-shaped
-// usernames collapse to their trunk-stripped suffix so `+61491570156` and
-// `0491570156` key to the same account. Never used as a display value —
-// numeric national-IDs / bank accounts must surface verbatim.
-function usernameDedupeKey(value) {
-  const v = String(value || '');
-  if (v.includes('@')) return v.toLowerCase();
-  if (isLikelyAutofillPhone(v)) {
-    const canonical = canonicaliseAutofillPhone(v);
-    if (canonical) return `+${canonical}`;
-  }
-  return v;
 }
 
 async function analyseCredentials(nodes) {

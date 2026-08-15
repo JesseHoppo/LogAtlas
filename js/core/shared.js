@@ -466,6 +466,20 @@ function canonicaliseAutofillPhone(value) {
   return stripped.length > 8 ? stripped.slice(-8) : stripped || digits;
 }
 
+// Dedupe key only. Lowercase emails so case variants merge; phone-shaped
+// usernames collapse to their trunk-stripped suffix so `+61491570156` and
+// `0491570156` key to the same account. Never used as a display value —
+// numeric national-IDs / bank accounts must surface verbatim.
+function usernameDedupeKey(value) {
+  const raw = String(value || '');
+  if (raw.includes('@')) return raw.toLowerCase();
+  if (isLikelyAutofillPhone(raw)) {
+    const canonical = canonicaliseAutofillPhone(raw);
+    if (canonical) return `+${canonical}`;
+  }
+  return raw;
+}
+
 function normaliseAutofillLetters(value) {
   return String(value || '')
     .normalize('NFD')
@@ -1554,6 +1568,7 @@ export {
   checkCookieValidity,
   cookieColumnMap,
   cookieDedupeKey,
+  usernameDedupeKey,
   isPlausibleCaptureDate,
   newestNodeModified,
   resolveCaptureContext,
