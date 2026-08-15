@@ -329,11 +329,12 @@ export const FILE_TYPE_PATTERNS = {
 
   // Combolist/ULP credential pools bundled alongside a log. They ship under
   // arbitrary titles ("14,4K ULP PRIV.txt"), so only the line shape identifies
-  // them: scheme://host:user:pass, with user free of URL punctuation so plain
-  // history dumps carrying nested URLs do not qualify. The ratio floor leaves
-  // room for the resale banner these dumps are prefixed with.
+  // them: host:user:pass, scheme optional (bare `site.com:u:p` is as common as
+  // the URL form), user free of URL punctuation so history dumps carrying
+  // nested URLs don't qualify. The TLD requirement keeps prose and `C:\path`
+  // lines out; the ratio floor leaves room for the resale banner on top.
   passwordPool: {
-    linePattern: /^[a-z][a-z0-9+.-]*:\/\/[^\s:]+:[^\s:/?=%&][^:/?=%&]*:.+$/i,
+    linePattern: /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^\s:/@]{1,256}@)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d{1,5})?(?:\/[^\s:]*)?:[^\s:/?=%&][^:/?=%&]*:.+$/i,
     sampleLines: 400,
     minLines: 20,
     minRatio: 0.6,
