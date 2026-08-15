@@ -207,7 +207,8 @@ async function loadCreditCardsData(fileTree, rootName) {
 
 function accountTokenRowBuilder({ service, type, value, accountId, browser, profile, note, source }) {
   const displayValue = hideTokenValues ? maskTokenValue(value) : value;
-  return `<tr><td>${escapeHtml(service || '')}</td><td>${escapeHtml(type || '')}</td><td title="${escapeHtml(displayValue)}">${escapeHtml(displayValue)}</td><td>${escapeHtml(accountId || '')}</td><td>${escapeHtml(browser || '')}</td><td>${escapeHtml(profile || '')}</td><td title="${escapeHtml(note || '')}">${escapeHtml(note || '')}</td><td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td></tr>`;
+  const maskedAttr = hideTokenValues ? ' class="masked"' : '';
+  return `<tr><td>${escapeHtml(service || '')}</td><td>${escapeHtml(type || '')}</td><td${maskedAttr} title="${escapeHtml(displayValue)}">${escapeHtml(displayValue)}</td><td>${escapeHtml(accountId || '')}</td><td>${escapeHtml(browser || '')}</td><td>${escapeHtml(profile || '')}</td><td title="${escapeHtml(note || '')}">${escapeHtml(note || '')}</td><td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td></tr>`;
 }
 
 function renderTokensPage(searchQuery = '') {
@@ -296,7 +297,8 @@ function renderWalletsPage(searchQuery = '') {
 function creditCardRowBuilder({ cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source }) {
   const cardDisplay = hideCardNumbers ? maskCardNumber(cardNumber) : cardNumber;
   const cvcDisplay = hideCardNumbers && cvc ? '\u2022\u2022\u2022' : cvc;
-  return `<tr><td title="${escapeHtml(cardDisplay)}">${escapeHtml(cardDisplay)}</td><td>${escapeHtml(last4)}</td><td title="${escapeHtml(nameOnCard)}">${escapeHtml(nameOnCard)}</td><td>${escapeHtml(expiration)}</td><td>${escapeHtml(cvcDisplay)}</td><td>${escapeHtml(browser)}</td><td title="${escapeHtml(filePath || source)}">${escapeHtml(trimRootPath(filePath || source))}</td></tr>`;
+  const maskedAttr = hideCardNumbers ? ' class="masked"' : '';
+  return `<tr><td${maskedAttr} title="${escapeHtml(cardDisplay)}">${escapeHtml(cardDisplay)}</td><td>${escapeHtml(last4)}</td><td title="${escapeHtml(nameOnCard)}">${escapeHtml(nameOnCard)}</td><td>${escapeHtml(expiration)}</td><td${maskedAttr}>${escapeHtml(cvcDisplay)}</td><td>${escapeHtml(browser)}</td><td title="${escapeHtml(filePath || source)}">${escapeHtml(trimRootPath(filePath || source))}</td></tr>`;
 }
 
 function renderCardsPage(searchQuery = '') {

@@ -3,6 +3,7 @@ import { initPreview, closePreview } from '../files/preview.js';
 import { initPasswordModal, closePasswordModal } from '../files/password.js';
 import { initFileTypeModal } from '../files/fileTypeModal.js';
 import { initDataPages } from '../pages/dataPages.js';
+import { initCellCopy } from '../pages/shared.js';
 import { initExports } from '../views/exports.js';
 import { initTimeline } from '../views/timeline.js';
 import { initIdentityGraph, initIdentityPage } from '../views/identityGraph.js';
@@ -48,6 +49,7 @@ const moduleInitializers = [
   ['Domain explorer', initDomainExplorer],
   ['Currentness lab', initCurrentnessLab],
   ['Dashboard', initDashboard],
+  ['Cell copy', initCellCopy],
 ];
 
 for (const [name, init] of moduleInitializers) {

@@ -5,6 +5,7 @@ import { loadFileContent, getNodeAtPath } from '../files/extractor.js';
 import { escapeHtml, getFileExtension, formatBytes } from '../core/utils.js';
 import {
   collectHintedNodes,
+  copyToClipboard,
   downloadBlob,
   showNotification,
   SHARED_TEXT_DECODER,
@@ -131,6 +132,44 @@ export function bindTableSort(container, sort, rerender) {
 
   el.addEventListener('click', activate);
   el.addEventListener('keydown', activate);
+}
+
+// Click a cell to copy it. Columns truncate what they show, so the title
+// attribute carries the untruncated text and wins over the visible label.
+const COPYABLE_CELL = '.data-table td, .domain-detail-table td, .lab-creds-table td';
+
+let flashTimer = null;
+
+function flashCopied(cell) {
+  clearTimeout(flashTimer);
+  document.querySelector('.cell-copied')?.classList.remove('cell-copied');
+  void cell.offsetWidth;  // restart the flash on a repeat click
+  cell.classList.add('cell-copied');
+  flashTimer = setTimeout(() => cell.classList.remove('cell-copied'), 600);
+}
+
+export function initCellCopy() {
+  document.addEventListener('click', async (event) => {
+    if (event.target.closest('button, a, input, select, textarea, label')) return;
+
+    // Masked cells belong to their reveal control; copying the dots helps nobody.
+    const cell = event.target.closest(COPYABLE_CELL);
+    if (!cell || cell.classList.contains('masked')) return;
+
+    // A click that ends a drag is a text selection, not a request for the cell.
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+
+    const value = (cell.title || cell.textContent || '').trim();
+    if (!value) return;
+
+    if (await copyToClipboard(value)) {
+      flashCopied(cell);
+      showNotification(value.length > 60 ? `Copied ${value.length.toLocaleString()} characters` : `Copied "${value}"`);
+    } else {
+      showNotification('Could not copy to clipboard', 'error');
+    }
+  });
 }
 
 export function formatOptionalDate(value) {

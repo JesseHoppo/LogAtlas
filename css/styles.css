@@ -3017,6 +3017,38 @@ body {
   line-height: 1.45;
   vertical-align: top;
 }
+/* Click-to-copy. Kept faint: a cell is read far more often than it is copied. */
+.data-table td,
+.domain-detail-table td,
+.lab-creds-table td {
+  cursor: copy;
+}
+.data-table tbody tr:hover td,
+.domain-detail-table tbody tr:hover td,
+.lab-creds-table tbody tr:hover td {
+  box-shadow: inset 1px 0 0 var(--border);
+}
+.data-table td.cell-copied,
+.domain-detail-table td.cell-copied,
+.lab-creds-table td.cell-copied {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  transition: none;
+}
+.data-table td:not(.cell-copied),
+.domain-detail-table td:not(.cell-copied),
+.lab-creds-table td:not(.cell-copied) {
+  transition: background 0.35s ease, color 0.35s ease;
+}
+/* Same selector as the rule above, so it actually overrides it. */
+@media (prefers-reduced-motion: reduce) {
+  .data-table td:not(.cell-copied),
+  .domain-detail-table td:not(.cell-copied),
+  .lab-creds-table td:not(.cell-copied) {
+    transition: none;
+  }
+}
+
 /* Long-form cells opt back into wrapping; everything else stays a single
    scannable line with the full value available on hover (title=). */
 .data-table td.wrap-cell,

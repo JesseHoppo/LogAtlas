@@ -1080,6 +1080,9 @@ function initCredentials() {
   document.getElementById('passwordsContent')?.addEventListener('click', (e) => {
     const cell = e.target.closest('.password-cell.masked');
     if (!cell) return;
+    // The click is spent on the reveal; without this the cell-copy handler sees
+    // an unmasked cell a moment later and puts the password on the clipboard.
+    e.stopPropagation();
     const tr = cell.closest('tr');
     if (!tr) return;
     const tbody = tr.closest('tbody');
