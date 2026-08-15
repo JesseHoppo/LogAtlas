@@ -797,7 +797,7 @@ export function initDashboard() {
         summaryHtml += `, <span class="cookie-unknown">${data.totalUnknown.toLocaleString()} unparseable expiry</span>`;
       }
       if (data.totalNoDomain > 0) {
-        summaryHtml += `, <span class="cookie-unknown">${data.totalNoDomain.toLocaleString()} no domain</span>`;
+        summaryHtml += ` <span class="cookie-unknown">(${data.totalNoDomain.toLocaleString()} of these carried no domain)</span>`;
       }
       if (data.sessionTokens > 0) {
         summaryHtml += ` &mdash; <span class="cookie-auth">${data.sessionTokens.toLocaleString()} session token${data.sessionTokens !== 1 ? 's' : ''}</span>`;

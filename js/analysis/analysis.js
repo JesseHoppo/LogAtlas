@@ -46,6 +46,7 @@ import {
   parseSoftwareLine,
   parseTimestampValue,
   newestNodeModified,
+  isPlausibleCaptureDate,
   resolveCaptureContext,
   setCaptureContext,
   decodeNodeCached,
@@ -368,6 +369,9 @@ async function analyseCookies(nodes, captureDate = null) {
 
   const domainStats = {};
   const cookieSeen = new Set();
+  // Every counted cookie lands in exactly one bucket, whether or not it carried
+  // a domain, so the buckets always add up to the total printed above them.
+  const totals = { valid: 0, expired: 0, session: 0, unknown: 0 };
   let totalCookies = 0;
   let parsedCount = 0;
   let totalNoDomain = 0;
@@ -398,19 +402,21 @@ async function analyseCookies(nodes, captureDate = null) {
         if (cookieSeen.has(dedupeKey)) continue;
         cookieSeen.add(dedupeKey);
 
-        if (!domain) { totalNoDomain++; totalCookies++; continue; }
         totalCookies++;
+
+        const validity = checkCookieValidity(expiresVal, captureDate);
+        const bucket = validity.status === 'valid' || validity.status === 'expired' || validity.status === 'session'
+          ? validity.status
+          : 'unknown';
+        totals[bucket]++;
+
+        if (!domain) { totalNoDomain++; continue; }
 
         if (!domainStats[domain]) {
           domainStats[domain] = { total: 0, valid: 0, expired: 0, session: 0, unknown: 0 };
         }
         domainStats[domain].total++;
-
-        const validity = checkCookieValidity(expiresVal, captureDate);
-        if (validity.status === 'valid') domainStats[domain].valid++;
-        else if (validity.status === 'expired') domainStats[domain].expired++;
-        else if (validity.status === 'session') domainStats[domain].session++;
-        else domainStats[domain].unknown++;
+        domainStats[domain][bucket]++;
 
         const sessionType = classifyCookie(cookieName, domain);
         if (sessionType === 'auth' || sessionType === 'session') {
@@ -418,7 +424,7 @@ async function analyseCookies(nodes, captureDate = null) {
           if (isLiveSessionToken({ sessionType, validity })) validSessionTokens++;
         } else if (sessionType === 'tracking') {
           trackingTokens++;
-          if (validity.status === 'valid' || validity.status === 'session') validTrackingTokens++;
+          if (isLiveSessionToken({ sessionType: 'session', validity })) validTrackingTokens++;
         }
       }
     } catch {
@@ -427,17 +433,6 @@ async function analyseCookies(nodes, captureDate = null) {
   }
 
   const uniqueDomains = Object.keys(domainStats).length;
-
-  let totalValid = 0;
-  let totalExpired = 0;
-  let totalSession = 0;
-  let totalUnknown = 0;
-  for (const stats of Object.values(domainStats)) {
-    totalValid += stats.valid;
-    totalExpired += stats.expired;
-    totalSession += stats.session;
-    totalUnknown += stats.unknown;
-  }
 
   // Roll per-host stats up to eTLD+1 for the headline list; per-host detail
   // stays available on the cookies page.
@@ -471,10 +466,10 @@ async function analyseCookies(nodes, captureDate = null) {
     fileCount: parsedCount,
     totalCookies,
     uniqueDomains,
-    totalValid,
-    totalExpired,
-    totalSession,
-    totalUnknown,
+    totalValid: totals.valid,
+    totalExpired: totals.expired,
+    totalSession: totals.session,
+    totalUnknown: totals.unknown,
     totalNoDomain,
     topDomains,
     sessionTokens,
@@ -486,7 +481,7 @@ async function analyseCookies(nodes, captureDate = null) {
 
 // History
 
-// Returns the latest visit date, which is the last-resort capture evidence.
+// Returns the newest plausible visit date, the last-resort capture evidence.
 async function analyseHistory(nodes) {
   if (nodes.length === 0) {
     emit('analysis:history', null);
@@ -544,6 +539,10 @@ async function analyseHistory(nodes) {
     lastVisitDate: entry.lastVisitDate ? entry.lastVisitDate.toISOString() : null,
   }));
   const latestVisit = datedEntries[0]?.lastVisitDate || null;
+  // The reported latest visit is whatever the log says, mis-parsed outliers
+  // included. Capture evidence takes the newest visit that could actually be
+  // one, so a single far-future row doesn't discard the whole fallback.
+  const latestPlausibleVisit = datedEntries.find(entry => isPlausibleCaptureDate(entry.lastVisitDate))?.lastVisitDate || null;
 
   emit('analysis:history', {
     fileCount,
@@ -554,7 +553,7 @@ async function analyseHistory(nodes) {
     latestVisitDate: latestVisit ? latestVisit.toISOString() : null,
   });
 
-  return latestVisit;
+  return latestPlausibleVisit;
 }
 
 // System info
@@ -1455,7 +1454,12 @@ async function analyseWalletArtifacts(nodes) {
     try {
       const content = await loadFileContent(node);
       if (!content) { recordReadFailure(node, path); continue; }
-      const entry = parseNodeCached(node, 'wallet', () => parseWalletArtifact(content, node.name || '', path || node.name || ''), null, null);
+      // Keyed on the source path, as the assets page keys it: the path lands in
+      // the parsed entry, and the two sides walk different roots, so a shared
+      // entry built from the other side's path would relabel this row's source.
+      const entry = parseNodeCached(node, 'wallet',
+        (bytes, sourcePath) => parseWalletArtifact(bytes, node.name || '', sourcePath),
+        content, path || node.name || '');
       if (!entry) continue;
       entries.push(entry);
       services.push(entry.service || 'Unknown');

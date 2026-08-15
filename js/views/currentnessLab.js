@@ -17,7 +17,7 @@ let capture = null;
 let currentnessActiveFilter = 'all';
 
 const CURRENTNESS_FILTERS = [
-  { key: 'all', label: 'All Credentials', predicate: () => true },
+  { key: 'all', label: 'All Rows', predicate: () => true },
   { key: 'priority', label: 'Priority Queue', predicate: (row) => row.isPriority },
   { key: 'uncategorised', label: 'Uncategorised', predicate: (row) => row.categoryKey === 'unknown' },
   { key: 'active', label: 'Likely Current', predicate: (row) => row.bucket === 'likely-current' },
@@ -113,6 +113,7 @@ function normaliseCurrentnessInput() {
     sysinfoEntries,
     rootZipName: state.rootZipName || '',
     sourceLastModified: state.sourceFile?.lastModified || null,
+    captureContext: capture,
   };
 }
 
@@ -185,10 +186,13 @@ function buildHeroLine(summary) {
     summary.reuseGroups > 0 ? `<span><strong>${summary.reuseGroups}</strong> reused passwords</span>` : '',
   ].filter(Boolean);
 
-  // The case's capture instant comes from the analysis pass, so the anchor shown
-  // here is the one the dashboard and timeline show, with its provenance.
-  const captureBit = capture?.date
-    ? `Captured ${escapeHtml(formatDateTimeLabel(capture.date))} <span class="lab-hero-tag-muted">(${escapeHtml(captureProvenance(capture))})</span>`
+  // Read the anchor off the model so the line cannot contradict the rows it
+  // sits above; the model resolves it from the same published context.
+  const anchor = summary.captureDate
+    ? { date: summary.captureDate, source: summary.captureSource, detail: summary.captureDetail }
+    : null;
+  const captureBit = anchor
+    ? `Captured ${escapeHtml(formatDateTimeLabel(anchor.date))} <span class="lab-hero-tag-muted">(${escapeHtml(captureProvenance(anchor))})</span>`
     : `<span class="lab-hero-warn">No capture anchor; recency disabled</span>`;
 
   return `
@@ -196,7 +200,7 @@ function buildHeroLine(summary) {
       <div class="lab-hero-headline">${headlineHtml}</div>
       ${idMeta ? `<div class="lab-hero-meta">${idMeta}</div>` : ''}
       <div class="lab-hero-facts">
-        <span><strong>${summary.totalCredentials.toLocaleString()}</strong> credentials</span>
+        <span title="Rows scored here: site + username + password, accounts with no captured password included. The dashboard's credential count is a different tally."><strong>${summary.rankedRows.toLocaleString()}</strong> ranked rows</span>
         ${liveBits.join('')}
         <span class="lab-hero-capture">${captureBit}</span>
       </div>
@@ -257,7 +261,7 @@ function buildCandidatesPanel(summary) {
       entry.likelyCurrent ? `${entry.likelyCurrent} likely` : '',
       entry.review ? `${entry.review} review` : '',
       entry.weak ? `${entry.weak} weak` : '',
-    ].filter(Boolean).join(' · ') || `${entry.credentialCount} cred`;
+    ].filter(Boolean).join(' · ') || `${entry.rowCount} rows`;
     const sourceTags = [...entry.sources]
       .filter((src) => src !== 'credentials')
       .map((src) => `<span class="lab-tag">${escapeHtml(src)}</span>`)
@@ -284,7 +288,7 @@ function renderCurrentnessMeta(summary, rows) {
   const metaEl = document.getElementById('currentnessLabMeta');
   if (!metaEl) return;
 
-  if (!summary || summary.totalCredentials === 0) {
+  if (!summary || summary.rankedRows === 0) {
     metaEl.innerHTML = '';
     return;
   }
@@ -433,8 +437,8 @@ function renderCurrentnessPage(searchQuery = '') {
   currentnessShown = Math.min(PAGE_SIZE, currentnessFiltered.length);
   const filterText = activeFilter.key !== 'all' ? ` · ${activeFilter.label}` : '';
   summaryEl.textContent = currentnessFiltered.length !== currentnessModel.rows.length
-    ? `${currentnessFiltered.length.toLocaleString()} of ${currentnessModel.rows.length.toLocaleString()} credentials${filterText}`
-    : `${currentnessModel.rows.length.toLocaleString()} credentials${filterText}`;
+    ? `${currentnessFiltered.length.toLocaleString()} of ${currentnessModel.rows.length.toLocaleString()} ranked rows${filterText}`
+    : `${currentnessModel.rows.length.toLocaleString()} ranked rows${filterText}`;
 
   renderCurrentnessMeta(summary, currentnessModel.rows);
 

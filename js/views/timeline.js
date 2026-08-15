@@ -3,7 +3,7 @@ import { bindDebouncedInput, downloadCsvRows, formatDateLabel, formatDateTimeLab
 import { getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData } from '../pages/browser.js';
 import { getGrabbedFilesData, getScreenshotsData } from '../pages/activity.js';
-import { extractBaseDomain, baseDomainFromUrl, collectFileNodes, isPlausibleCaptureDate, normaliseTimeZone, parseTimestampValue } from '../core/shared.js';
+import { extractBaseDomain, baseDomainFromUrl, collectFileNodes, isPlausibleCaptureDate, normaliseTimeZone, parseTimestampValue, parseSysinfoDate, sysinfoWritesDayFirst } from '../core/shared.js';
 import { isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { escapeHtml } from '../core/utils.js';
 import { CAPTURE_TIME_KEYS, IGNORE_DATE_KEYS, FIELD_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
@@ -50,11 +50,18 @@ function extractStealerEvents(entries, captureContext) {
     : `Inferred from ${captureContext.source}${captureContext.detail ? `: ${captureContext.detail}` : ''}`;
   if (timezone) detail += ` (${timezone})`;
 
+  // A key only conflicts when it names a different instant: the same moment
+  // written in a second format is not a rival capture time.
+  const captureMs = captureContext.date.getTime();
+  const dayFirst = sysinfoWritesDayFirst(entries);
   const others = [];
   for (const [key, value] of Object.entries(entries || {})) {
     if (!value || value === captureValue) continue;
+    if (fromSysinfo && key === captureContext.detail) continue;
     if (IGNORE_DATE_KEYS.some(rx => rx.test(key))) continue;
     if (!CAPTURE_TIME_KEYS.some(rx => rx.test(key))) continue;
+    const date = parseSysinfoDate(value, dayFirst) || parseTimestampValue(value);
+    if (date && date.getTime() === captureMs) continue;
     others.push(`${key}: ${value}`);
   }
   if (others.length) detail += ` - also reported: ${others.join('; ')}`;

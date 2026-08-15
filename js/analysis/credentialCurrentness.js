@@ -1,6 +1,7 @@
-import { extractBaseDomain, extractDomain, dedupeDomainKey, classifyAutofillEntries, parseTimestampValue, parseArchiveTimestamp } from '../core/shared.js';
-import { EMAIL_REGEX, SCAN_EMAIL_REGEX, CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
+import { extractBaseDomain, extractDomain, dedupeDomainKey, classifyAutofillEntries, parseTimestampValue, resolveCaptureContext, getCaptureContext } from '../core/shared.js';
+import { EMAIL_REGEX, SCAN_EMAIL_REGEX } from '../core/definitions/patterns.js';
 import { classifySiteDomain } from '../core/domainCategories.js';
+import { isLiveSessionToken } from './sessionCookies.js';
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
   'gmail.com',
@@ -362,32 +363,6 @@ function isLikelyWebHost(host) {
   if (normalised === 'localhost' || normalised.endsWith('.local')) return false;
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalised)) return true;
   return normalised.includes('.') && /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(normalised);
-}
-
-function inferCaptureContext({ sysinfoEntries, rootZipName, sourceLastModified, historyMaxDate }) {
-  const entries = sysinfoEntries || {};
-  for (const [key, value] of Object.entries(entries)) {
-    if (!value || !CAPTURE_TIME_KEYS.some((pattern) => pattern.test(key))) continue;
-    const date = parseTimestampValue(value);
-    if (date) return { date, source: `sysinfo:${key}` };
-  }
-
-  const archiveDate = parseArchiveTimestamp(rootZipName || '');
-  if (archiveDate) return { date: archiveDate, source: 'archive-name' };
-
-  if (sourceLastModified) {
-    const fallback = parseTimestampValue(sourceLastModified);
-    if (fallback) return { date: fallback, source: 'source-last-modified' };
-  }
-
-  // Lower bound from history: credentials cannot have been exfiltrated before
-  // the last browsing event in the log. Used when the log lacks a sysinfo
-  // timestamp.
-  if (historyMaxDate instanceof Date && !Number.isNaN(historyMaxDate.getTime())) {
-    return { date: historyMaxDate, source: 'history-derived' };
-  }
-
-  return { date: null, source: 'none' };
 }
 
 function getEmailDomain(email) {
@@ -759,7 +734,7 @@ function summariseIdentityDomainRows(identityDomains, rows) {
       status,
       statusLabel,
       statusTone,
-      credentialCount: relatedRows.length,
+      rowCount: relatedRows.length,
       priorityCount,
       likelyCurrent,
       review,
@@ -855,7 +830,7 @@ function buildIdentityDomainScores(identitySets, siteIndexes, providerArtifacts)
     if (!baseDomain) continue;
 
     const cookieSummary = siteIndexes.cookieByBase.get(baseDomain);
-    if (cookieSummary?.validSessions || cookieSummary?.validCookies) {
+    if (cookieSummary?.liveSessions || cookieSummary?.validCookies) {
       entry.score += 4;
       entry.webSignals += 1;
       entry.sources.add('cookies');
@@ -922,7 +897,7 @@ function buildIdentityDomainScores(identitySets, siteIndexes, providerArtifacts)
 }
 
 function emptyCookieSummary() {
-  return { validSessions: 0, validCookies: 0, expiredCookies: 0 };
+  return { liveSessions: 0, validCookies: 0, expiredCookies: 0 };
 }
 function emptyHistorySummary() {
   return { latestVisitDate: null, totalEntries: 0, totalVisitCount: 0, loginHits: 0 };
@@ -942,15 +917,13 @@ function buildSiteIndexes({ cookies, history, notes, downloads, bookmarks }) {
     if (!isLikelyWebHost(host)) continue;
     const baseDomain = extractBaseDomain(host) || host;
     if (!baseDomain) continue;
+    const live = isLiveSessionToken({ sessionType: entry.sessionType, validity: entry.validityStatus });
     for (const [map, key] of [[cookieByBase, baseDomain], [cookieByHost, host]]) {
       if (!map.has(key)) map.set(key, emptyCookieSummary());
       const summary = map.get(key);
-      if (entry.validityStatus === 'valid') {
-        summary.validCookies += 1;
-        if (entry.sessionType === 'auth' || entry.sessionType === 'session') summary.validSessions += 1;
-      } else if (entry.validityStatus === 'expired') {
-        summary.expiredCookies += 1;
-      }
+      if (live) summary.liveSessions += 1;
+      if (entry.validityStatus === 'valid') summary.validCookies += 1;
+      else if (entry.validityStatus === 'expired') summary.expiredCookies += 1;
     }
   }
 
@@ -1293,8 +1266,8 @@ function scoreCredential(entry, context) {
   if (siteBase) {
     const cookieSummary = cookieMap.get(cookieKey);
     const cookieLabel = useFullHost ? siteHost : siteBase;
-    if (cookieSummary?.validSessions) {
-      addScore(result, 28, `${cookieSummary.validSessions} valid session cookie${cookieSummary.validSessions === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
+    if (cookieSummary?.liveSessions) {
+      addScore(result, 28, `${cookieSummary.liveSessions} live session cookie${cookieSummary.liveSessions === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
       result.hasLiveSession = true;
       siteSignalCount += 1;
     } else if (cookieSummary?.validCookies) {
@@ -1580,7 +1553,10 @@ function buildPrimaryIdentity({ rows, identityDomains, identitySets, sysinfoEntr
 function summariseResults(rows, identityDomains, captureContext, identitySets, sysinfoEntries) {
   const identityDomainRows = summariseIdentityDomainRows(identityDomains, rows);
   const summary = {
-    totalCredentials: rows.length,
+    // Rows scored here, not the case's credential count: these collapse by base
+    // domain and keep accounts with no captured password, which the dashboard's
+    // and the report's unique-credential tally excludes.
+    rankedRows: rows.length,
     priorityQueue: rows.filter((row) => row.isPriority).length,
     likelyCurrent: rows.filter((row) => row.bucket === 'likely-current').length,
     review: rows.filter((row) => row.bucket === 'review').length,
@@ -1603,6 +1579,7 @@ function summariseResults(rows, identityDomains, captureContext, identitySets, s
     primaryIdentity: buildPrimaryIdentity({ rows, identityDomains, identitySets, sysinfoEntries }),
     captureDate: captureContext.date,
     captureSource: captureContext.source,
+    captureDetail: captureContext.detail,
   };
 
   return summary;
@@ -1667,9 +1644,13 @@ function buildCredentialCurrentnessModel(input) {
     if (candidate && (!historyMaxDate || candidate > historyMaxDate)) historyMaxDate = candidate;
   }
 
-  const captureContext = inferCaptureContext({
+  // Score against the instant the rest of the case is judged by. Resolving one
+  // here as well is how the Lab used to drift from the dashboard and timeline;
+  // the ladder below only runs when nothing has been published yet.
+  const published = input.captureContext?.date ? input.captureContext : getCaptureContext();
+  const captureContext = published.date ? published : resolveCaptureContext({
     sysinfoEntries: input.sysinfoEntries || null,
-    rootZipName: input.rootZipName || '',
+    archiveNames: input.rootZipName || '',
     sourceLastModified: input.sourceLastModified || null,
     historyMaxDate,
   });

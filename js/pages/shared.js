@@ -32,28 +32,6 @@ export function buildShowMoreButton(remaining, pageId) {
   return `<button class="data-show-more" data-page="${pageId}">Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)</button>`;
 }
 
-// Look up a cell value in a row by matching the column header against a regex.
-// Tabular data shapes here are always `{ row, headers }`. Cookie datasets share
-// one header array across every row, so resolved positions are cached against it
-// rather than re-scanned per row in 100k-row loops.
-const headerIndexCache = new WeakMap();
-
-export function getFieldByPattern({ row, headers }, pattern) {
-  let byPattern = headerIndexCache.get(headers);
-  if (!byPattern) {
-    byPattern = new WeakMap();
-    headerIndexCache.set(headers, byPattern);
-  }
-
-  let index = byPattern.get(pattern);
-  if (index === undefined) {
-    index = headers.findIndex((header) => pattern.test(header));
-    byPattern.set(pattern, index);
-  }
-
-  return index >= 0 ? (row[index] || '') : '';
-}
-
 export function buildRowsHtml(rowBuilder, items, start, end) {
   let html = '';
   const limit = Math.min(end, items.length);

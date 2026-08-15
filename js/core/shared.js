@@ -1,4 +1,5 @@
 import { CAPTURE_TIME_KEYS, EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
+import { on } from './state.js';
 
 const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
 const STRICT_TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
@@ -1041,15 +1042,9 @@ function getCaptureContext() {
   return captureContext;
 }
 
-// Capture date for cookie validity. Falls back to the archive name and the
-// newest file time only while analysis has yet to publish its context.
-function deriveCaptureDate(nodes, rootName) {
-  if (captureContext.date) return captureContext.date;
-  return resolveCaptureContext({
-    archiveNames: rootName,
-    sourceLastModified: newestNodeModified(nodes),
-  }).date;
-}
+// One case's capture instant must never be read while the next one is loading,
+// so it dies with the case that produced it.
+on('reset', () => { captureContext = EMPTY_CAPTURE_CONTEXT; });
 
 // Cookie column positions. Headers win; a file whose headers name nothing we
 // recognise falls back to the fixed Netscape order, 7 columns with the
@@ -1562,9 +1557,10 @@ export {
   isPlausibleCaptureDate,
   newestNodeModified,
   resolveCaptureContext,
+  sysinfoWritesDayFirst,
+  parseSysinfoDate,
   setCaptureContext,
   getCaptureContext,
-  deriveCaptureDate,
   collapseSingleWrapper,
   downloadBlob,
   topN,

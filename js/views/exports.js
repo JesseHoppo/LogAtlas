@@ -143,6 +143,9 @@ function buildCookStats(cookies) {
       expired: analysed.totalExpired,
       session: analysed.totalSession,
       unknown: analysed.totalUnknown,
+      // Domain-less rows are already inside the four buckets; kept only so the
+      // report can say how many carried no domain.
+      noDomain: analysed.totalNoDomain || 0,
       sessionTokens: analysed.sessionTokens,
       liveSessionTokens: analysed.validSessionTokens,
       fileCount: analysed.fileCount,
@@ -168,6 +171,7 @@ function buildCookStats(cookies) {
   return {
     total: cookies.rows.length,
     valid, expired, session, unknown,
+    noDomain: 0,
     sessionTokens, liveSessionTokens,
     fileCount: cookies.fileCount,
     topDomains: Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
@@ -359,6 +363,7 @@ function buildLogSummaryHtml(data) {
         <div class="stat"><span class="stat-num expired">${ck.expired.toLocaleString()}</span> expired</div>
         <div class="stat"><span class="stat-num">${ck.session.toLocaleString()}</span> no expiry</div>
         ${ck.unknown > 0 ? `<div class="stat"><span class="stat-num">${ck.unknown.toLocaleString()}</span> unparseable expiry</div>` : ''}
+        ${ck.noDomain > 0 ? `<div class="stat"><span class="stat-num">${ck.noDomain.toLocaleString()}</span> of which carried no domain</div>` : ''}
         <div class="stat"><span class="stat-num">${ck.fileCount}</span> source file(s)</div>
       </div>
       ${sessionNote}
