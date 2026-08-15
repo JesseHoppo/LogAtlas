@@ -114,6 +114,54 @@ export function isSeparatorOnlyLine(line) {
   return /^[=\-*~_]{3,}\s*$/.test(String(line || '').trim());
 }
 
+// The first line that is unmistakably a record rather than banner text. Tab
+// columns and the credential key vocabulary are the only shapes that qualify;
+// a bare URL does not, because banners advertise a Telegram channel on their
+// own third line.
+const RECORD_LINE_PATTERNS = [
+  /^[^\t]*\t[^\t]*\t[^\t]*\t/,
+  /^\s*(?:url|uri|host(?:name)?|site|website|domain|login|user(?:name)?|pass(?:word|wd)?|pwd|soft(?:ware)?|application|browser|profile)\s*[:=]\s*\S/i,
+];
+
+// The raw combolist shape, host:user:pass. Scanned rather than matched: three
+// greedy runs around literal colons backtrack catastrophically on the long
+// unbroken tokens these dumps are full of.
+function isCombolistLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 400 || /\s/.test(trimmed)) return false;
+  let colons = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed.charCodeAt(i) === 58) colons++;
+  }
+  return colons >= 2;
+}
+
+function isRecordLine(line) {
+  return RECORD_LINE_PATTERNS.some(rx => rx.test(line)) || isCombolistLine(line);
+}
+
+// The banner a stealer stamps above the first record of a dump it exports —
+// ASCII art, resale handle, panel link. Everything past that record is victim
+// content, which must never be able to name the family: a captured credential
+// or cookie domain would otherwise decide attribution.
+export function brandingHeaderRegion(text, maxChars = 2000, maxLines = 60) {
+  if (!text) return '';
+  // Split only the head; these files run to megabytes.
+  const lines = String(text).slice(0, maxChars * 2).split('\n');
+  const kept = [];
+  let chars = 0;
+
+  for (let i = 0; i < lines.length && i < maxLines; i++) {
+    const line = lines[i];
+    if (isRecordLine(line)) break;
+    chars += line.length + 1;
+    if (chars > maxChars) break;
+    kept.push(line);
+  }
+
+  return kept.join('\n');
+}
+
 function normalisePasswordFieldKey(key) {
   return String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }

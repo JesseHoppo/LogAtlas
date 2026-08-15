@@ -21,7 +21,7 @@ import {
   parseClipboardFile,
 } from '../transforms/structured.js';
 import { parseCreditCardFile } from '../transforms/cards.js';
-import { isPromotionalNoiseLine, stripLeadingNoiseLines } from '../transforms/shared.js';
+import { isPromotionalNoiseLine, stripLeadingNoiseLines, brandingHeaderRegion } from '../transforms/shared.js';
 import { parseSoftwareLines, parseProcessLines, evaluateInlineSections } from './logEvaluators.js';
 import { parseWalletArtifact } from './walletArtifacts.js';
 import { parseNoteArtifact, summariseNotes, classifyGrabbedFile, summariseGrabbedFiles } from './contextArtifacts.js';
@@ -63,6 +63,11 @@ import {
 // single very large file doesn't block paint. High enough that ordinary files
 // never yield.
 const ROW_YIELD_INTERVAL = 5000;
+
+// Total clipboard text the family matcher may see, across all clipboard files.
+// A banner is a handful of short lines; anything larger is what the victim
+// copied, and must not be able to name the stealer.
+const CLIPBOARD_BRANDING_BUDGET = 1536;
 import { inferServiceFromPath, serviceFromTokenType } from '../core/serviceRegistry.js';
 import { classifyCookie, isLiveSessionToken } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
@@ -1424,16 +1429,18 @@ async function runFingerprint(fileTree, rootName) {
   }
 
   // Clipboard text — some families paste a self-id banner (e.g. Raccoon
-  // OTTOMAN) as their calling card. Cap to keep memory bounded.
+  // OTTOMAN) as their calling card. There is no record shape to cut on here, so
+  // a tight cap is the only defence: branding is stamped at the top.
   if (ctx.clipboardNodes.length > 0) {
     const clipTexts = [];
-    let budget = 8192;
+    let budget = CLIPBOARD_BRANDING_BUDGET;
     for (const node of ctx.clipboardNodes) {
       if (budget <= 0) break;
       try {
         const text = await decodeNodeText(node, null, false);
         if (text == null) continue;
-        const slice = text.slice(0, budget);
+        const slice = brandingHeaderRegion(text, Math.min(budget, 512), 12);
+        if (!slice) continue;
         clipTexts.push(slice);
         budget -= slice.length;
       } catch {
@@ -1449,7 +1456,7 @@ async function runFingerprint(fileTree, rootName) {
   if (ctx.passwordNode) {
     try {
       const text = await decodeNodeText(ctx.passwordNode, null, false);
-      if (text != null) ctx.passwordHeaderText = text.slice(0, 2000);
+      if (text != null) ctx.passwordHeaderText = brandingHeaderRegion(text);
     } catch {
       // skip
     }
@@ -1465,7 +1472,8 @@ async function runFingerprint(fileTree, rootName) {
       try {
         const text = await decodeNodeText(node, null, false);
         if (text == null) continue;
-        const slice = text.slice(0, 2000);
+        const slice = brandingHeaderRegion(text);
+        if (!slice) continue;
         headerTexts.push(slice);
         budget -= slice.length;
       } catch {
