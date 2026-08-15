@@ -1,6 +1,6 @@
 // Post-extraction analysis
 
-import { emit } from '../core/state.js';
+import { emit, state } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { HINT_KEYS } from '../files/fileTypeRegistry.js';
 import {
@@ -28,7 +28,6 @@ import {
   canonicaliseAutofillPhone,
   classifyAutofillEntries,
   credentialColumnIndices,
-  decodeBufferWithFallback,
   extractBaseDomain,
   baseDomainFromUrl,
   extractDomain,
@@ -46,10 +45,15 @@ import {
   userNameAppearsInPath,
   parseSoftwareLine,
   parseTimestampValue,
-  deriveCaptureDate,
+  newestNodeModified,
+  resolveCaptureContext,
+  setCaptureContext,
+  decodeNodeCached,
   parseNodeCached,
   yieldToEventLoop,
   checkCookieValidity,
+  cookieColumnMap,
+  cookieDedupeKey,
   collapseSingleWrapper,
   topN,
 } from '../core/shared.js';
@@ -59,7 +63,7 @@ import {
 // never yield.
 const ROW_YIELD_INTERVAL = 5000;
 import { inferServiceFromPath, serviceFromTokenType } from '../core/serviceRegistry.js';
-import { classifyCookie } from './sessionCookies.js';
+import { classifyCookie, isLiveSessionToken } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
 import { classifySiteDomain } from '../core/domainCategories.js';
 import { detectNationalIds } from './structuredPii.js';
@@ -99,7 +103,7 @@ function recordReadFailure(node, path) {
 async function decodeNodeText(node, path, record = true) {
   const content = await loadFileContent(node);
   if (!content) { if (record) recordReadFailure(node, path); return null; }
-  return decodeBufferWithFallback(content);
+  return decodeNodeCached(node, content);
 }
 
 // Sentinels stealers emit when no username was captured. Filtered from
@@ -212,7 +216,7 @@ async function analyseCredentials(nodes) {
 
   for (const { node, path } of nodes) {
     try {
-      const text = await loadFileContent(node).then(c => c == null ? null : decodeBufferWithFallback(c));
+      const text = await loadFileContent(node).then(c => c == null ? null : decodeNodeCached(node, c));
       if (text == null) {
         // Surface on the global read-error channel like every other analyser,
         // while keeping the local list for the credentials page's parse reasons.
@@ -351,7 +355,7 @@ async function analyseCredentials(nodes) {
 
 // Cookies
 
-async function analyseCookies(nodes, rootName = '') {
+async function analyseCookies(nodes, captureDate = null) {
   if (nodes.length === 0) {
     emit('analysis:cookies', {
       fileCount: 0, totalCookies: 0, uniqueDomains: 0, topDomains: [],
@@ -372,8 +376,6 @@ async function analyseCookies(nodes, rootName = '') {
   let trackingTokens = 0;
   let validTrackingTokens = 0;
 
-  const captureDate = deriveCaptureDate(nodes, rootName);
-
   for (const { node, path } of nodes) {
     try {
       const text = await decodeNodeText(node, path);
@@ -383,22 +385,16 @@ async function analyseCookies(nodes, rootName = '') {
 
       parsedCount++;
 
-      const domainIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
-      const expiresIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
-      const nameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
-      const valueIdx = parsed.headers.findIndex(h => /^value$/i.test(h));
+      const columnMap = cookieColumnMap(parsed.headers, parsed.rows[0]?.length || 0);
 
       let rowIndex = 0;
       for (const row of parsed.rows) {
         if (++rowIndex % ROW_YIELD_INTERVAL === 0) await yieldToEventLoop();
-        const domain = (domainIdx >= 0 ? (row[domainIdx] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase();
-        const cookieName = nameIdx >= 0 ? row[nameIdx] : '';
-        const expiresVal = expiresIdx >= 0 ? row[expiresIdx] : null;
-        const cookieValue = valueIdx >= 0 ? (row[valueIdx] || '') : '';
+        const domain = (columnMap.domain >= 0 ? (row[columnMap.domain] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase();
+        const cookieName = columnMap.name >= 0 ? row[columnMap.name] : '';
+        const expiresVal = columnMap.expires >= 0 ? row[columnMap.expires] : null;
 
-        // Collapse per-browser/aggregate duplicates and Netscape .txt + CDP
-        // _json.txt twins by keying each cookie on its content.
-        const dedupeKey = [domain, cookieName, cookieValue, expiresVal ?? ''].join(DEDUPE_KEY_SEP);
+        const dedupeKey = cookieDedupeKey(row, columnMap);
         if (cookieSeen.has(dedupeKey)) continue;
         cookieSeen.add(dedupeKey);
 
@@ -416,14 +412,13 @@ async function analyseCookies(nodes, rootName = '') {
         else if (validity.status === 'session') domainStats[domain].session++;
         else domainStats[domain].unknown++;
 
-        const live = validity.status === 'valid' || validity.status === 'session';
         const sessionType = classifyCookie(cookieName, domain);
         if (sessionType === 'auth' || sessionType === 'session') {
           sessionTokens++;
-          if (live) validSessionTokens++;
+          if (isLiveSessionToken({ sessionType, validity })) validSessionTokens++;
         } else if (sessionType === 'tracking') {
           trackingTokens++;
-          if (live) validTrackingTokens++;
+          if (validity.status === 'valid' || validity.status === 'session') validTrackingTokens++;
         }
       }
     } catch {
@@ -491,10 +486,11 @@ async function analyseCookies(nodes, rootName = '') {
 
 // History
 
+// Returns the latest visit date, which is the last-resort capture evidence.
 async function analyseHistory(nodes) {
   if (nodes.length === 0) {
     emit('analysis:history', null);
-    return;
+    return null;
   }
 
   const entries = [];
@@ -505,7 +501,7 @@ async function analyseHistory(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseHistoryFile(text, node._parseConfig || null);
+      const parsed = parseNodeCached(node, 'history', parseHistoryFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -515,7 +511,9 @@ async function analyseHistory(nodes) {
       const visitsIdx = parsed.headers.findIndex(h => /^(visit.?count|visits?|count)$/i.test(h));
       const lastIdx = parsed.headers.findIndex(h => /^(last.?visit|date|time|timestamp)$/i.test(h));
 
+      let rowIndex = 0;
       for (const row of parsed.rows) {
+        if (++rowIndex % ROW_YIELD_INTERVAL === 0) await yieldToEventLoop();
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
         if (!url) continue;
         const title = titleIdx >= 0 ? (row[titleIdx] || '').trim() : '';
@@ -533,7 +531,7 @@ async function analyseHistory(nodes) {
 
   if (entries.length === 0) {
     emit('analysis:history', null);
-    return;
+    return null;
   }
 
   const datedEntries = entries
@@ -545,7 +543,7 @@ async function analyseHistory(nodes) {
     lastVisit: entry.lastVisit,
     lastVisitDate: entry.lastVisitDate ? entry.lastVisitDate.toISOString() : null,
   }));
-  const latestVisitDate = datedEntries[0]?.lastVisitDate?.toISOString() || null;
+  const latestVisit = datedEntries[0]?.lastVisitDate || null;
 
   emit('analysis:history', {
     fileCount,
@@ -553,17 +551,20 @@ async function analyseHistory(nodes) {
     uniqueDomains: new Set(domains).size,
     topDomains: topN(domains, LIMITS.topDomains),
     mostRecent,
-    latestVisitDate,
+    latestVisitDate: latestVisit ? latestVisit.toISOString() : null,
   });
+
+  return latestVisit;
 }
 
 // System info
 
+// Returns the merged sysinfo entries, which carry the capture timestamp.
 async function analyseSystemInfo(nodes, rootZipName = '') {
   if (nodes.length === 0) {
     emit('analysis:sysinfo', null);
     extractInlineSections('');
-    return;
+    return null;
   }
 
   const merged = {};
@@ -596,7 +597,7 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
   if (Object.keys(merged).length === 0) {
     emit('analysis:sysinfo', null);
     extractInlineSections('');
-    return;
+    return null;
   }
 
   const identityNotes = sanitiseIdentityEntries(merged, rootZipName);
@@ -607,6 +608,8 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
   emit('analysis:sysinfo', { entries: merged, fields, sourceFiles, sysinfoText: combinedText, identityNotes, iocs });
 
   extractInlineSections(combinedText);
+
+  return merged;
 }
 
 const IOC_FIELD_KEYS = {
@@ -915,7 +918,7 @@ async function analyseClipboard(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseClipboardFile(text);
+      const parsed = parseNodeCached(node, 'clipboard', parseClipboardFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -961,11 +964,13 @@ async function analyseAutofills(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseAutofillFile(text, node._parseConfig || null);
+      const parsed = parseNodeCached(node, 'autofill', parseAutofillFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       const fileEntries = [];
+      let rowIndex = 0;
       for (const row of parsed.rows) {
+        if (++rowIndex % ROW_YIELD_INTERVAL === 0) await yieldToEventLoop();
         const name = (row[0] || '').trim();
         const value = (row[1] || '').trim();
         if (!name || !value) continue;
@@ -1066,7 +1071,7 @@ async function analyseDomainDetect(nodes, credCookieNodes = []) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseDomainDetectFile(text);
+      const parsed = parseNodeCached(node, 'domainDetect', parseDomainDetectFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -1114,7 +1119,7 @@ async function synthesiseDomainDetect(nodes) {
 
       let hosts = [];
       if (kind === 'cookie') {
-        const domainIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+        const domainIdx = cookieColumnMap(parsed.headers, parsed.rows[0]?.length || 0).domain;
         hosts = parsed.rows.map(r => (domainIdx >= 0 ? (r[domainIdx] || '') : (r[0] || '')).replace(/^\./, ''));
       } else {
         const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
@@ -1165,7 +1170,7 @@ async function analyseCreditCards(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseCreditCardFile(text);
+      const parsed = parseNodeCached(node, 'card', parseCreditCardFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -1219,7 +1224,7 @@ async function analyseBookmarks(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseBookmarkFile(text);
+      const parsed = parseNodeCached(node, 'bookmark', parseBookmarkFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -1268,7 +1273,7 @@ async function analyseBrowserMetadata(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseBrowserMetadataFile(text);
+      const parsed = parseNodeCached(node, 'browserMetadata', parseBrowserMetadataFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -1334,7 +1339,8 @@ async function analyseAccountTokens(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseAccountTokenFile(text, path || node.name) || parseBareTokenFile(text);
+      const hint = path || node.name;
+      const parsed = parseNodeCached(node, 'token', parseAccountTokenFile, text, hint) || parseBareTokenFile(text);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -1386,7 +1392,7 @@ async function analyseServiceArtifacts(nodes, ftpNodes = []) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseServiceArtifactFile(text);
+      const parsed = parseNodeCached(node, 'service', parseServiceArtifactFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -1406,7 +1412,7 @@ async function analyseServiceArtifacts(nodes, ftpNodes = []) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseFileZillaSiteManager(text);
+      const parsed = parseNodeCached(node, 'filezilla', parseFileZillaSiteManager, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
@@ -1449,7 +1455,7 @@ async function analyseWalletArtifacts(nodes) {
     try {
       const content = await loadFileContent(node);
       if (!content) { recordReadFailure(node, path); continue; }
-      const entry = parseWalletArtifact(content, node.name || '', path || node.name || '');
+      const entry = parseNodeCached(node, 'wallet', () => parseWalletArtifact(content, node.name || '', path || node.name || ''), null, null);
       if (!entry) continue;
       entries.push(entry);
       services.push(entry.service || 'Unknown');
@@ -1490,7 +1496,7 @@ async function analyseDownloads(nodes) {
     try {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
-      const parsed = parseDownloadFile(text);
+      const parsed = parseNodeCached(node, 'download', parseDownloadFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
 
       parsedCount++;
@@ -1736,7 +1742,37 @@ async function analyseProcessList(nodes) {
   emit('analysis:processList', { fileCount: parsedCount, entries, totalCount: entries.length, uniqueCount });
 }
 
-function runAnalysis(fileTree, rootName) {
+// Resolve the case's capture instant once, here, where the collapsed root name
+// is known, and publish it so cookie validity, the dashboard and the pages all
+// judge expiry against the same moment with the same provenance.
+function publishCaptureContext({ sysinfoEntries, historyMaxDate, archiveNames, nodes }) {
+  const context = resolveCaptureContext({
+    sysinfoEntries,
+    archiveNames,
+    sourceLastModified: [newestNodeModified(nodes), state.sourceFile?.lastModified || null],
+    historyMaxDate,
+  });
+  setCaptureContext(context);
+  emit('analysis:capture', {
+    date: context.date,
+    iso: context.date ? context.date.toISOString() : null,
+    source: context.source,
+    detail: context.detail,
+  });
+  return context;
+}
+
+function reportRejections(results) {
+  return results.map((result) => {
+    if (result.status === 'rejected') {
+      console.error('Analysis task failed:', result.reason);
+      return null;
+    }
+    return result.value;
+  });
+}
+
+async function runAnalysis(fileTree, rootName) {
   const root = collapseSingleWrapper(fileTree) || fileTree;
   const treeRootName = root === fileTree ? rootName : (root.name || rootName);
   const buckets = bucketHintedNodes(root, treeRootName);
@@ -1749,11 +1785,24 @@ function runAnalysis(fileTree, rootName) {
     ...buckets._cookieFileHint.map(n => ({ ...n, kind: 'cookie' })),
   ];
 
+  // Sysinfo and history hold the capture evidence, so they run before the
+  // analysers whose numbers depend on the capture instant. Their parses are
+  // cached on the nodes, so nothing is read or parsed twice.
+  const [sysinfoEntries, historyMaxDate] = reportRejections(await Promise.allSettled([
+    analyseSystemInfo(buckets._sysInfoHint, treeRootName),
+    analyseHistory(buckets._historyHint),
+  ]));
+
+  const capture = publishCaptureContext({
+    sysinfoEntries,
+    historyMaxDate,
+    archiveNames: [treeRootName, rootName, state.rootZipName, state.sourceFile?.name],
+    nodes: Object.values(buckets).flat(),
+  });
+
   const tasks = [
     analyseCredentials(buckets._passwordFileHint),
-    analyseCookies(buckets._cookieFileHint, treeRootName),
-    analyseHistory(buckets._historyHint),
-    analyseSystemInfo(buckets._sysInfoHint, treeRootName),
+    analyseCookies(buckets._cookieFileHint, capture.date),
     analyseAutofills(buckets._autofillHint),
     analyseNotes(buckets._notesHint),
     analyseBookmarks(buckets._bookmarkHint),
@@ -1771,17 +1820,12 @@ function runAnalysis(fileTree, rootName) {
     runFingerprint(root, treeRootName),
   ];
 
-  return Promise.allSettled(tasks).then((results) => {
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        console.error('Analysis task failed:', result.reason);
-      }
-    }
-    const seen = new Set();
-    const dedupedFailures = readFailures.filter(f => { if (seen.has(f.path)) return false; seen.add(f.path); return true; });
-    emit('analysis:readErrors', { failedFiles: dedupedFailures });
-    emit('analysis:complete');
-  });
+  reportRejections(await Promise.allSettled(tasks));
+
+  const seen = new Set();
+  const dedupedFailures = readFailures.filter(f => { if (seen.has(f.path)) return false; seen.add(f.path); return true; });
+  emit('analysis:readErrors', { failedFiles: dedupedFailures });
+  emit('analysis:complete');
 }
 
 export { runAnalysis };

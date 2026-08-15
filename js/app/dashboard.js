@@ -2,8 +2,7 @@
 
 import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
-import { copyToClipboard, parseTimestampValue, parseArchiveTimestamp, extractCountryFromFilename, isValidCountryCode, classifyIpAddress } from '../core/shared.js';
-import { CAPTURE_TIME_KEYS } from '../core/definitions/patterns.js';
+import { copyToClipboard, extractCountryFromFilename, isValidCountryCode, classifyIpAddress } from '../core/shared.js';
 import { escapeHtml, escapeAttr, capitalise } from '../core/utils.js';
 import { formatDateTimeLabel } from '../pages/shared.js';
 let sysInfoSourcePath = null;
@@ -40,6 +39,7 @@ const overviewState = {
   autofill: null,
   identity: null,
   readErrors: null,
+  capture: null,
 };
 
 function setOverviewState(key, value) {
@@ -65,33 +65,6 @@ function joinNaturalList(values, conjunction = 'and') {
   if (items.length === 1) return items[0];
   if (items.length === 2) return `${items[0]} ${conjunction} ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, ${conjunction} ${items[items.length - 1]}`;
-}
-
-// Only a sysinfo capture key is evidence of when the log was taken; the rest
-// are guesses and the chip says so.
-const CAPTURE_SOURCE_NOTES = {
-  'archive-name': 'archive name',
-  'file-modified': 'file modified',
-};
-
-function inferLikelyExfilDate(sysinfo) {
-  const sysinfoDate = findSysinfoValue(sysinfo, CAPTURE_TIME_KEYS);
-  const parsedSysinfoDate = parseTimestampValue(sysinfoDate);
-  if (parsedSysinfoDate) return { date: parsedSysinfoDate, source: 'sysinfo' };
-
-  // `rootZipName` may be a collapsed wrapper folder, so try the uploaded
-  // archive name too.
-  for (const name of [state.rootZipName, state.sourceFile?.name]) {
-    const archiveDate = parseArchiveTimestamp(name || '');
-    if (archiveDate) return { date: archiveDate, source: 'archive-name' };
-  }
-
-  if (state.sourceFile?.lastModified) {
-    const fallback = new Date(state.sourceFile.lastModified);
-    if (!isNaN(fallback.getTime())) return { date: fallback, source: 'file-modified' };
-  }
-
-  return null;
 }
 
 function findSysinfoValue(data, patterns) {
@@ -121,10 +94,11 @@ function renderCaseContext({ computer, resolvedUser, userSource, countryInfo, ex
   if (computer) push('host', computer);
   if (resolvedUser) push('user', userSource && userSource !== 'sysinfo' ? `${resolvedUser} (${userSource})` : resolvedUser);
   if (countryInfo?.value) push('location', countryInfo.source === 'sysinfo' ? countryInfo.value : `${countryInfo.value} (${countryInfo.source})`);
+  // Only a sysinfo capture key is evidence of when the log was taken; the rest
+  // are inference and the chip names which one.
   if (exfilInfo?.date) {
-    const sourceNote = CAPTURE_SOURCE_NOTES[exfilInfo.source];
     const label = formatDateTimeLabel(exfilInfo.date);
-    push('captured', sourceNote ? `${label} (${sourceNote})` : label);
+    push('captured', exfilInfo.source === 'sysinfo' ? label : `${label} (${exfilInfo.source})`);
   }
   if (state.rootZipName) push('source', state.rootZipName);
   if (items.length === 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
@@ -168,8 +142,8 @@ function renderVerdictCards({ credentials, cookies, cards, history, grabbed, scr
       label: 'Live sessions',
       value: live.toLocaleString(),
       note: live > 0
-        ? 'Session tokens still valid at capture. May grant account access without a password; verify before relying.'
-        : 'No session tokens were still valid at capture.',
+        ? 'Session tokens live at capture: unexpired, or browser-session cookies carrying no expiry. May grant account access without a password; verify before relying.'
+        : 'No session tokens were live at capture.',
       targets: ['cookies'],
     }));
   }
@@ -397,7 +371,7 @@ function renderTriageOverview() {
   const userSource = osUser ? 'sysinfo' : (pi?.userSource || null);
   const computer = findSysinfoValue(sysinfo, [/^computer\s*name$/i, /^pc\s*name$/i, /^machine\s*name$/i]);
   const countryInfo = deriveVictimCountry(sysinfo, autofill);
-  const exfilInfo = inferLikelyExfilDate(sysinfo);
+  const exfilInfo = overviewState.capture;
 
   renderCaseContext({ computer, resolvedUser, userSource, countryInfo, exfilInfo });
   renderVerdictCards({ credentials, cookies, cards, history, grabbed, screenshot, autofill, nationalIds: credentials?.nationalIds });
@@ -828,7 +802,7 @@ export function initDashboard() {
       if (data.sessionTokens > 0) {
         summaryHtml += ` &mdash; <span class="cookie-auth">${data.sessionTokens.toLocaleString()} session token${data.sessionTokens !== 1 ? 's' : ''}</span>`;
         if (data.validSessionTokens > 0) {
-          summaryHtml += ` (<span class="cookie-auth-valid">${data.validSessionTokens.toLocaleString()} valid</span>)`;
+          summaryHtml += ` (<span class="cookie-auth-valid">${data.validSessionTokens.toLocaleString()} live</span>)`;
         }
       }
       if (data.trackingTokens > 0) {
@@ -843,6 +817,10 @@ export function initDashboard() {
 
   on('analysis:history', (data) => {
     setOverviewState('history', data);
+  });
+
+  on('analysis:capture', (data) => {
+    setOverviewState('capture', data);
   });
 
   on('analysis:sysinfo', (data) => {

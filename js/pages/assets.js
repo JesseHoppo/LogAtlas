@@ -8,8 +8,10 @@ import {
 import { parseCreditCardFile } from '../transforms/cards.js';
 import { parseWalletArtifact } from '../analysis/walletArtifacts.js';
 import {
+  decodeBufferWithFallback,
   inferBrowserFromPath,
   inferProfileFromPath,
+  parseNodeCached,
 } from '../core/shared.js';
 import { inferServiceFromPath, serviceFromTokenType } from '../core/serviceRegistry.js';
 import {
@@ -101,9 +103,14 @@ const pageRegistry = createPagedCollectionRegistry({
   },
 });
 
+// Raw bytes rather than text: these loaders decode with the same fallback the
+// analysis pass uses, so the parse both sides share is built from the same text.
+const RAW = { decode: false };
+
 async function loadAccountTokensData(fileTree, rootName) {
-  accountTokensData = await collectAndParse(fileTree, rootName, '_accountTokenHint', (text, node, path) => {
-    const parsed = parseAccountTokenFile(text, path || node.name);
+  accountTokensData = await collectAndParse(fileTree, rootName, '_accountTokenHint', (content, node, path) => {
+    const text = decodeBufferWithFallback(content);
+    const parsed = parseNodeCached(node, 'token', parseAccountTokenFile, text, path || node.name);
     if (!parsed || parsed.rows.length === 0) return null;
     const pathService = inferServiceFromPath(path || node.name);
     const browser = inferBrowserFromPath(path || node.name);
@@ -119,12 +126,13 @@ async function loadAccountTokensData(fileTree, rootName) {
       rows.push({ service, type, value, accountId, browser, profile, note, source: path });
     }
     return rows;
-  });
+  }, RAW);
 }
 
 async function loadServiceArtifactsData(fileTree, rootName) {
-  serviceArtifactsData = await collectAndParse(fileTree, rootName, '_serviceArtifactHint', (text, node, path) => {
-    const parsed = parseServiceArtifactFile(text);
+  serviceArtifactsData = await collectAndParse(fileTree, rootName, '_serviceArtifactHint', (content, node, path) => {
+    const text = decodeBufferWithFallback(content);
+    const parsed = parseNodeCached(node, 'service', parseServiceArtifactFile, text, null);
     if (!parsed || parsed.rows.length === 0) return null;
     const service = inferServiceFromPath(path || node.name) || 'Unknown';
     const artifactType = inferServiceArtifactType(path || node.name);
@@ -137,19 +145,25 @@ async function loadServiceArtifactsData(fileTree, rootName) {
       rows.push({ service, artifactType, section, key, value, source: path });
     }
     return rows;
-  });
+  }, RAW);
 }
 
 async function loadWalletArtifactsData(fileTree, rootName) {
   walletArtifactsData = await collectAndParse(fileTree, rootName, '_cryptoWalletHint', (content, node, path) => {
-    const parsed = parseWalletArtifact(content, node.name, path);
+    // Keyed on the source path: it lands in the parsed entry, and the analysis
+    // pass walks a collapsed root, so a shared entry built from the other
+    // side's path would quietly relabel this row's source.
+    const parsed = parseNodeCached(node, 'wallet',
+      (bytes, sourcePath) => parseWalletArtifact(bytes, node.name || '', sourcePath),
+      content, path || node.name || '');
     return parsed || null;
-  }, { decode: false });
+  }, RAW);
 }
 
 async function loadCreditCardsData(fileTree, rootName) {
-  creditCardsData = await collectAndParse(fileTree, rootName, '_creditCardHint', (text, node, path) => {
-    const parsed = parseCreditCardFile(text);
+  creditCardsData = await collectAndParse(fileTree, rootName, '_creditCardHint', (content, node, path) => {
+    const text = decodeBufferWithFallback(content);
+    const parsed = parseNodeCached(node, 'card', parseCreditCardFile, text, null);
     if (!parsed || parsed.rows.length === 0) return null;
     const rows = [];
     for (const row of parsed.rows) {
@@ -162,7 +176,7 @@ async function loadCreditCardsData(fileTree, rootName) {
       rows.push({ cardNumber, last4: extractCardLast4(cardNumber), nameOnCard, cvc, expiration, filePath, browser: inferBrowserFromPath(filePath || path), source: path });
     }
     return rows;
-  });
+  }, RAW);
 }
 
 function accountTokenRowBuilder({ service, type, value, accountId, browser, profile, note, source }) {

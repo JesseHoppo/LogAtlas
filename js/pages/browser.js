@@ -9,12 +9,13 @@ import {
 } from '../transforms/structured.js';
 import {
   collectHintedNodes,
+  decodeBufferWithFallback,
   extractDomain,
   baseDomainFromUrl,
   inferBrowserFromPath,
   inferProfileFromPath,
+  parseNodeCached,
   parseTimestampValue,
-  SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 import {
@@ -98,8 +99,8 @@ async function loadHistoryData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseHistoryFile(text, node._parseConfig || null);
+      const text = decodeBufferWithFallback(content);
+      const parsed = parseNodeCached(node, 'history', parseHistoryFile, text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         fileCount++;
         const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
@@ -155,8 +156,8 @@ async function loadBookmarksData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseBookmarkFile(text);
+      const text = decodeBufferWithFallback(content);
+      const parsed = parseNodeCached(node, 'bookmark', parseBookmarkFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
       fileCount++;
       const browser = inferBrowserFromPath(path || node.name);
@@ -183,8 +184,8 @@ async function loadBrowserMetadataData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = SHARED_TEXT_DECODER.decode(content);
-      const parsed = parseBrowserMetadataFile(text);
+      const text = decodeBufferWithFallback(content);
+      const parsed = parseNodeCached(node, 'browserMetadata', parseBrowserMetadataFile, text, null);
       if (!parsed || parsed.rows.length === 0) continue;
       fileCount++;
       const browser = inferBrowserFromPath(path || node.name);

@@ -23,4 +23,14 @@ function classifyCookie(cookieName, cookieDomain) {
   return null;
 }
 
-export { classifyCookie };
+// The one test for "this token would still have logged someone in". A cookie
+// that was unexpired at capture qualifies, and so does a browser-session cookie:
+// it carried no expiry at all, so it was live in the running browser the moment
+// the log was taken. Expired cookies and unreadable expiries do not.
+function isLiveSessionToken({ sessionType, validity } = {}) {
+  if (sessionType !== 'auth' && sessionType !== 'session') return false;
+  const status = typeof validity === 'string' ? validity : validity?.status;
+  return status === 'valid' || status === 'session';
+}
+
+export { classifyCookie, isLiveSessionToken };

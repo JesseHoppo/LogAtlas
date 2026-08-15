@@ -1,18 +1,18 @@
 import { state, on } from '../core/state.js';
-import { bindDebouncedInput, downloadCsvRows, formatDateLabel, formatDateTimeLabel, getFieldByPattern } from '../pages/shared.js';
+import { bindDebouncedInput, downloadCsvRows, formatDateLabel, formatDateTimeLabel } from '../pages/shared.js';
 import { getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData } from '../pages/browser.js';
 import { getGrabbedFilesData, getScreenshotsData } from '../pages/activity.js';
-import { extractBaseDomain, baseDomainFromUrl, collectFileNodes, normaliseTimeZone, parseTimestampValue } from '../core/shared.js';
+import { extractBaseDomain, baseDomainFromUrl, collectFileNodes, isPlausibleCaptureDate, normaliseTimeZone, parseTimestampValue } from '../core/shared.js';
+import { isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { escapeHtml } from '../core/utils.js';
 import { CAPTURE_TIME_KEYS, IGNORE_DATE_KEYS, FIELD_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
 
 let sysinfoEntries = null;
+let capture = null;
 let timelineEvents = [];
 let timelineBuilt = false;
 let activeCategories = new Set(['stealer', 'file', 'cookie', 'history', 'notes', 'screenshots']);
-const MIN_TIMELINE_DATE_MS = Date.UTC(1990, 0, 1);
-const MAX_FUTURE_SKEW_MS = 366 * 24 * 60 * 60 * 1000;
 
 const CATEGORIES = {
   stealer: { label: 'Stealer', badgeClass: 'timeline-event-badge-stealer' },
@@ -27,47 +27,41 @@ function dateKey(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function isPlausibleTimelineDate(date) {
-  if (!(date instanceof Date) || isNaN(date.getTime())) return false;
-  const time = date.getTime();
-  return time >= MIN_TIMELINE_DATE_MS && time <= Date.now() + MAX_FUTURE_SKEW_MS;
-}
-
-function extractStealerEvents(entries) {
-  if (!entries) return [];
-
-  let timezone = '';
-  for (const [key, value] of Object.entries(entries)) {
+function localTimeZoneLabel(entries) {
+  for (const [key, value] of Object.entries(entries || {})) {
     if (/^(time\s*zone|timezone|utc)$/i.test(key) && value) {
-      const normalised = normaliseTimeZone(value);
-      timezone = normalised.label || value.trim();
-      break;
+      return normaliseTimeZone(value).label || value.trim();
     }
   }
+  return '';
+}
 
-  const captures = [];
-  for (const [key, value] of Object.entries(entries)) {
+// The capture instant comes from the analysis pass, so the timeline anchors on
+// the same moment the dashboard and Credential Triage show. Rival capture-time
+// keys stay in the detail rather than becoming rival events.
+function extractStealerEvents(entries, captureContext) {
+  if (!captureContext?.date) return [];
+
+  const fromSysinfo = captureContext.source === 'sysinfo';
+  const captureValue = fromSysinfo ? (entries?.[captureContext.detail] || '') : '';
+  const timezone = localTimeZoneLabel(entries);
+  let detail = fromSysinfo
+    ? `${captureContext.detail}: ${captureValue}`
+    : `Inferred from ${captureContext.source}${captureContext.detail ? `: ${captureContext.detail}` : ''}`;
+  if (timezone) detail += ` (${timezone})`;
+
+  const others = [];
+  for (const [key, value] of Object.entries(entries || {})) {
+    if (!value || value === captureValue) continue;
     if (IGNORE_DATE_KEYS.some(rx => rx.test(key))) continue;
     if (!CAPTURE_TIME_KEYS.some(rx => rx.test(key))) continue;
-    const date = parseTimestampValue(value);
-    if (isPlausibleTimelineDate(date)) captures.push({ key, value, date });
+    others.push(`${key}: ${value}`);
   }
-  if (captures.length === 0) return [];
-
-  // One capture instant, one event: the first capture-time key in sysinfo
-  // order, which is what the dashboard and currentness derivations use. Later
-  // keys can be a repack stamp days off, so keep them in the detail rather than
-  // as rival capture timestamps.
-  const [capture, ...rest] = captures;
-  let detail = `${capture.key}: ${capture.value}`;
-  if (timezone) detail += ` (${timezone})`;
-  const conflicting = rest.filter(other => other.date.getTime() !== capture.date.getTime());
-  if (conflicting.length) {
-    detail += ` - also reported: ${conflicting.map(other => `${other.key}: ${other.value}`).join('; ')}`;
-  }
+  if (others.length) detail += ` - also reported: ${others.join('; ')}`;
 
   return [{
-    time: capture.date,
+    time: captureContext.date,
+    source: captureContext.source,
     category: 'stealer',
     title: 'Log captured',
     detail,
@@ -85,7 +79,7 @@ function extractFileEvents(fileTree, rootName) {
 
   for (const { node } of nodes) {
     const modifiedDate = node.lastModified ? new Date(node.lastModified) : null;
-    if (isPlausibleTimelineDate(modifiedDate)) {
+    if (isPlausibleCaptureDate(modifiedDate)) {
       const ms = node.lastModified;
       if (ms < earliest) earliest = ms;
       if (ms > latest) latest = ms;
@@ -127,24 +121,27 @@ function extractFileEvents(fileTree, rootName) {
 function extractCookieEvents(cookiesData, captureTime) {
   if (!cookiesData || cookiesData.rows.length === 0) return [];
 
+  const headers = cookiesData.headers;
+  const domainIdx = headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+  const expiresIdx = headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
   const domainMap = {};
 
   for (const rowData of cookiesData.rows) {
-    const { validity, sessionType } = rowData;
-    const domain = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase();
+    const { row, validity } = rowData;
+    const domain = (domainIdx >= 0 ? (row[domainIdx] || '') : '').replace(/^\./, '').toLowerCase();
     const baseDomain = extractBaseDomain(domain) || domain;
     if (!baseDomain) continue;
 
     if (!domainMap[baseDomain]) {
-      domainMap[baseDomain] = { valid: 0, expired: 0, validSessions: 0, latestExpiry: null };
+      domainMap[baseDomain] = { valid: 0, expired: 0, liveSessions: 0, latestExpiry: null };
     }
     const entry = domainMap[baseDomain];
 
     if (validity.status === 'valid') entry.valid++;
     else if (validity.status === 'expired') entry.expired++;
-    if ((sessionType === 'auth' || sessionType === 'session') && validity.status === 'valid') entry.validSessions++;
+    if (isLiveSessionToken(rowData)) entry.liveSessions++;
 
-    const expiresDate = parseTimestampValue(getFieldByPattern(rowData, FIELD_PATTERNS.expires));
+    const expiresDate = parseTimestampValue(expiresIdx >= 0 ? row[expiresIdx] : '');
     if (expiresDate && (!entry.latestExpiry || expiresDate > entry.latestExpiry)) {
       entry.latestExpiry = expiresDate;
     }
@@ -160,8 +157,8 @@ function extractCookieEvents(cookiesData, captureTime) {
   if (!captureTime) return events;
   for (const [domain, stats] of sorted) {
     let detail = `${stats.valid} valid, ${stats.expired} expired`;
-    if (stats.validSessions > 0) {
-      detail += ` - ${stats.validSessions} active session token${stats.validSessions !== 1 ? 's' : ''}`;
+    if (stats.liveSessions > 0) {
+      detail += ` - ${stats.liveSessions} live session token${stats.liveSessions !== 1 ? 's' : ''}`;
     }
     if (stats.latestExpiry) {
       detail += ` - latest expiry: ${formatDateLabel(stats.latestExpiry)}`;
@@ -183,7 +180,7 @@ function extractHistoryEvents(historyData) {
   const dated = [];
   for (const entry of historyData.entries) {
     const d = entry.lastVisitDate;
-    if (isPlausibleTimelineDate(d)) {
+    if (isPlausibleCaptureDate(d)) {
       dated.push({ ...entry, _date: d });
     }
   }
@@ -222,7 +219,7 @@ function extractHistoryEvents(historyData) {
 function extractModifiedEvents(data, category, limit, pickTitle, pickDetail) {
   if (!data || !data.entries || !data.entries.length) return [];
   return data.entries
-    .filter(e => isPlausibleTimelineDate(e.modifiedDate))
+    .filter(e => isPlausibleCaptureDate(e.modifiedDate))
     .sort((a, b) => b.modifiedDate - a.modifiedDate)
     .slice(0, limit)
     .map(e => ({ time: e.modifiedDate, category, title: pickTitle(e), detail: pickDetail(e) }));
@@ -246,16 +243,14 @@ function buildTimeline() {
 
   const events = [];
 
-  // Stealer dates from sysinfo
-  const stealerEvents = extractStealerEvents(sysinfoEntries);
-  events.push(...stealerEvents);
+  // The published capture instant
+  events.push(...extractStealerEvents(sysinfoEntries, capture));
 
   // File modification times
   events.push(...extractFileEvents(state.fileTree, state.rootZipName));
 
   // Cookie domain events
-  const captureTime = stealerEvents[0]?.time || null;
-  events.push(...extractCookieEvents(getCookiesData(), captureTime));
+  events.push(...extractCookieEvents(getCookiesData(), capture?.date || null));
 
   // History events
   events.push(...extractHistoryEvents(getHistoryData()));
@@ -297,7 +292,7 @@ function renderStats(events) {
   const now = Date.now();
 
   for (const ev of events) {
-    if (!isPlausibleTimelineDate(ev.time)) continue;
+    if (!isPlausibleCaptureDate(ev.time)) continue;
     const t = ev.time.getTime();
     if (t < earliest) earliest = t;
     if (t > latest && t <= now) latest = t;
@@ -310,18 +305,20 @@ function renderStats(events) {
 
   let html = '';
 
-  // Log capture time
+  // Log capture time, with the provenance when it isn't the stealer's own stamp
   const captureEvent = events.find(e => e.category === 'stealer');
   if (captureEvent) {
-    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-capture-value">${formatDateTimeLabel(captureEvent.time)}</div><div class="data-page-stat-label">Log Captured</div></div>`;
+    const label = captureEvent.source && captureEvent.source !== 'sysinfo'
+      ? `Log Captured (${captureEvent.source})`
+      : 'Log Captured';
+    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-capture-value">${formatDateTimeLabel(captureEvent.time)}</div><div class="data-page-stat-label">${escapeHtml(label)}</div></div>`;
   }
 
-  // Valid session count
   const cookies = getCookiesData();
   if (cookies.rows.length > 0) {
-    const validSessions = cookies.rows.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
-    if (validSessions > 0) {
-      html += `<div class="data-page-stat" title="Session tokens still unexpired at capture time. Validity is as of capture; confirm before relying on access."><div class="data-page-stat-value cookie-auth-valid">${validSessions}</div><div class="data-page-stat-label">Sessions Valid At Capture</div></div>`;
+    const liveSessions = cookies.rows.filter(isLiveSessionToken).length;
+    if (liveSessions > 0) {
+      html += `<div class="data-page-stat" title="Session tokens live at capture: unexpired, or browser-session cookies carrying no expiry. Confirm before relying on access."><div class="data-page-stat-value cookie-auth-valid">${liveSessions}</div><div class="data-page-stat-label">Live Sessions At Capture</div></div>`;
     }
   }
 
@@ -473,6 +470,11 @@ function initTimeline() {
     invalidateTimeline();
   });
 
+  on('analysis:capture', (data) => {
+    capture = data;
+    invalidateTimeline();
+  });
+
   on('data:loaded', invalidateTimeline);
 
   on('page:timeline', () => {
@@ -500,6 +502,7 @@ function initTimeline() {
 
   on('reset', () => {
     sysinfoEntries = null;
+    capture = null;
     timelineEvents = [];
     timelineBuilt = false;
     activeCategories = new Set(['stealer', 'file', 'cookie', 'history', 'notes', 'screenshots']);

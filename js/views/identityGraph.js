@@ -1,8 +1,9 @@
 import { on, emit } from '../core/state.js';
-import { bindDebouncedInput, downloadCsvRows, getFieldByPattern } from '../pages/shared.js';
+import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData } from '../pages/credentials.js';
 import { getAccountTokensData } from '../pages/assets.js';
 import { credentialColumnIndices, extractBaseDomain, baseDomainFromUrl } from '../core/shared.js';
+import { isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { escapeHtml } from '../core/utils.js';
 import { FIELD_PATTERNS, EMAIL_REGEX, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
 
@@ -46,15 +47,13 @@ function extractEmails(passwordsData, autofillEmails) {
 
 function buildCookieLookup(cookiesData) {
   const lookup = new Map();
+  const domainIdx = cookiesData.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
   for (const rowData of cookiesData.rows) {
-    const { validity, sessionType } = rowData;
-    const domain = extractBaseDomain(getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase());
+    const host = (domainIdx >= 0 ? (rowData.row[domainIdx] || '') : '').replace(/^\./, '').toLowerCase();
+    const domain = extractBaseDomain(host);
     if (!domain) continue;
-    if (!lookup.has(domain)) lookup.set(domain, { hasValidSession: false });
-    const entry = lookup.get(domain);
-    if (validity.status === 'valid') {
-      if (sessionType === 'auth' || sessionType === 'session') entry.hasValidSession = true;
-    }
+    if (!lookup.has(domain)) lookup.set(domain, { hasLiveSession: false });
+    if (isLiveSessionToken(rowData)) lookup.get(domain).hasLiveSession = true;
   }
   return lookup;
 }
@@ -154,7 +153,7 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
 
   const allDomains = new Set([
     ...domainUsernames.keys(),
-    ...[...cookieLookup.entries()].filter(([, value]) => value.hasValidSession).map(([domain]) => domain),
+    ...[...cookieLookup.entries()].filter(([, value]) => value.hasLiveSession).map(([domain]) => domain),
     ...tokenLookup.keys(),
   ]);
 
@@ -163,7 +162,7 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
       accounts.set(domain, {
         domain,
         usernames: [],
-        hasValidSession: false,
+        hasLiveSession: false,
         hasCredentials: false,
         emails: [],
         tokenServices: [],
@@ -176,7 +175,7 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
       entry.hasCredentials = true;
     }
     const cookieInfo = cookieLookup.get(domain);
-    if (cookieInfo && cookieInfo.hasValidSession) entry.hasValidSession = true;
+    if (cookieInfo && cookieInfo.hasLiveSession) entry.hasLiveSession = true;
     const tokenInfo = tokenLookup.get(domain);
     if (tokenInfo) {
       entry.tokenServices = [...tokenInfo.services];
@@ -197,7 +196,7 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
   }
 
   return [...accounts.values()].sort((a, b) => {
-    if (a.hasValidSession !== b.hasValidSession) return a.hasValidSession ? -1 : 1;
+    if (a.hasLiveSession !== b.hasLiveSession) return a.hasLiveSession ? -1 : 1;
     if (a.hasCredentials !== b.hasCredentials) return a.hasCredentials ? -1 : 1;
     return a.domain.localeCompare(b.domain);
   });
@@ -241,10 +240,10 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
       const cookieInfo = cookieLookup.get(domain);
       return {
         domain,
-        hasValidSession: cookieInfo ? cookieInfo.hasValidSession : false,
+        hasLiveSession: cookieInfo ? cookieInfo.hasLiveSession : false,
       };
     }).sort((a, b) => {
-      if (a.hasValidSession !== b.hasValidSession) return a.hasValidSession ? -1 : 1;
+      if (a.hasLiveSession !== b.hasLiveSession) return a.hasLiveSession ? -1 : 1;
       return a.domain.localeCompare(b.domain);
     });
     emailAccountMap.push({ email, services });
@@ -253,24 +252,24 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
 
   const accounts = buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup);
 
-  const servicesWithValidSessions = new Set();
+  const servicesWithLiveSessions = new Set();
   const servicesWithBoth = new Set();
   for (const domain of allCredDomains) {
     const cookieInfo = cookieLookup.get(domain);
-    if (cookieInfo && cookieInfo.hasValidSession) servicesWithValidSessions.add(domain);
+    if (cookieInfo && cookieInfo.hasLiveSession) servicesWithLiveSessions.add(domain);
   }
   for (const domain of passwordDomains) {
     const cookieInfo = cookieLookup.get(domain);
-    if (cookieInfo && cookieInfo.hasValidSession) servicesWithBoth.add(domain);
+    if (cookieInfo && cookieInfo.hasLiveSession) servicesWithBoth.add(domain);
   }
   for (const [domain, info] of cookieLookup) {
-    if (info.hasValidSession) servicesWithValidSessions.add(domain);
+    if (info.hasLiveSession) servicesWithLiveSessions.add(domain);
   }
   const tokenDomains = new Set(tokenLookup.keys());
 
   const exposureSummary = {
-    totalUniqueServices: new Set([...allCredDomains, ...servicesWithValidSessions, ...tokenDomains]).size,
-    servicesWithValidSessions: servicesWithValidSessions.size,
+    totalUniqueServices: new Set([...allCredDomains, ...servicesWithLiveSessions, ...tokenDomains]).size,
+    servicesWithLiveSessions: servicesWithLiveSessions.size,
     servicesWithBothPasswordAndSession: servicesWithBoth.size,
     uniqueEmails: emailMap.size,
     tokenBackedServices: tokenDomains.size,
@@ -339,8 +338,8 @@ function buildEmailIndex(data) {
   const shown = identityShowAllEmails ? map : map.slice(0, CAP);
   const rows = shown.map((entry) => {
     const active = entry.email === identityActiveEmail ? ' active' : '';
-    const hasSession = entry.services.some((s) => s.hasValidSession);
-    const dot = hasSession ? '<span class="identity-email-dot" title="Has a session valid at capture"></span>' : '';
+    const hasSession = entry.services.some((s) => s.hasLiveSession);
+    const dot = hasSession ? '<span class="identity-email-dot" title="Has a session live at capture"></span>' : '';
     return `<button class="identity-email-row${active}" type="button" data-email="${escapeHtml(entry.email)}">
       <span class="identity-email-addr">${escapeHtml(entry.email)}</span>
       <span class="identity-email-count">${entry.services.length}</span>${dot}
@@ -376,7 +375,7 @@ function renderIdentityPage(searchQuery = '') {
   const data = identityData;
   const es = data.exposureSummary;
 
-  const summaryText = `${es.totalUniqueServices} exposed services across ${es.uniqueEmails} email address${es.uniqueEmails !== 1 ? 'es' : ''}; ${es.servicesWithValidSessions} with a session valid at capture`;
+  const summaryText = `${es.totalUniqueServices} exposed services across ${es.uniqueEmails} email address${es.uniqueEmails !== 1 ? 'es' : ''}; ${es.servicesWithLiveSessions} with a session live at capture`;
   const osFamily = data.primaryIdentity.osFamily;
   summary.innerHTML = osFamily
     ? `${escapeHtml(summaryText)} <span class="identity-os-chip" data-os="${escapeHtml(osFamily)}">${escapeHtml(osFamily)}</span>`
@@ -385,7 +384,7 @@ function renderIdentityPage(searchQuery = '') {
   // Counts are quantities, not statuses: neutral ink, weight for scanning.
   statsEl.innerHTML = [
     ['Services', es.totalUniqueServices],
-    ['Valid at capture', es.servicesWithValidSessions],
+    ['Live at capture', es.servicesWithLiveSessions],
     ['Password + session', es.servicesWithBothPasswordAndSession],
     ['Token-backed', es.tokenBackedServices],
     ['Email addresses', es.uniqueEmails],
@@ -433,7 +432,7 @@ function renderIdentityPage(searchQuery = '') {
     let tableHtml = filterCaption + '<div class="data-table-container"><table class="data-table">';
     tableHtml += '<thead><tr><th>Domain</th><th>Usernames</th><th>Session</th><th>Emails</th><th>Tokens</th></tr></thead><tbody>';
     for (const acct of accounts) {
-      const sessionHtml = acct.hasValidSession ? '<span class="identity-session-badge">valid at capture</span>' : dash;
+      const sessionHtml = acct.hasLiveSession ? '<span class="identity-session-badge">live at capture</span>' : dash;
       const usernames = acct.usernames && acct.usernames.length > 0 ? acct.usernames.join(', ') : '';
       const emails = acct.emails.length > 0 ? acct.emails.join(', ') : '';
       const tokens = [acct.tokenServices.join(', '), acct.accountIds.join(', ')].filter(Boolean).join(' \u00B7 ');
@@ -464,10 +463,10 @@ function renderIdentityPage(searchQuery = '') {
 
 function exportIdentityCSV() {
   if (!identityData || identityData.accounts.length === 0) return;
-  downloadCsvRows('identity_accounts.csv', ['Domain', 'Credentials', 'Session Active', 'Emails', 'Token Services', 'Account IDs'], identityData.accounts.map((account) => [
+  downloadCsvRows('identity_accounts.csv', ['Domain', 'Credentials', 'Live Session', 'Emails', 'Token Services', 'Account IDs'], identityData.accounts.map((account) => [
     account.domain,
     account.hasCredentials ? 'Yes' : 'No',
-    account.hasValidSession ? 'Yes' : 'No',
+    account.hasLiveSession ? 'Yes' : 'No',
     account.emails.join('; '),
     account.tokenServices.join('; '),
     account.accountIds.join('; '),

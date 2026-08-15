@@ -1,6 +1,6 @@
 import { on } from '../core/state.js';
 import { escapeHtml } from '../core/utils.js';
-import { bindDebouncedInput, downloadCsvRows, getFieldByPattern } from '../pages/shared.js';
+import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData, getBookmarksData } from '../pages/browser.js';
 import { getDownloadsData, getDomainDetectionsData } from '../pages/activity.js';
@@ -97,9 +97,11 @@ function buildDomainIndex() {
 
   const ck = getCookiesData();
   if (ck && ck.rows.length > 0) {
+    const hostIdx = ck.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+    const nameIdx = ck.headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
     for (const rowData of ck.rows) {
-      const { validity, sessionType } = rowData;
-      const host = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain);
+      const { row, validity, sessionType } = rowData;
+      const host = hostIdx >= 0 ? (row[hostIdx] || '') : '';
       if (!host) continue;
       const cleanHost = host.replace(/^\./, '').toLowerCase();
       const base = extractBaseDomain(cleanHost) || cleanHost;
@@ -108,7 +110,7 @@ function buildDomainIndex() {
       if (validity.status === 'valid') entry.cookiesValidCount++;
       if (entry.cookies.length < SAMPLE) entry.cookies.push({
         host: cleanHost,
-        name: getFieldByPattern(rowData, FIELD_PATTERNS.cookieName),
+        name: nameIdx >= 0 ? (row[nameIdx] || '') : '',
         validity,
         sessionType,
       });

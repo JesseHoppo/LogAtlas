@@ -37,7 +37,7 @@ function exportAllCredentials() {
   downloadCsvRows('all_credentials.csv', ['Source File', ...data.headers], data.rows.map(
     ({ row, source }) => [source, ...row]
   ));
-  showNotification(`Exported ${data.rows.length} credentials from ${data.fileCount} file(s).`, 'info');
+  showNotification(`Exported ${data.rows.length} credential rows from ${data.fileCount} file(s).`, 'info');
 }
 
 export function initFileExportActions() {

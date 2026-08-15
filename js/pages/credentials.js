@@ -14,13 +14,15 @@ import { parseNoteArtifact, summariseNotes } from '../analysis/contextArtifacts.
 import {
   collectHintedNodes,
   checkCookieValidity,
+  cookieColumnMap,
+  cookieDedupeKey,
   credentialColumnIndices,
-  deriveCaptureDate,
+  getCaptureContext,
   baseDomainFromUrl,
-  decodeBufferWithFallback,
+  decodeNodeCached,
   parseNodeCached,
 } from '../core/shared.js';
-import { classifyCookie } from '../analysis/sessionCookies.js';
+import { classifyCookie, isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 import {
   PAGE_SIZE,
@@ -93,46 +95,6 @@ let passwordShowService = false;
 let passwordHiddenCols = new Set();
 let passwordConstantNotes = [];
 
-function getCookieColumnMap(headers, columnCount) {
-  const map = {
-    domain: -1,
-    subDomain: -1,
-    path: -1,
-    secure: -1,
-    expires: -1,
-    name: -1,
-    value: -1,
-  };
-
-  for (let i = 0; i < headers.length; i++) {
-    const header = headers[i];
-    if (map.domain < 0 && /^(domain|host|host_key)$/i.test(header)) map.domain = i;
-    else if (map.subDomain < 0 && /^(sub\s*domain|include[_\s-]*subdomains?)$/i.test(header)) map.subDomain = i;
-    else if (map.path < 0 && /^path$/i.test(header)) map.path = i;
-    else if (map.secure < 0 && /^(secure|is[_\s-]*secure)$/i.test(header)) map.secure = i;
-    else if (map.expires < 0 && FIELD_PATTERNS.expires.test(header)) map.expires = i;
-    else if (map.name < 0 && /^(name|key)$/i.test(header)) map.name = i;
-    else if (map.value < 0 && /^value$/i.test(header)) map.value = i;
-  }
-
-  if (map.domain < 0 && columnCount >= 6) map.domain = 0;
-  if (map.subDomain < 0 && columnCount >= 7) map.subDomain = 1;
-  if (map.path < 0) map.path = columnCount >= 7 ? 2 : columnCount >= 6 ? 1 : -1;
-  if (map.secure < 0) map.secure = columnCount >= 7 ? 3 : columnCount >= 6 ? 2 : -1;
-  if (map.expires < 0) map.expires = columnCount >= 7 ? 4 : columnCount >= 6 ? 3 : -1;
-  if (map.name < 0) map.name = columnCount >= 7 ? 5 : columnCount >= 6 ? 4 : -1;
-  if (map.value < 0) map.value = columnCount >= 7 ? 6 : columnCount >= 6 ? 5 : -1;
-
-  return map;
-}
-
-// A session token counts as live on the same terms as the dashboard: still
-// valid at capture, or a browser-session cookie that carried no expiry at all.
-function isLiveSessionToken({ sessionType, validity }) {
-  if (sessionType !== 'auth' && sessionType !== 'session') return false;
-  return validity.status === 'valid' || validity.status === 'session';
-}
-
 // A duplicate carries no new cookie, but it can carry columns the kept row
 // lacks: a CDP export has no subdomain flag, and the same token is often stored
 // under two paths. Fold those in rather than losing them with the row.
@@ -143,21 +105,6 @@ function foldCookieDuplicate(target, duplicate, pathIdx) {
     if (!target[i]) target[i] = value;
     else if (i === pathIdx && !target[i].split('; ').includes(value)) target[i] += `; ${value}`;
   }
-}
-
-// One cookie counted once, on the same key as the analysis pass: per-browser
-// duplicates and Netscape .txt + CDP _json.txt twins collapse on content. A
-// manually mapped file can expose no name, value or expiry column at all, where
-// keying on the domain would fold every cookie for that host into a single row;
-// those rows key on the whole raw row instead, in a key space of their own.
-function cookieDedupeKey(row, src) {
-  if (src.name < 0 && src.value < 0 && src.expires < 0) return ['\u0001', ...row].join('\u0000');
-  return [
-    (src.domain >= 0 ? (row[src.domain] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase(),
-    src.name >= 0 ? row[src.name] : '',
-    src.value >= 0 ? (row[src.value] || '') : '',
-    src.expires >= 0 ? (row[src.expires] ?? '') : '',
-  ].join('\u0000');
 }
 
 function normaliseCookieRow(row, columnMap, includeSubDomain) {
@@ -203,7 +150,7 @@ async function loadPasswordsData(fileTree, rootName) {
         failedFiles.push({ path: sourcePath, reason: 'Unreadable or empty file' });
         continue;
       }
-      const text = decodeBufferWithFallback(content);
+      const text = decodeNodeCached(node, content);
       const parsed = parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) {
         failedFiles.push({ path: sourcePath, reason: 'No credentials parsed' });
@@ -361,11 +308,11 @@ async function loadCookiesData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = decodeBufferWithFallback(content);
+      const text = decodeNodeCached(node, content);
       const parsed = parseNodeCached(node, 'cookie', parseCookieFile, text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         fileCount++;
-        const columnMap = getCookieColumnMap(parsed.headers, parsed.rows[0]?.length || 0);
+        const columnMap = cookieColumnMap(parsed.headers, parsed.rows[0]?.length || 0);
         if (columnMap.subDomain >= 0) includeSubDomain = true;
         parsedFiles.push({ parsed, columnMap });
       }
@@ -379,19 +326,12 @@ async function loadCookiesData(fileTree, rootName) {
   const nameIdx = headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
   const domainIdx = headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
   const pathIdx = headers.findIndex(h => /^path$/i.test(h));
-  const captureDate = deriveCaptureDate(nodes, rootName);
+  const captureDate = getCaptureContext().date;
   const seenCookies = new Map();
 
   for (const { parsed, columnMap } of parsedFiles) {
-    const srcIdx = {
-      domain: parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h)),
-      name: parsed.headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h)),
-      expires: parsed.headers.findIndex(h => FIELD_PATTERNS.expires.test(h)),
-      value: parsed.headers.findIndex(h => /^value$/i.test(h)),
-    };
-
     for (const row of parsed.rows) {
-      const dedupeKey = cookieDedupeKey(row, srcIdx);
+      const dedupeKey = cookieDedupeKey(row, columnMap);
       const normalisedRow = normaliseCookieRow(row, columnMap, includeSubDomain);
       const seenRow = seenCookies.get(dedupeKey);
       if (seenRow) foldCookieDuplicate(seenRow, normalisedRow, pathIdx);
@@ -408,6 +348,10 @@ async function loadCookiesData(fileTree, rootName) {
     headers,
   }));
 
+  cookiesData = { rows, headers, fileCount, captureDate, stats: summariseCookieRows(rows) };
+}
+
+function summariseCookieRows(rows) {
   let valid = 0, expired = 0, browserSession = 0, auth = 0, session = 0, liveSession = 0;
   for (const r of rows) {
     if (r.validity.status === 'valid') valid++;
@@ -417,13 +361,22 @@ async function loadCookiesData(fileTree, rootName) {
     else if (r.sessionType === 'session') session++;
     if (isLiveSessionToken(r)) liveSession++;
   }
+  return { valid, expired, browserSession, sessionTokens: auth + session, liveSession };
+}
 
-  cookiesData = {
-    rows,
-    headers,
-    fileCount,
-    stats: { valid, expired, browserSession, sessionTokens: auth + session, liveSession },
-  };
+// Expiry is judged against the case's capture instant. The page loaders and the
+// analysis pass run concurrently, so a cookie set loaded before analysis
+// published the instant is re-judged against it rather than left reading
+// expiry against "now".
+function applyCaptureDate(captureDate) {
+  const { rows, headers } = cookiesData;
+  cookiesData.captureDate = captureDate;
+  if (rows.length === 0) return;
+  const expiresIdx = headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
+  for (const entry of rows) {
+    entry.validity = checkCookieValidity(expiresIdx >= 0 ? entry.row[expiresIdx] : null, captureDate);
+  }
+  cookiesData.stats = summariseCookieRows(rows);
 }
 
 async function loadAutofillsData(fileTree, rootName) {
@@ -442,7 +395,7 @@ async function loadAutofillsData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = decodeBufferWithFallback(content);
+      const text = decodeNodeCached(node, content);
       const parsed = parseNodeCached(node, 'autofill', parseAutofillFile, text, node._parseConfig || null);
       if (parsed && parsed.rows.length > 0) {
         for (const row of parsed.rows) {
@@ -491,7 +444,7 @@ async function loadNotesData(fileTree, rootName) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
-      const text = decodeBufferWithFallback(content);
+      const text = decodeNodeCached(node, content);
       const entry = parseNoteArtifact(text, node.name || '', path, node.lastModified);
       if (!entry) continue;
 
@@ -824,7 +777,7 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
       <div class="data-page-stat-value cookie-auth">${totalSessionTokens.toLocaleString()}</div>
       <div class="data-page-stat-label">Session Tokens</div>
     </div>
-    ${liveSessionCount > 0 ? `<div class="data-page-stat">
+    ${liveSessionCount > 0 ? `<div class="data-page-stat" title="Session tokens live at capture: unexpired, or browser-session cookies carrying no expiry.">
       <div class="data-page-stat-value cookie-auth-valid">${liveSessionCount.toLocaleString()}</div>
       <div class="data-page-stat-label">Live Sessions</div>
     </div>` : ''}
@@ -1129,6 +1082,15 @@ function initCredentials() {
   cookiesSearch?.addEventListener('input', updateCookies);
   cookiesValidOnly?.addEventListener('change', updateCookies);
   cookiesSessionOnly?.addEventListener('change', updateCookies);
+
+  on('analysis:capture', ({ date }) => {
+    const loaded = cookiesData.captureDate;
+    if ((loaded ? loaded.getTime() : null) === (date ? date.getTime() : null)) return;
+    applyCaptureDate(date);
+    if (document.getElementById('pageCookies')?.classList.contains('active')) {
+      renderCookiesPage(cookiesValidOnly?.checked || false, cookiesSessionOnly?.checked || false, cookiesSearch?.value || '');
+    }
+  });
 
   const autofillsSearch = document.getElementById('autofillsSearch');
   bindDebouncedInput(autofillsSearch, (value) => renderAutofillsPage(value));

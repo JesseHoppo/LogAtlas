@@ -1,4 +1,4 @@
-import { EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
+import { CAPTURE_TIME_KEYS, EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
 
 const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
 const STRICT_TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
@@ -951,18 +951,160 @@ function toReferenceDate(value) {
   return (value instanceof Date && !isNaN(value.getTime())) ? value : new Date();
 }
 
-// Best-effort capture date for validity: archive name timestamp, else the
-// newest cookie-file modification time. Cookie expiry is then judged against
-// when the log was taken, not analysis-time now.
-function deriveCaptureDate(nodes, rootName) {
-  const fromName = parseArchiveTimestamp(rootName);
-  if (fromName) return fromName;
+const MIN_CAPTURE_DATE_MS = Date.UTC(1990, 0, 1);
+const MAX_CAPTURE_SKEW_MS = 366 * 24 * 60 * 60 * 1000;
+
+function isPlausibleCaptureDate(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return false;
+  const time = date.getTime();
+  return time >= MIN_CAPTURE_DATE_MS && time <= Date.now() + MAX_CAPTURE_SKEW_MS;
+}
+
+function newestNodeModified(nodes) {
   let newest = 0;
-  for (const { node } of nodes) {
-    const m = Number(node?.lastModified);
-    if (m && m > newest) newest = m;
+  for (const entry of nodes || []) {
+    const node = entry?.node || entry;
+    const modified = Number(node?.lastModified);
+    if (modified && modified > newest) newest = modified;
   }
-  return newest ? new Date(newest) : null;
+  return newest || null;
+}
+
+const SLASH_DATE = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/;
+
+// The victim's Windows locale decides whether a sysinfo date reads D/M/Y or
+// M/D/Y, and the log never says which. A sibling date in the same file whose
+// first field exceeds 12 settles it for the whole file, where an ambiguous
+// capture value on its own cannot.
+function sysinfoWritesDayFirst(entries) {
+  for (const value of Object.values(entries || {})) {
+    const match = String(value || '').trim().match(SLASH_DATE);
+    if (match && Number(match[1]) > 12) return true;
+  }
+  return false;
+}
+
+function parseSysinfoDate(value, dayFirst) {
+  const raw = String(value || '').trim();
+  const match = dayFirst && !/[ap]m\b/i.test(raw) ? raw.match(SLASH_DATE) : null;
+  if (match) {
+    let year = Number(match[3]);
+    if (year < 100) year += 2000;
+    const date = buildLocalDate(year, Number(match[2]), Number(match[1]), Number(match[4] || 0), Number(match[5] || 0), Number(match[6] || 0));
+    if (date) return date;
+  }
+  return parseTimestampValue(value);
+}
+
+// The case's capture instant, in evidence order: the stealer's own sysinfo
+// timestamp, then a timestamp in the archive name, then the newest file
+// modification time, then the last browsing event (a lower bound — the log
+// cannot predate it). `source` names the evidence and `detail` the sysinfo key
+// or archive name behind it. `archiveNames` and `sourceLastModified` each take
+// a single value or a priority list.
+function resolveCaptureContext({ sysinfoEntries, archiveNames, sourceLastModified, historyMaxDate } = {}) {
+  const dayFirst = sysinfoWritesDayFirst(sysinfoEntries);
+  for (const [key, value] of Object.entries(sysinfoEntries || {})) {
+    if (!value || !CAPTURE_TIME_KEYS.some(pattern => pattern.test(key))) continue;
+    const date = parseSysinfoDate(value, dayFirst);
+    if (isPlausibleCaptureDate(date)) return { date, source: 'sysinfo', detail: key };
+  }
+
+  for (const name of [].concat(archiveNames || [])) {
+    const date = parseArchiveTimestamp(name || '');
+    if (isPlausibleCaptureDate(date)) return { date, source: 'archive name', detail: String(name) };
+  }
+
+  for (const value of [].concat(sourceLastModified || [])) {
+    const date = parseTimestampValue(value);
+    if (isPlausibleCaptureDate(date)) return { date, source: 'file modified', detail: '' };
+  }
+
+  const history = parseTimestampValue(historyMaxDate);
+  if (isPlausibleCaptureDate(history)) return { date: history, source: 'history', detail: '' };
+
+  return { date: null, source: null, detail: '' };
+}
+
+const EMPTY_CAPTURE_CONTEXT = { date: null, source: null, detail: '' };
+let captureContext = EMPTY_CAPTURE_CONTEXT;
+
+// Analysis resolves the capture instant once per case and publishes it here, so
+// a page rendering later reads the same instant with the same provenance
+// instead of deriving a rival one.
+function setCaptureContext(context) {
+  captureContext = context?.date ? context : EMPTY_CAPTURE_CONTEXT;
+  return captureContext;
+}
+
+function getCaptureContext() {
+  return captureContext;
+}
+
+// Capture date for cookie validity. Falls back to the archive name and the
+// newest file time only while analysis has yet to publish its context.
+function deriveCaptureDate(nodes, rootName) {
+  if (captureContext.date) return captureContext.date;
+  return resolveCaptureContext({
+    archiveNames: rootName,
+    sourceLastModified: newestNodeModified(nodes),
+  }).date;
+}
+
+// Cookie column positions. Headers win; a file whose headers name nothing we
+// recognise falls back to the fixed Netscape order, 7 columns with the
+// include-subdomains flag and 6 without.
+function cookieColumnMap(headers, columnCount) {
+  const map = {
+    domain: -1,
+    subDomain: -1,
+    path: -1,
+    secure: -1,
+    expires: -1,
+    name: -1,
+    value: -1,
+  };
+
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i];
+    if (map.domain < 0 && /^(domain|host|host_key)$/i.test(header)) map.domain = i;
+    else if (map.subDomain < 0 && /^(sub\s*domain|include[_\s-]*subdomains?)$/i.test(header)) map.subDomain = i;
+    else if (map.path < 0 && /^path$/i.test(header)) map.path = i;
+    else if (map.secure < 0 && /^(secure|is[_\s-]*secure)$/i.test(header)) map.secure = i;
+    else if (map.expires < 0 && FIELD_PATTERNS.expires.test(header)) map.expires = i;
+    else if (map.name < 0 && /^(name|key)$/i.test(header)) map.name = i;
+    else if (map.value < 0 && /^value$/i.test(header)) map.value = i;
+  }
+
+  if (map.domain < 0 && columnCount >= 6) map.domain = 0;
+  if (map.subDomain < 0 && columnCount >= 7) map.subDomain = 1;
+  if (map.path < 0) map.path = columnCount >= 7 ? 2 : columnCount >= 6 ? 1 : -1;
+  if (map.secure < 0) map.secure = columnCount >= 7 ? 3 : columnCount >= 6 ? 2 : -1;
+  if (map.expires < 0) map.expires = columnCount >= 7 ? 4 : columnCount >= 6 ? 3 : -1;
+  if (map.name < 0) map.name = columnCount >= 7 ? 5 : columnCount >= 6 ? 4 : -1;
+  if (map.value < 0) map.value = columnCount >= 7 ? 6 : columnCount >= 6 ? 5 : -1;
+
+  return map;
+}
+
+// NUL never appears in a real cookie field, so it is safe as a key separator;
+// the SOH prefix keeps raw-row keys in a space of their own.
+const COOKIE_KEY_SEP = '\u0000';
+const RAW_ROW_KEY = '\u0001';
+
+// One cookie counted once, everywhere: per-browser duplicates and Netscape .txt
+// + CDP _json.txt twins collapse on content. A manually mapped file can expose
+// no name, value or expiry column at all, where keying on the domain would fold
+// every cookie for that host into one row; those rows key on the whole raw row
+// instead, in a key space of their own.
+function cookieDedupeKey(row, map) {
+  if (map.name < 0 && map.value < 0 && map.expires < 0) return [RAW_ROW_KEY, ...row].join(COOKIE_KEY_SEP);
+  return [
+    (map.domain >= 0 ? (row[map.domain] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase(),
+    map.name >= 0 ? (row[map.name] || '') : '',
+    map.value >= 0 ? (row[map.value] || '') : '',
+    map.expires >= 0 ? (row[map.expires] ?? '') : '',
+  ].join(COOKIE_KEY_SEP);
 }
 
 // Descend through single-directory wrapper layers so consumers see the real
@@ -1335,11 +1477,22 @@ function yieldToEventLoop() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
+// Decode a file's bytes once. The text is kept only on nodes whose bytes the
+// extractor already retains, so the cache never outlives — or outgrows — the
+// content cache behind it.
+function decodeNodeCached(node, content) {
+  if (node && node._decodedText != null) return node._decodedText;
+  const text = decodeBufferWithFallback(content);
+  if (node && node._cachedContent) node._decodedText = text;
+  return text;
+}
+
 // Memoise a parser's output on the tree node so the analysis pass and the
 // page loader don't both re-parse the same file. Keyed by parser name and
-// validated against the current `_parseConfig` reference: the Adjust-columns
-// flow assigns a fresh config object and applyManualType deletes it, so a
-// reference mismatch re-parses. Decoded content is already cached upstream.
+// validated against `config`: the Adjust-columns flow assigns a fresh
+// `_parseConfig` object and applyManualType deletes it, so a reference mismatch
+// re-parses. A parser needing more than (text, config) is wrapped in a closure,
+// with whatever it varies on passed as `config` to key the cache on it.
 function parseNodeCached(node, parserName, parser, text, config) {
   const cfg = config ?? null;
   if (node) {
@@ -1400,9 +1553,17 @@ export {
   parseSoftwareLine,
   parseTimestampValue,
   parseArchiveTimestamp,
+  decodeNodeCached,
   parseNodeCached,
   yieldToEventLoop,
   checkCookieValidity,
+  cookieColumnMap,
+  cookieDedupeKey,
+  isPlausibleCaptureDate,
+  newestNodeModified,
+  resolveCaptureContext,
+  setCaptureContext,
+  getCaptureContext,
   deriveCaptureDate,
   collapseSingleWrapper,
   downloadBlob,

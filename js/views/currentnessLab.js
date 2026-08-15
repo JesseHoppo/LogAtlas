@@ -1,6 +1,6 @@
 import { state, on } from '../core/state.js';
 import { escapeHtml, escapeAttr } from '../core/utils.js';
-import { bindDebouncedInput, buildShowMoreButton, buildRowsHtml, downloadCsvRows, formatDateTimeLabel, getFieldByPattern, PAGE_SIZE } from '../pages/shared.js';
+import { bindDebouncedInput, buildShowMoreButton, buildRowsHtml, downloadCsvRows, formatDateTimeLabel, PAGE_SIZE } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData, getAutofillsData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData, getBookmarksData } from '../pages/browser.js';
 import { getDownloadsData, getClipboardData } from '../pages/activity.js';
@@ -13,6 +13,7 @@ let currentnessModel = null;
 let currentnessFiltered = [];
 let currentnessShown = 0;
 let sysinfoEntries = null;
+let capture = null;
 let currentnessActiveFilter = 'all';
 
 const CURRENTNESS_FILTERS = [
@@ -59,9 +60,12 @@ function normaliseCookies() {
   const data = getCookiesData();
   if (!data?.rows?.length) return [];
 
+  const hostIdx = data.headers.findIndex((header) => FIELD_PATTERNS.cookieDomain.test(header));
+  const nameIdx = data.headers.findIndex((header) => FIELD_PATTERNS.cookieName.test(header));
+
   return data.rows.map((entry) => ({
-    host: getFieldByPattern(entry, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').trim().toLowerCase(),
-    name: getFieldByPattern(entry, FIELD_PATTERNS.cookieName).trim(),
+    host: (hostIdx >= 0 ? (entry.row[hostIdx] || '') : '').replace(/^\./, '').trim().toLowerCase(),
+    name: (nameIdx >= 0 ? (entry.row[nameIdx] || '') : '').trim(),
     validityStatus: entry.validity?.status || '',
     validityLabel: entry.validity?.label || '',
     sessionType: entry.sessionType || '',
@@ -145,6 +149,10 @@ function buildSearchText(row) {
   ].join(' ').toLowerCase();
 }
 
+function captureProvenance({ source, detail }) {
+  return source === 'sysinfo' && detail ? `sysinfo: ${detail}` : source || '';
+}
+
 function buildHeroLine(summary) {
   const id = summary.primaryIdentity || { kind: 'unknown', label: '', domain: '' };
 
@@ -177,8 +185,10 @@ function buildHeroLine(summary) {
     summary.reuseGroups > 0 ? `<span><strong>${summary.reuseGroups}</strong> reused passwords</span>` : '',
   ].filter(Boolean);
 
-  const captureBit = summary.captureDate
-    ? `Captured ${escapeHtml(formatDateTimeLabel(summary.captureDate))} <span class="lab-hero-tag-muted">(${escapeHtml(summary.captureSource || '')})</span>`
+  // The case's capture instant comes from the analysis pass, so the anchor shown
+  // here is the one the dashboard and timeline show, with its provenance.
+  const captureBit = capture?.date
+    ? `Captured ${escapeHtml(formatDateTimeLabel(capture.date))} <span class="lab-hero-tag-muted">(${escapeHtml(captureProvenance(capture))})</span>`
     : `<span class="lab-hero-warn">No capture anchor; recency disabled</span>`;
 
   return `
@@ -503,6 +513,7 @@ function initCurrentnessLab() {
 
   function resetInputs() {
     sysinfoEntries = null;
+    capture = null;
     dataReady = false;
     sysinfoReady = false;
     modelReady = false;
@@ -565,6 +576,13 @@ function initCurrentnessLab() {
   });
 
   document.getElementById('exportCurrentnessLabCsv')?.addEventListener('click', exportCurrentnessCsv);
+
+  // Cookie validity is re-judged when the capture instant lands, so a model
+  // built before it has to be scored again.
+  on('analysis:capture', (data) => {
+    capture = data;
+    if (modelReady) rebuildCurrentnessModel();
+  });
 
   on('analysis:sysinfo', (data) => {
     sysinfoEntries = data?.entries || null;

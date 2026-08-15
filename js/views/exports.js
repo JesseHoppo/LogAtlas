@@ -15,7 +15,7 @@ import {
 import {
   buildCsvText,
   downloadCsvRows,
-  getFieldByPattern,
+  formatDateTimeLabel,
   shapeCookiesCsv,
   shapeNotesCsv,
 } from '../pages/shared.js';
@@ -43,14 +43,16 @@ import {
   getGrabbedFilesData,
   getScreenshotsData,
 } from '../pages/activity.js';
+import { isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 
 let sysinfoEntries = null;
 let sysinfoIocs = null;
 let fingerprintResult = null;
 let identityResult = null;
-
-const DEDUPE_KEY_SEP = '\u0000';
+let credentialsAnalysis = null;
+let cookiesAnalysis = null;
+let capture = null;
 
 function collectAllDatasets() {
   return {
@@ -88,28 +90,89 @@ function exportObfuscatedCredentials() {
     return;
   }
 
-  const { urlIdx, userIdx, passIdx } = credentialColumnIndices(data.headers);
+  const { passIdx } = credentialColumnIndices(data.headers);
 
-  const seen = new Set();
-  const uniqueRows = [];
-  for (const { row } of data.rows) {
-    const url = urlIdx >= 0 ? (row[urlIdx] || '') : '';
-    const user = userIdx >= 0 ? (row[userIdx] || '') : '';
-    const pass = passIdx >= 0 ? (row[passIdx] || '') : '';
-    const key = url + DEDUPE_KEY_SEP + user + DEDUPE_KEY_SEP + pass;
-    if (!seen.has(key)) {
-      seen.add(key);
-      uniqueRows.push(row);
-    }
-  }
-
-  downloadCsvRows('credentials_obfuscated.csv', data.headers, uniqueRows.map((row) =>
+  // The page rows are already one row per site + username + password.
+  downloadCsvRows('credentials_obfuscated.csv', data.headers, data.rows.map(({ row }) =>
     row.map((cell, index) => (index === passIdx ? maskPassword(cell) : cell))
   ));
-  notify(`Exported ${uniqueRows.length} unique credentials (passwords masked).`);
+  notify(`Exported ${data.rows.length} credential rows (passwords masked).`);
 }
 
 // Log Summary Report (HTML)
+
+// The report quotes the analysis pass, so its credential and cookie totals are
+// the ones the overview shows. The page rows are the fallback for a case whose
+// analysis never emitted, and they are labelled as rows, not as credentials.
+function buildCredStats(passwords) {
+  const analysed = credentialsAnalysis;
+  if (analysed) {
+    if (analysed.totalCredentials === 0 && analysed.accountsWithoutPasswords === 0 && analysed.urlsWithoutCredentials === 0) return null;
+    return {
+      unique: analysed.uniqueCredentials,
+      parsed: analysed.totalCredentials,
+      accountsWithoutPasswords: analysed.accountsWithoutPasswords,
+      savedSites: analysed.urlsWithoutCredentials,
+      fileCount: analysed.fileCount,
+      topDomains: analysed.topDomains.map(({ value, count }) => [value, count]),
+      localNetwork: analysed.localNetwork.map(({ value, count }) => [value, count]),
+      onionDomains: analysed.onionCredentials,
+    };
+  }
+
+  if (passwords.rows.length === 0) return null;
+  const { urlIdx } = credentialColumnIndices(passwords.headers);
+  const domainCounts = {};
+  for (const { row } of passwords.rows) {
+    const domain = baseDomainFromUrl(urlIdx >= 0 ? (row[urlIdx] || '') : '');
+    if (domain) domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+  }
+  return {
+    rows: passwords.rows.length,
+    fileCount: passwords.fileCount,
+    topDomains: Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
+  };
+}
+
+function buildCookStats(cookies) {
+  const analysed = cookiesAnalysis;
+  if (analysed && analysed.totalCookies > 0) {
+    return {
+      total: analysed.totalCookies,
+      valid: analysed.totalValid,
+      expired: analysed.totalExpired,
+      session: analysed.totalSession,
+      unknown: analysed.totalUnknown,
+      sessionTokens: analysed.sessionTokens,
+      liveSessionTokens: analysed.validSessionTokens,
+      fileCount: analysed.fileCount,
+      topDomains: analysed.topDomains.map(({ value, count }) => [value, count]),
+    };
+  }
+
+  if (cookies.rows.length === 0) return null;
+  const domainIdx = cookies.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+  const domainCounts = {};
+  let valid = 0, expired = 0, session = 0, unknown = 0, sessionTokens = 0, liveSessionTokens = 0;
+  for (const rowData of cookies.rows) {
+    const status = rowData.validity.status;
+    if (status === 'valid') valid++;
+    else if (status === 'expired') expired++;
+    else if (status === 'session') session++;
+    else unknown++;
+    if (rowData.sessionType === 'auth' || rowData.sessionType === 'session') sessionTokens++;
+    if (isLiveSessionToken(rowData)) liveSessionTokens++;
+    const d = (domainIdx >= 0 ? (rowData.row[domainIdx] || '') : '').replace(/^\./, '').toLowerCase();
+    if (d) domainCounts[d] = (domainCounts[d] || 0) + 1;
+  }
+  return {
+    total: cookies.rows.length,
+    valid, expired, session, unknown,
+    sessionTokens, liveSessionTokens,
+    fileCount: cookies.fileCount,
+    topDomains: Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
+  };
+}
 
 function gatherReportData() {
   const ds = collectAllDatasets();
@@ -119,47 +182,8 @@ function gatherReportData() {
     downloads, detections, clipboard, grabbedFiles, cards, screenshots,
   } = ds;
 
-  let credStats = null;
-  if (passwords.rows.length > 0) {
-    const { urlIdx, userIdx, passIdx } = credentialColumnIndices(passwords.headers);
-    const domainCounts = {};
-    const seen = new Set();
-    for (const { row } of passwords.rows) {
-      const url = urlIdx >= 0 ? (row[urlIdx] || '') : '';
-      const user = userIdx >= 0 ? (row[userIdx] || '') : '';
-      const pass = passIdx >= 0 ? (row[passIdx] || '') : '';
-      seen.add(url + DEDUPE_KEY_SEP + user + DEDUPE_KEY_SEP + pass);
-      const domain = baseDomainFromUrl(url);
-      if (domain) domainCounts[domain] = (domainCounts[domain] || 0) + 1;
-    }
-    credStats = {
-      total: passwords.rows.length,
-      unique: seen.size,
-      fileCount: passwords.fileCount,
-      topDomains: Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
-    };
-  }
-
-  let cookStats = null;
-  if (cookies.rows.length > 0) {
-    const valid = cookies.rows.filter(r => r.validity.status === 'valid').length;
-    const expired = cookies.rows.filter(r => r.validity.status === 'expired').length;
-    const session = cookies.rows.filter(r => r.validity.status === 'session').length;
-    const sessionTokens = cookies.rows.filter(r => r.sessionType === 'auth' || r.sessionType === 'session').length;
-    const validSessionTokens = cookies.rows.filter(r => (r.sessionType === 'auth' || r.sessionType === 'session') && r.validity.status === 'valid').length;
-    const domainCounts = {};
-    for (const rowData of cookies.rows) {
-      const d = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain).replace(/^\./, '').toLowerCase();
-      if (d) domainCounts[d] = (domainCounts[d] || 0) + 1;
-    }
-    cookStats = {
-      total: cookies.rows.length,
-      valid, expired, session,
-      sessionTokens, validSessionTokens,
-      fileCount: cookies.fileCount,
-      topDomains: Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
-    };
-  }
+  const credStats = buildCredStats(passwords);
+  const cookStats = buildCookStats(cookies);
 
   let autoStats = null;
   if (autofills.entries.length > 0) {
@@ -190,6 +214,7 @@ function gatherReportData() {
 
   return {
     archiveName: state.rootZipName || 'Unknown',
+    capture,
     sysinfoEntries,
     sysinfoIocs,
     fingerprintResult,
@@ -251,7 +276,7 @@ function buildLogSummaryHtml(data) {
 
     const es = id.exposureSummary;
     let acctRows = '';
-    const sessionAccounts = (id.accounts || []).filter(a => a.hasValidSession);
+    const sessionAccounts = (id.accounts || []).filter(a => a.hasLiveSession);
     for (const acct of sessionAccounts) {
       acctRows += `<tr><td>${e(acct.domain)}</td><td>${acct.emails.map(e).join(', ') || '-'}</td></tr>`;
     }
@@ -261,11 +286,11 @@ function buildLogSummaryHtml(data) {
       ${piRows ? `<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>${piRows}</tbody></table>` : ''}
       <div class="stat-row" style="margin-top:0.75rem;">
         <div class="stat"><span class="stat-num">${es.totalUniqueServices}</span> services</div>
-        <div class="stat"><span class="stat-num" style="color:#d97706">${es.servicesWithValidSessions}</span> active sessions</div>
-        <div class="stat"><span class="stat-num" style="color:#dc2626">${es.servicesWithBothPasswordAndSession}</span> cred + session</div>
+        <div class="stat"><span class="stat-num" style="color:#d97706">${es.servicesWithLiveSessions}</span> services live at capture</div>
+        <div class="stat"><span class="stat-num" style="color:#dc2626">${es.servicesWithBothPasswordAndSession}</span> password + live session</div>
         <div class="stat"><span class="stat-num">${es.uniqueEmails}</span> email addresses</div>
       </div>
-      ${acctRows ? `<h3>Services with Active Sessions</h3><table><thead><tr><th>Domain</th><th>Linked Emails</th></tr></thead><tbody>${acctRows}</tbody></table>` : ''}
+      ${acctRows ? `<h3>Services with a Live Session at Capture</h3><table><thead><tr><th>Domain</th><th>Linked Emails</th></tr></thead><tbody>${acctRows}</tbody></table>` : ''}
     </section>`;
   }
 
@@ -294,16 +319,25 @@ function buildLogSummaryHtml(data) {
 
   if (data.credStats) {
     const cs = data.credStats;
+    const credCounts = cs.rows !== undefined
+      ? `<div class="stat"><span class="stat-num">${cs.rows.toLocaleString()}</span> credential rows</div>`
+      : [
+        `<div class="stat"><span class="stat-num">${cs.unique.toLocaleString()}</span> unique site + username + password</div>`,
+        `<div class="stat"><span class="stat-num">${cs.parsed.toLocaleString()}</span> parsed before dedupe</div>`,
+        cs.accountsWithoutPasswords > 0 ? `<div class="stat"><span class="stat-num">${cs.accountsWithoutPasswords.toLocaleString()}</span> accounts with no captured password</div>` : '',
+        cs.savedSites > 0 ? `<div class="stat"><span class="stat-num">${cs.savedSites.toLocaleString()}</span> saved sites with no credentials</div>` : '',
+      ].filter(Boolean).join('');
     sections += `<section>
       <h2>Credential Summary</h2>
       <div class="stat-row">
-        <div class="stat"><span class="stat-num">${cs.unique.toLocaleString()}</span> unique credentials</div>
-        <div class="stat"><span class="stat-num">${cs.total.toLocaleString()}</span> total entries</div>
+        ${credCounts}
         <div class="stat"><span class="stat-num">${cs.fileCount}</span> source file(s)</div>
       </div>
       <p class="note">Passwords are not included in this report.</p>
+      ${cs.onionDomains > 0 ? `<p class="note">${cs.onionDomains.toLocaleString()} credential domain(s) on the Tor network (.onion).</p>` : ''}
       <h3>Top Credential Domains</h3>
       ${domainTable(cs.topDomains)}
+      ${cs.localNetwork?.length ? `<h3>Local Network Hosts</h3>${domainTable(cs.localNetwork)}` : ''}
     </section>`;
   }
 
@@ -312,8 +346,8 @@ function buildLogSummaryHtml(data) {
     let sessionNote = '';
     if (ck.sessionTokens > 0) {
       sessionNote = `<p style="margin-top:0.5rem;font-size:0.8rem;"><strong>${ck.sessionTokens}</strong> identified session token${ck.sessionTokens !== 1 ? 's' : ''}`;
-      if (ck.validSessionTokens > 0) {
-        sessionNote += ` (<strong style="color:#dc2626">${ck.validSessionTokens} valid</strong>)`;
+      if (ck.liveSessionTokens > 0) {
+        sessionNote += ` (<strong style="color:#dc2626">${ck.liveSessionTokens} live at capture</strong>)`;
       }
       sessionNote += `</p>`;
     }
@@ -321,9 +355,10 @@ function buildLogSummaryHtml(data) {
       <h2>Cookie Summary</h2>
       <div class="stat-row">
         <div class="stat"><span class="stat-num">${ck.total.toLocaleString()}</span> total cookies</div>
-        <div class="stat"><span class="stat-num valid">${ck.valid.toLocaleString()}</span> valid</div>
+        <div class="stat"><span class="stat-num valid">${ck.valid.toLocaleString()}</span> valid at capture</div>
         <div class="stat"><span class="stat-num expired">${ck.expired.toLocaleString()}</span> expired</div>
         <div class="stat"><span class="stat-num">${ck.session.toLocaleString()}</span> no expiry</div>
+        ${ck.unknown > 0 ? `<div class="stat"><span class="stat-num">${ck.unknown.toLocaleString()}</span> unparseable expiry</div>` : ''}
         <div class="stat"><span class="stat-num">${ck.fileCount}</span> source file(s)</div>
       </div>
       ${sessionNote}
@@ -425,6 +460,7 @@ function buildLogSummaryHtml(data) {
     <h1>Log Summary</h1>
     <div class="meta">
       <span>Archive: ${e(data.archiveName)}</span>
+      ${data.capture?.date ? `<span>Captured: ${e(formatDateTimeLabel(data.capture.date))} (${e(data.capture.source)}) &mdash; ${e(data.capture.iso)}</span>` : ''}
     </div>
   </header>
   ${sections}
@@ -675,6 +711,9 @@ function initExports() {
   });
   on('analysis:fingerprint', (data) => { fingerprintResult = data; });
   on('analysis:identity', (data) => { identityResult = data; });
+  on('analysis:credentials', (data) => { credentialsAnalysis = data; });
+  on('analysis:cookies', (data) => { cookiesAnalysis = data; });
+  on('analysis:capture', (data) => { capture = data; });
 
   document.getElementById('exportIncidentSummary').addEventListener('click', exportLogSummary);
   document.getElementById('exportObfuscatedCreds').addEventListener('click', exportObfuscatedCredentials);
@@ -691,7 +730,7 @@ function initExports() {
     } = collectAllDatasets();
 
     const parts = [];
-    if (passwords.rows.length > 0) parts.push(`${passwords.rows.length} credentials`);
+    if (passwords.rows.length > 0) parts.push(`${passwords.rows.length} credential rows`);
     if (cookies.rows.length > 0) parts.push(`${cookies.rows.length} cookies`);
     if (autofills.entries.length > 0) parts.push(`${autofills.entries.length} autofills`);
     if (notes.entries.length > 0) parts.push(`${notes.entries.length} notes`);
@@ -714,7 +753,7 @@ function initExports() {
     const zipCounts = document.getElementById('exportZipCounts');
 
     if (summaryCounts) summaryCounts.textContent = countsText;
-    if (credsCounts) credsCounts.textContent = passwords.rows.length > 0 ? `${passwords.rows.length} credentials from ${passwords.fileCount} file(s)` : 'No credentials available';
+    if (credsCounts) credsCounts.textContent = passwords.rows.length > 0 ? `${passwords.rows.length} credential rows from ${passwords.fileCount} file(s)` : 'No credentials available';
     if (zipCounts) zipCounts.textContent = countsText || 'No data available';
   });
 
@@ -723,6 +762,9 @@ function initExports() {
     sysinfoIocs = null;
     fingerprintResult = null;
     identityResult = null;
+    credentialsAnalysis = null;
+    cookiesAnalysis = null;
+    capture = null;
     document.getElementById('navExports').disabled = true;
 
     const summaryCounts = document.getElementById('exportSummaryCounts');
