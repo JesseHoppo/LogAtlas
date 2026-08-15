@@ -36,6 +36,8 @@ import {
   downloadCsvRows,
   shapeCookiesCsv,
   shapeNotesCsv,
+  createTableSort,
+  bindTableSort,
 } from './shared.js';
 
 // Auth/SSO subdomains whose base domain doesn't name the consumer service.
@@ -91,6 +93,33 @@ let notesShown = 0;
 let hidePasswords = true;
 let passwordColumnIdx = -1;
 let passwordUrlIdx = -1;
+// Columns come from the parsed file, so the sort keys are resolved on demand:
+// `col<N>` reads that cell, `service` the derived service tag.
+const passwordsSort = createTableSort((key) => {
+  if (key === 'service') return ({ row }) => (passwordUrlIdx >= 0 ? friendlyServiceForUrl(row[passwordUrlIdx]) : '');
+  const match = /^col(\d+)$/.exec(key);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return ({ row }) => row[index];
+});
+const cookiesSort = createTableSort((key) => {
+  if (key === 'status') return ({ validity }) => validity?.label || '';
+  if (key === 'sessionType') return ({ sessionType }) => sessionType || '';
+  const match = /^col(\d+)$/.exec(key);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return ({ row }) => row[index];
+});
+
+const autofillsSort = createTableSort({ name: (e) => e.name, value: (e) => e.value });
+const notesSort = createTableSort({
+  title: (e) => e.title,
+  type: (e) => e.noteType,
+  indicators: (e) => e.indicators,
+  preview: (e) => e.preview,
+  source: (e) => e.source,
+});
+
 let passwordShowService = false;
 let passwordHiddenCols = new Set();
 let passwordConstantNotes = [];
@@ -650,6 +679,7 @@ function renderPasswordsPage(searchQuery = '') {
   } else {
     passwordsFiltered = passwordsData.rows;
   }
+  passwordsFiltered = passwordsSort.apply(passwordsFiltered);
 
   passwordsShown = Math.min(PAGE_SIZE, passwordsFiltered.length);
 
@@ -695,10 +725,10 @@ function renderPasswordsPage(searchQuery = '') {
 
   let html = `${issuesHtml}${buildCredentialFootprintHtml()}${constantCaption}<div class="data-table-container"><table class="data-table">`;
   html += '<thead><tr>';
-  if (passwordShowService) html += '<th>Service</th>';
+  if (passwordShowService) html += passwordsSort.th('service', 'Service');
   for (let c = 0; c < passwordsData.headers.length; c++) {
     if (passwordHiddenCols.has(c)) continue;
-    html += `<th>${escapeHtml(passwordsData.headers[c])}</th>`;
+    html += passwordsSort.th(`col${c}`, passwordsData.headers[c]);
   }
   html += '</tr></thead><tbody data-page-rows>';
   html += buildRowsHtml(passwordRowBuilder, passwordsFiltered, 0, passwordsShown);
@@ -732,7 +762,7 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
     filtered = filtered.filter(r => r.row.some(cell => cell.toLowerCase().includes(q)));
   }
 
-  cookiesFiltered = filtered;
+  cookiesFiltered = cookiesSort.apply(filtered);
   cookiesShown = Math.min(PAGE_SIZE, filtered.length);
 
   const filterActive = validOnly || sessionOnly || !!searchQuery;
@@ -785,10 +815,10 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
 
   let html = '<div class="data-table-container"><table class="data-table">';
   html += '<thead><tr>';
-  for (const h of cookiesData.headers) {
-    html += `<th>${escapeHtml(h)}</th>`;
+  for (let c = 0; c < cookiesData.headers.length; c++) {
+    html += cookiesSort.th(`col${c}`, cookiesData.headers[c]);
   }
-  html += '<th>Status</th><th>Type</th></tr></thead><tbody data-page-rows>';
+  html += `${cookiesSort.th('status', 'Status')}${cookiesSort.th('sessionType', 'Type')}</tr></thead><tbody data-page-rows>`;
   html += buildRowsHtml(cookieRowBuilder, cookiesFiltered, 0, cookiesShown);
   html += '</tbody></table></div>';
 
@@ -818,7 +848,7 @@ function renderAutofillsPage(searchQuery = '') {
     filtered = filtered.filter(e => e.name.toLowerCase().includes(q) || e.value.toLowerCase().includes(q));
   }
 
-  autofillsFiltered = filtered;
+  autofillsFiltered = autofillsSort.apply(filtered);
   autofillsShown = Math.min(PAGE_SIZE, filtered.length);
 
   const total = autofillsData.entries.length;
@@ -853,7 +883,7 @@ function renderAutofillsPage(searchQuery = '') {
   `;
 
   let html = '<div class="data-table-container"><table class="data-table">';
-  html += '<thead><tr><th>Field</th><th>Value</th></tr></thead><tbody data-page-rows>';
+  html += `<thead><tr>${autofillsSort.th('name', 'Field')}${autofillsSort.th('value', 'Value')}</tr></thead><tbody data-page-rows>`;
   html += buildRowsHtml(autofillRowBuilder, autofillsFiltered, 0, autofillsShown);
   html += '</tbody></table></div>';
 
@@ -888,7 +918,7 @@ function renderNotesPage(searchQuery = '') {
     );
   }
 
-  notesFiltered = filtered;
+  notesFiltered = notesSort.apply(filtered);
   notesShown = Math.min(PAGE_SIZE, filtered.length);
 
   const total = notesData.entries.length;
@@ -922,7 +952,7 @@ function renderNotesPage(searchQuery = '') {
 
   let html = buildNotesPiiGroupHtml(filtered);
   html += '<div class="data-table-container"><table class="data-table">';
-  html += '<thead><tr><th>Title</th><th>Type</th><th>Indicators</th><th>Preview</th><th>Source</th></tr></thead><tbody data-page-rows>';
+  html += `<thead><tr>${notesSort.th('title', 'Title')}${notesSort.th('type', 'Type')}${notesSort.th('indicators', 'Indicators')}${notesSort.th('preview', 'Preview')}${notesSort.th('source', 'Source')}</tr></thead><tbody data-page-rows>`;
   html += buildRowsHtml(noteRowBuilder, notesFiltered, 0, notesShown);
   html += '</tbody></table></div>';
 
@@ -1013,8 +1043,12 @@ function resetCredentials() {
   credAnalysis = null;
   passwordsFiltered = []; passwordsShown = 0;
   cookiesFiltered = []; cookiesShown = 0;
+  passwordsSort.reset();
+  cookiesSort.reset();
   autofillsFiltered = []; autofillsShown = 0;
   notesFiltered = []; notesShown = 0;
+  autofillsSort.reset();
+  notesSort.reset();
   hidePasswords = true;
   passwordColumnIdx = -1;
   passwordUrlIdx = -1;
@@ -1083,6 +1117,13 @@ function initCredentials() {
   cookiesValidOnly?.addEventListener('change', updateCookies);
   cookiesSessionOnly?.addEventListener('change', updateCookies);
 
+  bindTableSort('passwordsContent', passwordsSort, () => renderPasswordsPage(passwordsSearch?.value || ''));
+  bindTableSort('cookiesContent', cookiesSort, () => renderCookiesPage(
+    cookiesValidOnly?.checked || false,
+    cookiesSessionOnly?.checked || false,
+    cookiesSearch?.value || ''
+  ));
+
   on('analysis:capture', ({ date }) => {
     const loaded = cookiesData.captureDate;
     if ((loaded ? loaded.getTime() : null) === (date ? date.getTime() : null)) return;
@@ -1097,6 +1138,9 @@ function initCredentials() {
 
   const notesSearch = document.getElementById('notesSearch');
   bindDebouncedInput(notesSearch, (value) => renderNotesPage(value));
+
+  bindTableSort('autofillsContent', autofillsSort, () => renderAutofillsPage(autofillsSearch?.value || ''));
+  bindTableSort('notesContent', notesSort, () => renderNotesPage(notesSearch?.value || ''));
 
   for (const [id, handler] of Object.entries({
     exportPasswordsCsv: exportPasswordsCSV,

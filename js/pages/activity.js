@@ -33,6 +33,8 @@ import {
   formatBytes,
   downloadCsvRows,
   createPagedCollectionRegistry,
+  createTableSort,
+  bindTableSort,
 } from './shared.js';
 
 const SCREENSHOT_MEASURE_BATCH = 16;
@@ -78,6 +80,8 @@ const pages = {
       ];
     },
     columns: ['File Path', 'Source URL', 'File Size', 'Extension', 'Domain'],
+    // Size sorts on the parsed byte count, so "9 KB" lands below "1 MB".
+    sortAccessors: [(e) => e.filePath, (e) => e.sourceUrl, (e) => e.fileSizeBytes, (e) => e.extension, (e) => e.domain],
     rowBuilder: downloadsRowBuilder,
     csv: {
       file: 'downloads.csv',
@@ -122,6 +126,7 @@ const pages = {
       return html + '</div>';
     },
     columns: ['Section', 'Label', 'Target', 'Count'],
+    sortAccessors: [(e) => e.section, (e) => e.label, (e) => e.target, (e) => e.count],
     rowBuilder: detectionRowBuilder,
     csv: {
       file: 'domain_detections.csv',
@@ -158,6 +163,7 @@ const pages = {
       return `<div class="data-page-warning"><div class="data-page-warning-title">Clipboard social-engineering / clipper activity</div><div class="data-page-warning-more">Matches known lure patterns.</div><div class="identity-service-tags">${chips}</div></div>`;
     },
     columns: ['Type', 'Lure', 'Content', 'URLs', 'Lines', 'Source'],
+    sortAccessors: [(e) => e.type, (e) => e.lure, (e) => e.text, (e) => e.urls, (e) => e.lineCount, (e) => e.source],
     rowBuilder: clipboardRowBuilder,
     csv: {
       file: 'clipboard.csv',
@@ -194,6 +200,8 @@ const pages = {
       return `<div class="data-page-warning"><div class="data-page-warning-title">${cached.highValueCount.toLocaleString()} high-value file(s) grabbed</div><div class="data-page-warning-more">Password databases, wallet files, VPN profiles, or SSH keys were collected.</div>${chips ? `<div class="identity-service-tags">${chips}</div>` : ''}</div>`;
     },
     columns: ['Collection', 'Name', 'Path', 'Ext', 'Size', 'Modified', 'Actions'],
+    // Size and Modified sort on the raw byte count and Date, not their labels.
+    sortAccessors: [(e) => e.collection, (e) => e.name, (e) => e.relativePath, (e) => e.extension, (e) => e.sizeBytes, (e) => e.modifiedDate, null],
     rowBuilder: grabbedFileRowBuilder,
     csv: {
       file: 'grabbed_files.csv',
@@ -255,6 +263,7 @@ const pages = {
       { value: filtered.filter(entry => /(python|visual studio|code|git|docker|node\.js|java|composer|npm)/i.test(entry.name)).length.toLocaleString(), label: 'Developer Tools' },
     ],
     columns: ['Software Name', 'Version'],
+    sortAccessors: [(e) => e.name, (e) => e.version],
     rowBuilder: softwareRowBuilder,
     onReset: () => { softwareSlots = { inline: null, file: null }; },
     csv: {
@@ -283,6 +292,7 @@ const pages = {
       { value: filtered.filter(entry => entry.commandLine).length.toLocaleString(), label: 'With Command Line' },
     ],
     columns: ['Process Name', 'PID', 'Session', 'Command Line'],
+    sortAccessors: [(e) => e.name, (e) => (e.pid ? Number(e.pid) : null), (e) => e.sessionId, (e) => e.commandLine],
     rowBuilder: processRowBuilder,
     onReset: () => { processListSlots = { inline: null, file: null }; },
     csv: {
@@ -297,6 +307,12 @@ for (const page of Object.values(pages)) {
   page.data = page.emptyData();
   page.filtered = [];
   page.shown = 0;
+  // Sortable only where the page declared an accessor for that column: an
+  // Actions cell has nothing to order by.
+  page.sort = createTableSort((key) => {
+    const match = /^col(\d+)$/.exec(key);
+    return match ? (page.sortAccessors?.[Number(match[1])] || null) : null;
+  });
 }
 
 const pageRegistry = createPagedCollectionRegistry(Object.fromEntries(
@@ -312,6 +328,7 @@ const pageRegistry = createPagedCollectionRegistry(Object.fromEntries(
       page.data = page.emptyData();
       page.filtered = [];
       page.shown = 0;
+      page.sort.reset();
     },
   }])
 ));
@@ -732,6 +749,7 @@ function renderPage(pageId, searchQuery = '') {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(entry => page.matches(entry, q));
   }
+  filtered = page.sort.apply(filtered);
   page.filtered = filtered;
   page.shown = Math.min(PAGE_SIZE, filtered.length);
 
@@ -747,7 +765,9 @@ function renderPage(pageId, searchQuery = '') {
   html += page.gridClass
     ? `<div class="${page.gridClass}">${rows}</div>`
     : '<div class="data-table-container"><table class="data-table">'
-      + `<thead><tr>${page.columns.map(column => `<th>${column}</th>`).join('')}</tr></thead>`
+      + `<thead><tr>${page.columns.map((column, index) => (
+          page.sortAccessors?.[index] ? page.sort.th(`col${index}`, column) : `<th>${escapeHtml(column)}</th>`
+        )).join('')}</tr></thead>`
       + `<tbody>${rows}</tbody></table></div>`;
 
   const remaining = filtered.length - page.shown;
@@ -857,6 +877,8 @@ export function initActivityPages() {
     bindDebouncedInput(searchInputs[pageId], (value) => renderPage(pageId, value));
     const exportId = `export${pageId[0].toUpperCase()}${pageId.slice(1)}Csv`;
     document.getElementById(exportId)?.addEventListener('click', () => exportCsv(pageId));
+    bindTableSort(`${pageId}Content`, pages[pageId].sort, () =>
+      renderPage(pageId, searchInputs[pageId]?.value || ''));
   }
 
   document.getElementById('grabbedContent')?.addEventListener('click', (event) => {

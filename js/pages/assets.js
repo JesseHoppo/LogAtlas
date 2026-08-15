@@ -26,6 +26,8 @@ import {
   extractCardLast4,
   downloadCsvRows,
   createPagedCollectionRegistry,
+  createTableSort,
+  bindTableSort,
   collectAndParse,
 } from './shared.js';
 
@@ -46,6 +48,26 @@ let creditCardsShown = 0;
 let hideCardNumbers = true;
 let hideTokenValues = true;
 
+const tokensSort = createTableSort({
+  service: (e) => e.service, type: (e) => e.type, value: (e) => e.value, accountId: (e) => e.accountId,
+  browser: (e) => e.browser, profile: (e) => e.profile, note: (e) => e.note, source: (e) => e.source,
+});
+const servicesSort = createTableSort({
+  service: (e) => e.service, artifactType: (e) => e.artifactType, section: (e) => e.section,
+  key: (e) => e.key, value: (e) => e.value, source: (e) => e.source,
+});
+const walletsSort = createTableSort({
+  service: (e) => e.service, category: (e) => e.category, artifactType: (e) => e.artifactType,
+  storeType: (e) => e.storeType, browser: (e) => e.browser, profile: (e) => e.profile,
+  emails: (e) => e.emailCount, addresses: (e) => e.addressCount, tokens: (e) => e.tokenCount,
+  seeds: (e) => e.seedHints, highlights: (e) => e.highlights, source: (e) => e.source,
+});
+const cardsSort = createTableSort({
+  cardNumber: (e) => e.cardNumber, last4: (e) => e.last4, nameOnCard: (e) => e.nameOnCard,
+  expiration: (e) => e.expiration, cvc: (e) => e.cvc, browser: (e) => e.browser,
+  source: (e) => e.filePath || e.source,
+});
+
 const pageRegistry = createPagedCollectionRegistry({
   tokens: {
     navId: 'navTokens',
@@ -57,6 +79,7 @@ const pageRegistry = createPagedCollectionRegistry({
     reset: () => {
       accountTokensData = { entries: [], fileCount: 0 };
       accountTokensFiltered = [];
+      tokensSort.reset();
       accountTokensShown = 0;
       hideTokenValues = true;
     },
@@ -71,6 +94,7 @@ const pageRegistry = createPagedCollectionRegistry({
     reset: () => {
       serviceArtifactsData = { entries: [], fileCount: 0 };
       serviceArtifactsFiltered = [];
+      servicesSort.reset();
       serviceArtifactsShown = 0;
     },
   },
@@ -84,6 +108,7 @@ const pageRegistry = createPagedCollectionRegistry({
     reset: () => {
       walletArtifactsData = { entries: [], fileCount: 0 };
       walletArtifactsFiltered = [];
+      walletsSort.reset();
       walletArtifactsShown = 0;
     },
   },
@@ -97,6 +122,7 @@ const pageRegistry = createPagedCollectionRegistry({
     reset: () => {
       creditCardsData = { entries: [], fileCount: 0 };
       creditCardsFiltered = [];
+      cardsSort.reset();
       creditCardsShown = 0;
       hideCardNumbers = true;
     },
@@ -191,7 +217,7 @@ function renderTokensPage(searchQuery = '') {
   if (accountTokensData.entries.length === 0) { summary.textContent = 'No account tokens found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No account-token data available.</div>'; return; }
   let filtered = accountTokensData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.service.toLowerCase().includes(q) || entry.type.toLowerCase().includes(q) || entry.value.toLowerCase().includes(q) || entry.accountId.toLowerCase().includes(q) || entry.browser.toLowerCase().includes(q) || entry.profile.toLowerCase().includes(q) || entry.note.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
-  accountTokensFiltered = filtered;
+  accountTokensFiltered = tokensSort.apply(filtered);
   accountTokensShown = Math.min(PAGE_SIZE, filtered.length);
   const services = new Set(accountTokensData.entries.map(e => e.service).filter(Boolean));
   const withValue = accountTokensData.entries.filter(e => e.value).length;
@@ -199,7 +225,7 @@ function renderTokensPage(searchQuery = '') {
   const tokenTypes = new Set(accountTokensData.entries.map(e => e.type).filter(Boolean));
   summary.textContent = filtered.length !== accountTokensData.entries.length ? `Showing ${filtered.length.toLocaleString()} of ${accountTokensData.entries.length.toLocaleString()} token rows from ${accountTokensData.fileCount} file(s)` : `${accountTokensData.entries.length.toLocaleString()} token rows from ${accountTokensData.fileCount} file(s)`;
   stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withValue.toLocaleString()}</div><div class="data-page-stat-label">With Token</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withAccountId.toLocaleString()}</div><div class="data-page-stat-label">With Account ID</div></div><div class="data-page-stat"><div class="data-page-stat-value">${tokenTypes.size.toLocaleString()}</div><div class="data-page-stat-label">Token Types</div></div>`;
-  let html = '<div class="data-table-container"><table class="data-table"><thead><tr><th>Service</th><th>Type</th><th>Value</th><th>Account ID</th><th>Browser</th><th>Profile</th><th>Note</th><th>Source</th></tr></thead><tbody>';
+  let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${tokensSort.th('service', 'Service')}${tokensSort.th('type', 'Type')}${tokensSort.th('value', 'Value')}${tokensSort.th('accountId', 'Account ID')}${tokensSort.th('browser', 'Browser')}${tokensSort.th('profile', 'Profile')}${tokensSort.th('note', 'Note')}${tokensSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(accountTokenRowBuilder, accountTokensFiltered, 0, accountTokensShown);
   html += '</tbody></table></div>';
   const remaining = accountTokensFiltered.length - accountTokensShown;
@@ -218,7 +244,7 @@ function renderServicesPage(searchQuery = '') {
   if (serviceArtifactsData.entries.length === 0) { summary.textContent = 'No service artifacts found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No service artifact data available.</div>'; return; }
   let filtered = serviceArtifactsData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.service.toLowerCase().includes(q) || entry.artifactType.toLowerCase().includes(q) || entry.section.toLowerCase().includes(q) || entry.key.toLowerCase().includes(q) || entry.value.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
-  serviceArtifactsFiltered = filtered;
+  serviceArtifactsFiltered = servicesSort.apply(filtered);
   serviceArtifactsShown = Math.min(PAGE_SIZE, filtered.length);
   const services = new Set(serviceArtifactsData.entries.map(e => e.service).filter(Boolean));
   const artifactTypes = new Set(serviceArtifactsData.entries.map(e => e.artifactType).filter(Boolean));
@@ -226,7 +252,7 @@ function renderServicesPage(searchQuery = '') {
   const withValue = serviceArtifactsData.entries.filter(e => e.value).length;
   summary.textContent = filtered.length !== serviceArtifactsData.entries.length ? `Showing ${filtered.length.toLocaleString()} of ${serviceArtifactsData.entries.length.toLocaleString()} service rows from ${serviceArtifactsData.fileCount} file(s)` : `${serviceArtifactsData.entries.length.toLocaleString()} service rows from ${serviceArtifactsData.fileCount} file(s)`;
   stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${artifactTypes.size.toLocaleString()}</div><div class="data-page-stat-label">Artifact Types</div></div><div class="data-page-stat"><div class="data-page-stat-value">${sections.size.toLocaleString()}</div><div class="data-page-stat-label">Sections</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withValue.toLocaleString()}</div><div class="data-page-stat-label">With Value</div></div>`;
-  let html = '<div class="data-table-container"><table class="data-table"><thead><tr><th>Service</th><th>Artifact Type</th><th>Section</th><th>Key</th><th>Value</th><th>Source</th></tr></thead><tbody>';
+  let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${servicesSort.th('service', 'Service')}${servicesSort.th('artifactType', 'Artifact Type')}${servicesSort.th('section', 'Section')}${servicesSort.th('key', 'Key')}${servicesSort.th('value', 'Value')}${servicesSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(serviceArtifactRowBuilder, serviceArtifactsFiltered, 0, serviceArtifactsShown);
   html += '</tbody></table></div>';
   const remaining = serviceArtifactsFiltered.length - serviceArtifactsShown;
@@ -245,7 +271,7 @@ function renderWalletsPage(searchQuery = '') {
   if (walletArtifactsData.entries.length === 0) { summary.textContent = 'No wallet or store artifacts found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No wallet/store artifact data available.</div>'; return; }
   let filtered = walletArtifactsData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.service.toLowerCase().includes(q) || entry.category.toLowerCase().includes(q) || entry.artifactType.toLowerCase().includes(q) || entry.storeType.toLowerCase().includes(q) || entry.browser.toLowerCase().includes(q) || entry.profile.toLowerCase().includes(q) || entry.highlights.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
-  walletArtifactsFiltered = filtered;
+  walletArtifactsFiltered = walletsSort.apply(filtered);
   walletArtifactsShown = Math.min(PAGE_SIZE, filtered.length);
   const services = new Set(walletArtifactsData.entries.map(e => e.service).filter(Boolean));
   const passwordManagers = walletArtifactsData.entries.filter(e => e.category === 'Password Manager').length;
@@ -259,7 +285,7 @@ function renderWalletsPage(searchQuery = '') {
     const names = [...new Set(seedEntries.map(e => e.service).filter(Boolean))].slice(0, 6).map(n => escapeHtml(n)).join(', ');
     html += `<div class="data-page-warning"><div class="data-page-warning-title">Wallet seed phrase exposure</div><div class="data-page-warning-more">${seedEntries.length.toLocaleString()} crypto-wallet artifact(s) contain recovery-phrase indicators${names ? ` (${names})` : ''}.</div></div>`;
   }
-  html += '<div class="data-table-container"><table class="data-table"><thead><tr><th>Service</th><th>Category</th><th>Artifact Type</th><th>Store Type</th><th>Browser</th><th>Profile</th><th>Emails</th><th>Addresses</th><th>Tokens</th><th>Seeds</th><th>Highlights</th><th>Source</th></tr></thead><tbody>';
+  html += `<div class="data-table-container"><table class="data-table"><thead><tr>${walletsSort.th('service', 'Service')}${walletsSort.th('category', 'Category')}${walletsSort.th('artifactType', 'Artifact Type')}${walletsSort.th('storeType', 'Store Type')}${walletsSort.th('browser', 'Browser')}${walletsSort.th('profile', 'Profile')}${walletsSort.th('emails', 'Emails')}${walletsSort.th('addresses', 'Addresses')}${walletsSort.th('tokens', 'Tokens')}${walletsSort.th('seeds', 'Seeds')}${walletsSort.th('highlights', 'Highlights')}${walletsSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(walletArtifactRowBuilder, walletArtifactsFiltered, 0, walletArtifactsShown);
   html += '</tbody></table></div>';
   const remaining = walletArtifactsFiltered.length - walletArtifactsShown;
@@ -280,7 +306,7 @@ function renderCardsPage(searchQuery = '') {
   if (creditCardsData.entries.length === 0) { summary.textContent = 'No credit cards found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No credit-card data available.</div>'; return; }
   let filtered = creditCardsData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.cardNumber.toLowerCase().includes(q) || entry.last4.toLowerCase().includes(q) || entry.nameOnCard.toLowerCase().includes(q) || entry.expiration.toLowerCase().includes(q) || entry.cvc.toLowerCase().includes(q) || entry.browser.toLowerCase().includes(q) || entry.filePath.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
-  creditCardsFiltered = filtered;
+  creditCardsFiltered = cardsSort.apply(filtered);
   creditCardsShown = Math.min(PAGE_SIZE, filtered.length);
   const withHolder = creditCardsData.entries.filter(e => e.nameOnCard).length;
   const withCvc = creditCardsData.entries.filter(e => e.cvc).length;
@@ -288,7 +314,7 @@ function renderCardsPage(searchQuery = '') {
   const uniqueLast4 = new Set(creditCardsData.entries.map(e => e.last4).filter(Boolean));
   summary.textContent = filtered.length !== creditCardsData.entries.length ? `Showing ${filtered.length.toLocaleString()} of ${creditCardsData.entries.length.toLocaleString()} cards from ${creditCardsData.fileCount} file(s)` : `${creditCardsData.entries.length.toLocaleString()} cards from ${creditCardsData.fileCount} file(s)`;
   stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${uniqueLast4.size.toLocaleString()}</div><div class="data-page-stat-label">Unique Last4</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withHolder.toLocaleString()}</div><div class="data-page-stat-label">With Cardholder</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withCvc.toLocaleString()}</div><div class="data-page-stat-label">With CVC</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withExpiry.toLocaleString()}</div><div class="data-page-stat-label">With Expiry</div></div>`;
-  let html = '<div class="data-table-container"><table class="data-table"><thead><tr><th>Card Number</th><th>Last4</th><th>Name On Card</th><th>Expiration</th><th>CVC</th><th>Browser</th><th>Recovered From</th></tr></thead><tbody>';
+  let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${cardsSort.th('cardNumber', 'Card Number')}${cardsSort.th('last4', 'Last4')}${cardsSort.th('nameOnCard', 'Name On Card')}${cardsSort.th('expiration', 'Expiration')}${cardsSort.th('cvc', 'CVC')}${cardsSort.th('browser', 'Browser')}${cardsSort.th('source', 'Recovered From')}</tr></thead><tbody>`;
   html += buildRowsHtml(creditCardRowBuilder, creditCardsFiltered, 0, creditCardsShown);
   html += '</tbody></table></div>';
   const remaining = creditCardsFiltered.length - creditCardsShown;
@@ -349,6 +375,8 @@ export function reset() {
   pageRegistry.reset();
 }
 
+const pageSorts = { tokens: tokensSort, services: servicesSort, wallets: walletsSort, cards: cardsSort };
+
 export function initAssetPages() {
   const searchInputs = {
     tokens: document.getElementById('tokensSearch'),
@@ -366,6 +394,7 @@ export function initAssetPages() {
   const cardsHideSensitive = document.getElementById('cardsHideSensitive');
   for (const [pageName, input] of Object.entries(searchInputs)) {
     bindDebouncedInput(input, (value) => renderers[pageName](value));
+    bindTableSort(`${pageName}Content`, pageSorts[pageName], () => renderers[pageName](input?.value || ''));
   }
 
   tokensHideSensitive?.addEventListener('change', () => {

@@ -29,6 +29,8 @@ import {
   addAdjustColumnsBtn,
   downloadCsvRows,
   createPagedCollectionRegistry,
+  createTableSort,
+  bindTableSort,
 } from './shared.js';
 
 let historyData = { entries: [], fileCount: 0 };
@@ -42,7 +44,29 @@ let bookmarksShown = 0;
 let browserMetadataFiltered = [];
 let browserMetadataShown = 0;
 
-let historySort = { key: 'none', order: 'none' };
+const historySort = createTableSort({
+  url: (entry) => entry.url,
+  title: (entry) => entry.title,
+  visits: (entry) => entry.visitCount,
+  lastVisit: (entry) => entry.lastVisitDate,
+});
+const bookmarksSort = createTableSort({
+  url: (entry) => entry.url,
+  title: (entry) => entry.title,
+  folder: (entry) => entry.folder,
+  browser: (entry) => entry.browser,
+  profile: (entry) => entry.profile,
+  domain: (entry) => entry.domain,
+  source: (entry) => entry.source,
+});
+const browserMetaSort = createTableSort({
+  browser: (entry) => entry.browser,
+  profile: (entry) => entry.profile,
+  category: (entry) => entry.category,
+  key: (entry) => entry.key,
+  value: (entry) => entry.value,
+  source: (entry) => entry.source,
+});
 
 const pageRegistry = createPagedCollectionRegistry({
   history: {
@@ -56,7 +80,7 @@ const pageRegistry = createPagedCollectionRegistry({
       historyData = { entries: [], fileCount: 0 };
       historyFiltered = [];
       historyShown = 0;
-      historySort = { key: 'none', order: 'none' };
+      historySort.reset();
     },
   },
   bookmarks: {
@@ -70,6 +94,7 @@ const pageRegistry = createPagedCollectionRegistry({
       bookmarksData = { entries: [], fileCount: 0 };
       bookmarksFiltered = [];
       bookmarksShown = 0;
+      bookmarksSort.reset();
     },
   },
   browsermeta: {
@@ -83,6 +108,7 @@ const pageRegistry = createPagedCollectionRegistry({
       browserMetadataData = { entries: [], fileCount: 0 };
       browserMetadataFiltered = [];
       browserMetadataShown = 0;
+      browserMetaSort.reset();
     },
   },
 });
@@ -228,17 +254,7 @@ function renderHistoryPage(searchQuery = '') {
     filtered = filtered.filter(e => e.url.toLowerCase().includes(q) || e.title.toLowerCase().includes(q) || e.lastVisit.toLowerCase().includes(q));
   }
 
-  if (historySort.key === 'visits') {
-    filtered.sort((a, b) => historySort.order === 'desc' ? b.visitCount - a.visitCount : a.visitCount - b.visitCount);
-  } else if (historySort.key === 'lastVisit') {
-    filtered.sort((a, b) => {
-      const aTime = a.lastVisitDate ? a.lastVisitDate.getTime() : -Infinity;
-      const bTime = b.lastVisitDate ? b.lastVisitDate.getTime() : -Infinity;
-      return historySort.order === 'desc' ? bTime - aTime : aTime - bTime;
-    });
-  }
-
-  historyFiltered = filtered;
+  historyFiltered = historySort.apply(filtered);
   historyShown = Math.min(PAGE_SIZE, filtered.length);
 
   const cached = historyData.stats || { topDomains: [], uniqueDomains: 0, mostRecentDate: null };
@@ -266,10 +282,8 @@ function renderHistoryPage(searchQuery = '') {
     html += '</div>';
   }
 
-  const visitsSortClass = historySort.key === 'visits' ? `sortable sort-${historySort.order}` : 'sortable';
-  const lastVisitSortClass = historySort.key === 'lastVisit' ? `sortable sort-${historySort.order}` : 'sortable';
   html += '<div class="data-table-container"><table class="data-table">';
-  html += `<thead><tr><th>URL</th><th>Title</th><th class="${visitsSortClass}" id="historyVisitsHeader">Visits</th><th class="${lastVisitSortClass}" id="historyLastVisitHeader">Last Visit</th></tr></thead><tbody>`;
+  html += `<thead><tr>${historySort.th('url', 'URL')}${historySort.th('title', 'Title')}${historySort.th('visits', 'Visits')}${historySort.th('lastVisit', 'Last Visit')}</tr></thead><tbody>`;
   html += buildRowsHtml(historyRowBuilder, historyFiltered, 0, historyShown);
   html += '</tbody></table></div>';
 
@@ -302,7 +316,7 @@ function renderBookmarksPage(searchQuery = '') {
     filtered = filtered.filter(entry => entry.url.toLowerCase().includes(q) || entry.title.toLowerCase().includes(q) || entry.folder.toLowerCase().includes(q) || entry.browser.toLowerCase().includes(q) || entry.profile.toLowerCase().includes(q) || entry.domain.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q));
   }
 
-  bookmarksFiltered = filtered;
+  bookmarksFiltered = bookmarksSort.apply(filtered);
   bookmarksShown = Math.min(PAGE_SIZE, filtered.length);
 
   const uniqueDomains = new Set(bookmarksData.entries.map(entry => entry.domain).filter(Boolean));
@@ -321,7 +335,10 @@ function renderBookmarksPage(searchQuery = '') {
     <div class="data-page-stat"><div class="data-page-stat-value">${browsers.size.toLocaleString()}</div><div class="data-page-stat-label">Browsers</div></div>
   `;
 
-  let html = '<div class="data-table-container"><table class="data-table"><thead><tr><th>URL</th><th>Title</th><th>Folder</th><th>Browser</th><th>Profile</th><th>Domain</th><th>Source</th></tr></thead><tbody>';
+  let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${
+    bookmarksSort.th('url', 'URL')}${bookmarksSort.th('title', 'Title')}${bookmarksSort.th('folder', 'Folder')}${
+    bookmarksSort.th('browser', 'Browser')}${bookmarksSort.th('profile', 'Profile')}${bookmarksSort.th('domain', 'Domain')}${
+    bookmarksSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(bookmarkRowBuilder, bookmarksFiltered, 0, bookmarksShown);
   html += '</tbody></table></div>';
   const remaining = bookmarksFiltered.length - bookmarksShown;
@@ -353,7 +370,7 @@ function renderBrowserMetaPage(searchQuery = '') {
     filtered = filtered.filter(entry => entry.browser.toLowerCase().includes(q) || entry.profile.toLowerCase().includes(q) || entry.category.toLowerCase().includes(q) || entry.key.toLowerCase().includes(q) || entry.value.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q));
   }
 
-  browserMetadataFiltered = filtered;
+  browserMetadataFiltered = browserMetaSort.apply(filtered);
   browserMetadataShown = Math.min(PAGE_SIZE, filtered.length);
 
   const categories = new Set(browserMetadataData.entries.map(entry => entry.category).filter(Boolean));
@@ -372,7 +389,9 @@ function renderBrowserMetaPage(searchQuery = '') {
     <div class="data-page-stat"><div class="data-page-stat-value">${withValues.toLocaleString()}</div><div class="data-page-stat-label">With Value</div></div>
   `;
 
-  let html = '<div class="data-table-container"><table class="data-table"><thead><tr><th>Browser</th><th>Profile</th><th>Category</th><th>Key</th><th>Value</th><th>Source</th></tr></thead><tbody>';
+  let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${
+    browserMetaSort.th('browser', 'Browser')}${browserMetaSort.th('profile', 'Profile')}${browserMetaSort.th('category', 'Category')}${
+    browserMetaSort.th('key', 'Key')}${browserMetaSort.th('value', 'Value')}${browserMetaSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(browserMetadataRowBuilder, browserMetadataFiltered, 0, browserMetadataShown);
   html += '</tbody></table></div>';
   const remaining = browserMetadataFiltered.length - browserMetadataShown;
@@ -440,15 +459,9 @@ export function initBrowserPages() {
     bindDebouncedInput(input, (value) => renderers[pageName](value));
   }
 
-  document.getElementById('historyContent')?.addEventListener('click', (e) => {
-    const header = e.target.closest('#historyVisitsHeader, #historyLastVisitHeader');
-    if (!header) return;
-    const nextKey = header.id === 'historyLastVisitHeader' ? 'lastVisit' : 'visits';
-    if (historySort.key !== nextKey) historySort = { key: nextKey, order: 'desc' };
-    else if (historySort.order === 'desc') historySort = { key: nextKey, order: 'asc' };
-    else historySort = { key: 'none', order: 'none' };
-    renderHistoryPage(searchInputs.history?.value || '');
-  });
+  bindTableSort('historyContent', historySort, () => renderHistoryPage(searchInputs.history?.value || ''));
+  bindTableSort('bookmarksContent', bookmarksSort, () => renderBookmarksPage(searchInputs.bookmarks?.value || ''));
+  bindTableSort('browserMetaContent', browserMetaSort, () => renderBrowserMetaPage(searchInputs.browsermeta?.value || ''));
 
   for (const [id, handler] of Object.entries({
     exportHistoryCsv: exportHistoryCSV,

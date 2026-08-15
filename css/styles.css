@@ -2980,6 +2980,10 @@ body {
 .data-table th.sortable:hover {
   background: var(--bg-tertiary);
 }
+.data-table th.sortable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .data-table th.sortable::after {
   content: '';
   display: inline-block;

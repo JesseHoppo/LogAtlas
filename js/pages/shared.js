@@ -41,6 +41,98 @@ export function buildRowsHtml(rowBuilder, items, start, end) {
   return html;
 }
 
+// Blanks sink to the bottom in both directions: an empty cell is absence of
+// data, not a value belonging at one end of the range.
+const BLANK = Symbol('blank');
+
+function sortValue(raw) {
+  if (raw == null) return BLANK;
+  if (raw instanceof Date) return isNaN(raw.getTime()) ? BLANK : raw.getTime();
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : BLANK;
+  const text = String(raw).trim();
+  return text === '' ? BLANK : text.toLowerCase();
+}
+
+function compareSortValues(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+// Header sorting for the data tables. `columns` is a map of sort key to
+// accessor, or — where the columns come from the parsed file and aren't known
+// up front — a function resolving a key to one. Clicking cycles desc -> asc ->
+// unsorted, so the file's own order stays reachable: it is evidence too.
+export function createTableSort(columns) {
+  const resolve = typeof columns === 'function' ? columns : (name) => columns[name];
+  let key = 'none';
+  let order = 'none';
+
+  return {
+    get key() { return key; },
+    get order() { return order; },
+    reset() { key = 'none'; order = 'none'; },
+    cycle(nextKey) {
+      if (!nextKey || !resolve(nextKey)) return false;
+      if (key !== nextKey) { key = nextKey; order = 'desc'; }
+      else if (order === 'desc') { order = 'asc'; }
+      else { key = 'none'; order = 'none'; }
+      return true;
+    },
+    th(columnKey, label) {
+      const active = key === columnKey && order !== 'none';
+      const classes = active ? `sortable sort-${order}` : 'sortable';
+      const aria = active ? (order === 'asc' ? 'ascending' : 'descending') : 'none';
+      return `<th class="${classes}" data-sort-key="${escapeHtml(columnKey)}" tabindex="0" aria-sort="${aria}">${escapeHtml(label)}</th>`;
+    },
+    apply(rows) {
+      const accessor = key === 'none' ? null : resolve(key);
+      if (!accessor) return rows;
+      const direction = order === 'asc' ? 1 : -1;
+      // Decorated with the source index so the sort is stable: rows that tie
+      // keep the order they were parsed in.
+      return rows
+        .map((row, index) => ({ row, index, value: sortValue(accessor(row)) }))
+        .sort((a, b) => {
+          // Blank last in both directions, so reversing the sort never floats
+          // the rows with nothing in that column to the top.
+          const aBlank = a.value === BLANK;
+          const bBlank = b.value === BLANK;
+          if (aBlank || bBlank) {
+            if (aBlank && bBlank) return a.index - b.index;
+            return aBlank ? 1 : -1;
+          }
+          return compareSortValues(a.value, b.value) * direction || a.index - b.index;
+        })
+        .map((entry) => entry.row);
+    },
+  };
+}
+
+// One delegated listener per table container; the header cells carry the key.
+export function bindTableSort(container, sort, rerender) {
+  const el = typeof container === 'string' ? document.getElementById(container) : container;
+  if (!el) return;
+
+  const activate = (event) => {
+    const header = event.target.closest('th[data-sort-key]');
+    if (!header || !el.contains(header)) return;
+    if (event.type === 'keydown') {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+    }
+    const focused = document.activeElement === header;
+    const sortKey = header.dataset.sortKey;
+    if (!sort.cycle(sortKey)) return;
+    rerender();
+    // The rerender replaces the header that was just operated, so keyboard
+    // focus has to be put back on its replacement.
+    if (focused) el.querySelector(`th[data-sort-key="${CSS.escape(sortKey)}"]`)?.focus();
+  };
+
+  el.addEventListener('click', activate);
+  el.addEventListener('keydown', activate);
+}
+
 export function formatOptionalDate(value) {
   return value instanceof Date && !isNaN(value.getTime()) ? value.toLocaleString() : '';
 }
