@@ -1085,13 +1085,25 @@ function cookieColumnMap(headers, columnCount) {
     else if (map.value < 0 && /^value$/i.test(header)) map.value = i;
   }
 
-  if (map.domain < 0 && columnCount >= 6) map.domain = 0;
-  if (map.subDomain < 0 && columnCount >= 7) map.subDomain = 1;
-  if (map.path < 0) map.path = columnCount >= 7 ? 2 : columnCount >= 6 ? 1 : -1;
-  if (map.secure < 0) map.secure = columnCount >= 7 ? 3 : columnCount >= 6 ? 2 : -1;
-  if (map.expires < 0) map.expires = columnCount >= 7 ? 4 : columnCount >= 6 ? 3 : -1;
-  if (map.name < 0) map.name = columnCount >= 7 ? 5 : columnCount >= 6 ? 4 : -1;
-  if (map.value < 0) map.value = columnCount >= 7 ? 6 : columnCount >= 6 ? 5 : -1;
+  // A header that named some roles but not others leaves the rest to fixed
+  // positions, which a named role may already occupy. Reading one column as two
+  // roles is worse than admitting the role is unknown, so a taken position is
+  // skipped rather than shared.
+  const claimed = new Set(Object.values(map).filter(index => index >= 0));
+  const positional = (role, index) => {
+    if (map[role] >= 0 || index < 0 || claimed.has(index)) return;
+    map[role] = index;
+    claimed.add(index);
+  };
+
+  const wide = columnCount >= 7;
+  positional('domain', columnCount >= 6 ? 0 : -1);
+  positional('subDomain', wide ? 1 : -1);
+  positional('path', wide ? 2 : columnCount >= 6 ? 1 : -1);
+  positional('secure', wide ? 3 : columnCount >= 6 ? 2 : -1);
+  positional('expires', wide ? 4 : columnCount >= 6 ? 3 : -1);
+  positional('name', wide ? 5 : columnCount >= 6 ? 4 : -1);
+  positional('value', wide ? 6 : columnCount >= 6 ? 5 : -1);
 
   return map;
 }
