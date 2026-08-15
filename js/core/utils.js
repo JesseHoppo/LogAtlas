@@ -182,7 +182,6 @@ function syntaxHighlightJSON(jsonString) {
 
 export {
   escapeHtml,
-  escapeHtml as escapeAttr,
   capitalise,
   formatBytes,
   getFileExtension,

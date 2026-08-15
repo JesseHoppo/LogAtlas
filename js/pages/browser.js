@@ -23,7 +23,7 @@ import {
   buildShowMoreButton,
   buildRowsHtml,
   bindDebouncedInput,
-  formatTimestampDisplay,
+  formatDateTimeLabel,
   trimRootPath,
   inferMetadataCategory,
   addAdjustColumnsBtn,
@@ -203,7 +203,7 @@ async function loadBrowserMetadataData(fileTree, rootName) {
 }
 
 function historyRowBuilder({ url, title, visitCount, lastVisit, lastVisitDate }) {
-  const displayLastVisit = lastVisitDate ? formatTimestampDisplay(lastVisitDate) : lastVisit;
+  const displayLastVisit = lastVisitDate ? formatDateTimeLabel(lastVisitDate) : lastVisit;
   return `<tr><td title="${escapeHtml(url)}">${escapeHtml(url)}</td><td title="${escapeHtml(title)}">${escapeHtml(title)}</td><td>${visitCount}</td><td title="${escapeHtml(lastVisit || '')}">${escapeHtml(displayLastVisit || '')}</td></tr>`;
 }
 
@@ -252,7 +252,7 @@ function renderHistoryPage(searchQuery = '') {
 
   stats.innerHTML = `
     <div class="data-page-stat"><div class="data-page-stat-value">${cached.uniqueDomains.toLocaleString()}</div><div class="data-page-stat-label">Unique Domains</div></div>
-    ${cached.mostRecentDate ? `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:0.95rem">${escapeHtml(formatTimestampDisplay(cached.mostRecentDate))}</div><div class="data-page-stat-label">Most Recent Visit</div></div>` : ''}
+    ${cached.mostRecentDate ? `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:0.95rem">${escapeHtml(formatDateTimeLabel(cached.mostRecentDate))}</div><div class="data-page-stat-label">Most Recent Visit</div></div>` : ''}
   `;
 
   let html = '';

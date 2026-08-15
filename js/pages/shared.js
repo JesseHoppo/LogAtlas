@@ -67,8 +67,6 @@ export function formatDateTimeLabel(value) {
   });
 }
 
-export { formatDateTimeLabel as formatTimestampDisplay };
-
 export function resolveSourcePathSegments(sourcePath) {
   const parts = String(sourcePath || '').split('/').filter(Boolean);
   if (parts.length > 0 && parts[0] === state.rootZipName) return parts.slice(1);

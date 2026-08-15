@@ -3,7 +3,7 @@
 import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { copyToClipboard, extractCountryFromFilename, isValidCountryCode, classifyIpAddress } from '../core/shared.js';
-import { escapeHtml, escapeAttr, capitalise } from '../core/utils.js';
+import { escapeHtml, capitalise } from '../core/utils.js';
 import { formatDateTimeLabel } from '../pages/shared.js';
 let sysInfoSourcePath = null;
 let overviewScreenshotUrl = null;
@@ -110,7 +110,7 @@ function renderCaseContext({ computer, resolvedUser, userSource, countryInfo, ex
 // actually available, so a card never offers a dead link.
 function buildVerdictCard({ label, value, note, targets }) {
   const nav = (targets || []).filter(Boolean).join(' ');
-  const link = nav ? `<button class="verdict-card-link" data-nav="${escapeAttr(nav)}">View &rarr;</button>` : '';
+  const link = nav ? `<button class="verdict-card-link" data-nav="${escapeHtml(nav)}">View &rarr;</button>` : '';
   return `<div class="verdict-card">
     <div class="verdict-card-label">${escapeHtml(label)}</div>
     <div class="verdict-card-value">${escapeHtml(value)}</div>
@@ -228,7 +228,7 @@ function renderBarList(container, items, maxItems = 10) {
   const maxCount = top[0].count;
   container.innerHTML = top.map(item => {
     const pct = Math.round((item.count / maxCount) * 100);
-    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeAttr(item.value)}: ${item.count}"`;
+    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeHtml(item.value)}: ${item.count}"`;
     return `<div class="dash-bar-row" ${aria}>
       <div class="dash-bar-fill" style="width:${pct}%"></div>
       <span class="dash-bar-label">${escapeHtml(item.value)}</span>
@@ -251,7 +251,7 @@ function renderCookieBarList(container, items, maxItems = 10) {
     const validPct = Math.round((item.valid / maxCount) * 100);
     const expiredPct = Math.round((item.expired / maxCount) * 100);
     const ariaLabel = `${item.value}: ${item.count} cookies (${item.valid} valid, ${item.expired} expired)`;
-    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeAttr(ariaLabel)}"`;
+    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeHtml(ariaLabel)}"`;
     return `<div class="dash-bar-row dash-bar-row-stacked" ${aria}>
       <div class="dash-bar-fill dash-bar-fill-valid" style="width:${validPct}%"></div>
       <div class="dash-bar-fill dash-bar-fill-expired" style="width:${expiredPct}%; left:${validPct}%"></div>
@@ -299,12 +299,12 @@ function renderDashboardIocs() {
       const family = ioc.family ? `<span class="dash-ioc-family">${escapeHtml(ioc.family)}</span>` : '';
       const ipClass = classifyIpAddress(ioc.value);
       const badge = ipClass?.synthetic
-        ? `<span class="dash-ioc-badge" title="${escapeAttr(ipClass.label)}">synthetic / non-victim IP</span>`
+        ? `<span class="dash-ioc-badge" title="${escapeHtml(ipClass.label)}">synthetic / non-victim IP</span>`
         : '';
       return `<div class="dash-ioc-item">
         <span class="dash-ioc-label">${escapeHtml(ioc.label)}</span>${family}
         <span class="dash-ioc-value">${escapeHtml(ioc.value)}</span>${badge}
-        <button class="dash-ioc-copy" title="Copy" data-copy="${escapeAttr(ioc.value)}">Copy</button>
+        <button class="dash-ioc-copy" title="Copy" data-copy="${escapeHtml(ioc.value)}">Copy</button>
       </div>`;
     }).join('');
   }
@@ -345,7 +345,7 @@ function renderClipboardLures() {
     return `<div class="dash-ioc-item">
       <span class="dash-ioc-family dash-ioc-family-warn">${escapeHtml(label)}</span>
       <span class="dash-ioc-value">${escapeHtml(preview)}</span>
-      <button class="dash-ioc-copy" title="Copy" data-copy="${escapeAttr(lure.text)}">Copy</button>
+      <button class="dash-ioc-copy" title="Copy" data-copy="${escapeHtml(lure.text)}">Copy</button>
     </div>`;
   }).join('');
 }

@@ -1,5 +1,5 @@
 import { state, on } from '../core/state.js';
-import { escapeHtml, escapeAttr } from '../core/utils.js';
+import { escapeHtml } from '../core/utils.js';
 import { bindDebouncedInput, buildShowMoreButton, buildRowsHtml, downloadCsvRows, formatDateTimeLabel, PAGE_SIZE } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData, getAutofillsData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData, getBookmarksData } from '../pages/browser.js';
@@ -256,7 +256,7 @@ function buildCandidatesPanel(summary) {
   if (legacy.length) summaryParts.push(`${legacy.length} likely legacy`);
 
   const items = [...corroborated, ...legacy].map((entry) => {
-    const tone = escapeAttr(entry.statusTone || 'neutral');
+    const tone = escapeHtml(entry.statusTone || 'neutral');
     const counts = [
       entry.likelyCurrent ? `${entry.likelyCurrent} likely` : '',
       entry.review ? `${entry.review} review` : '',
@@ -332,7 +332,7 @@ function renderCredDetail(row) {
   const identityTags = [
     row.usernameDomain ? `<span class="lab-tag">${escapeHtml(row.usernameDomain)}</span>` : '',
     row.identityFitLabel
-      ? `<span class="lab-tag lab-tone-${escapeAttr(row.identityFitTone || 'neutral')}">${escapeHtml(row.identityFitLabel)}</span>`
+      ? `<span class="lab-tag lab-tone-${escapeHtml(row.identityFitTone || 'neutral')}">${escapeHtml(row.identityFitLabel)}</span>`
       : '',
     row.conflictDomain ? `<span class="lab-tag lab-tone-danger">vs ${escapeHtml(row.conflictDomain)}</span>` : '',
     row.isAppCredential ? '<span class="lab-tag">app-stored</span>' : '',
@@ -391,11 +391,11 @@ function renderCredDetail(row) {
 
 function currentnessRowBuilder(row) {
   const action = row.actionability || 'stored';
-  const dispositionTone = escapeAttr(row.dispositionTone || 'neutral');
+  const dispositionTone = escapeHtml(row.dispositionTone || 'neutral');
   const priorityClass = row.isPriority ? ' lab-cred-priority' : '';
 
   const reuseMarker = row.reuseCount > 1
-    ? ` <span class="lab-reuse-tag" title="${escapeAttr('Password reused across ' + row.reuseCount + ' sites')}">reused × ${row.reuseCount}</span>`
+    ? ` <span class="lab-reuse-tag" title="${escapeHtml('Password reused across ' + row.reuseCount + ' sites')}">reused × ${row.reuseCount}</span>`
     : '';
 
   const actionDotTitle = `Actionability: ${action}`;
@@ -404,12 +404,12 @@ function currentnessRowBuilder(row) {
   const catKey = row.categoryKey || 'unknown';
   const catBadge = catKey === 'unknown'
     ? '<span class="lab-cat-tag lab-cat-unknown" title="Not in any reference list">Uncategorised</span>'
-    : `<span class="lab-cat-tag" title="Matched data/site-domains/${escapeAttr(catKey)}.txt">${escapeHtml(getCategoryLabel(catKey))}</span>`;
+    : `<span class="lab-cat-tag" title="Matched data/site-domains/${escapeHtml(catKey)}.txt">${escapeHtml(getCategoryLabel(catKey))}</span>`;
 
   return `<tr class="lab-cred${priorityClass}" tabindex="0" aria-expanded="false">
     <td class="lab-cred-site" title="${escapeHtml(row.url)}"><span class="lab-cred-site-host">${escapeHtml(row.siteHost || row.siteDomain || '—')}</span> ${catBadge}</td>
     <td class="lab-cred-user" title="${escapeHtml(row.username)}">${escapeHtml(row.username || '—')}${reuseMarker}</td>
-    <td class="lab-cred-action" title="${escapeAttr(actionDotTitle)}"><span class="lab-cred-score-num lab-score-${escapeAttr(action)}">${row.score}</span></td>
+    <td class="lab-cred-action" title="${escapeHtml(actionDotTitle)}"><span class="lab-cred-score-num lab-score-${escapeHtml(action)}">${row.score}</span></td>
     <td class="lab-cred-disp lab-tone-${dispositionTone}">${escapeHtml(display)}</td>
     <td class="lab-cred-bar">${renderMiniSignalBar(row)}</td>
   </tr>

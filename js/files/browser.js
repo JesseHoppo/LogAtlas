@@ -4,7 +4,6 @@ import { state, on, emit } from '../core/state.js';
 import { getNodeAtPath, getChildrenList, countChildren, flattenTree, loadFileContent, applyManualType } from './extractor.js';
 import {
   escapeHtml,
-  escapeAttr,
   formatBytes,
   getFileIcon,
 } from '../core/utils.js';
@@ -115,7 +114,7 @@ function renderBreadcrumb() {
     const pathStr = parts.slice(0, i + 1).join('/');
     html += `<span class="breadcrumb-sep">\u203A</span>`;
     html += `<div class="breadcrumb-item ${isLast ? 'current' : ''}" ` +
-      `data-path="${escapeAttr(pathStr)}">${escapeHtml(parts[i])}</div>`;
+      `data-path="${escapeHtml(pathStr)}">${escapeHtml(parts[i])}</div>`;
   }
 
   elBreadcrumb.innerHTML = html;
@@ -186,12 +185,12 @@ function renderItems(items, { prefix, itemClass, backClass, nestedLabel, badgesB
     const selectedClass = selectedFiles.has(key) ? ' selected' : '';
     const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
 
-    html += `<div class="${itemClass}${selectedClass}" data-name="${escapeAttr(item.name)}" ` +
-      `data-path="${escapeAttr(key)}" ` +
-      `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeAttr(verb)}">`;
+    html += `<div class="${itemClass}${selectedClass}" data-name="${escapeHtml(item.name)}" ` +
+      `data-path="${escapeHtml(key)}" ` +
+      `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeHtml(verb)}">`;
 
     if (!isDir) {
-      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-label="Select ${escapeAttr(item.name)}">`;
+      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-label="Select ${escapeHtml(item.name)}">`;
     }
 
     html += `<div class="${prefix}-icon">${icon}</div>` +
