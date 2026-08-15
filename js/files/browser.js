@@ -9,7 +9,7 @@ import {
 } from '../core/utils.js';
 import { downloadBlob, copyToClipboard, randomPassword, showNotification } from '../core/shared.js';
 import { toCSV } from '../transforms/shared.js';
-import { buildFileTypeOptionsHtml } from './fileTypeRegistry.js';
+import { buildFileTypeOptionsHtml, getNodeHintBadges } from './fileTypeRegistry.js';
 import { canOfferTransformAction, parseStructuredFile } from './structuredTransforms.js';
 import { emitPreview } from '../pages/shared.js';
 
@@ -19,16 +19,6 @@ let elFileList;
 let elSearchInput;
 
 const selectedFiles = new Set();
-const BADGE_DEFINITIONS = Object.freeze([
-  { hint: '_passwordFileHint', label: 'credentials', className: 'password-file' },
-  { hint: '_cookieFileHint', label: 'cookies', className: 'cookie-file' },
-  { hint: '_autofillHint', label: 'autofill', className: 'autofill-file' },
-  { hint: '_historyHint', label: 'history', className: 'history-file' },
-  { hint: '_cryptoWalletHint', label: 'wallets' },
-  { hint: '_notesHint', label: 'notes' },
-  { hint: '_grabbedFileHint', label: 'grabbed' },
-]);
-
 // Navigation
 
 function navigateTo(pathSegments) {
@@ -149,10 +139,11 @@ function renderItemBadges(item, badgeClass, nestedLabel) {
     html += `<div class="${badgeClass}">${nestedLabel}</div>`;
   }
 
-  for (const definition of BADGE_DEFINITIONS) {
-    if (!item[definition.hint]) continue;
-    const classSuffix = definition.className ? ` ${definition.className}` : '';
-    html += `<div class="${badgeClass}${classSuffix}">${definition.label}</div>`;
+  // Every hint, not just the first: a file analysis reads as both credentials
+  // and cookies should say so.
+  for (const badge of getNodeHintBadges(item)) {
+    const classSuffix = badge.className ? ` ${badge.className}` : '';
+    html += `<div class="${badgeClass}${classSuffix}">${escapeHtml(badge.label.toLowerCase())}</div>`;
   }
 
   return html;

@@ -1,10 +1,10 @@
 import { escapeHtml } from '../core/utils.js';
 
 const FILE_TYPE_DEFINITIONS = Object.freeze([
-  { type: 'credentials', hint: '_passwordFileHint', label: 'Credentials', shortcutKey: '1', transformable: true, columnMappable: true },
-  { type: 'cookies', hint: '_cookieFileHint', label: 'Cookies', shortcutKey: '2', transformable: true, columnMappable: true },
-  { type: 'autofill', hint: '_autofillHint', label: 'Autofill', shortcutKey: '3', transformable: true, columnMappable: true },
-  { type: 'history', hint: '_historyHint', label: 'History', shortcutKey: '4', transformable: true, columnMappable: true },
+  { type: 'credentials', hint: '_passwordFileHint', label: 'Credentials', shortcutKey: '1', transformable: true, columnMappable: true, badgeClass: 'password-file' },
+  { type: 'cookies', hint: '_cookieFileHint', label: 'Cookies', shortcutKey: '2', transformable: true, columnMappable: true, badgeClass: 'cookie-file' },
+  { type: 'autofill', hint: '_autofillHint', label: 'Autofill', shortcutKey: '3', transformable: true, columnMappable: true, badgeClass: 'autofill-file' },
+  { type: 'history', hint: '_historyHint', label: 'History', shortcutKey: '4', transformable: true, columnMappable: true, badgeClass: 'history-file' },
   { type: 'bookmarks', hint: '_bookmarkHint', label: 'Bookmarks', transformable: true },
   { type: 'browsermeta', hint: '_browserMetadataHint', label: 'Browser Metadata', transformable: true },
   { type: 'sysinfo', hint: '_sysInfoHint', label: 'System Info', shortcutKey: '5', transformable: true },
@@ -21,11 +21,16 @@ const FILE_TYPE_DEFINITIONS = Object.freeze([
   { type: 'processes', hint: '_processListHint', label: 'Processes', supportsPaste: true },
   { type: 'screenshot', hint: '_screenshotHint', label: 'Screenshot', supportsPaste: false },
 ]);
-const ADDITIONAL_HINT_KEYS = Object.freeze([
-  '_browserPluginHint',
-  '_messengerHint',
-  '_creditsFileHint',
+// Hints detection sets that aren't a file type the user can pick. They still
+// steer analysis, so each gets a label and a badge rather than acting invisibly.
+const ADDITIONAL_HINT_DEFINITIONS = Object.freeze([
+  { hint: '_browserPluginHint', label: 'Browser Plugin' },
+  { hint: '_messengerHint', label: 'Messenger' },
+  { hint: '_creditsFileHint', label: 'Credits' },
+  { hint: '_ftpCredentialHint', label: 'FTP Credentials' },
+  { hint: '_keylogHint', label: 'Keylog' },
 ]);
+const ADDITIONAL_HINT_KEYS = Object.freeze(ADDITIONAL_HINT_DEFINITIONS.map(({ hint }) => hint));
 
 const FILE_TYPE_BY_TYPE = new Map(FILE_TYPE_DEFINITIONS.map((definition) => [definition.type, definition]));
 const FILE_TYPE_TO_HINT = Object.freeze(
@@ -40,12 +45,34 @@ function getFileTypeDefinition(type) {
   return FILE_TYPE_BY_TYPE.get(type) || null;
 }
 
+// The primary type only — the single answer a transform or column mapper can
+// act on. Detection is permissive and analysis honours every hint a file
+// carries, so anything showing the user what a file is wants getNodeFileTypes
+// or getNodeHintBadges.
 function getNodeFileType(node) {
   if (!node) return null;
   for (const definition of FILE_TYPE_DEFINITIONS) {
     if (node[definition.hint]) return definition.type;
   }
   return null;
+}
+
+function getNodeFileTypes(node) {
+  if (!node) return [];
+  return FILE_TYPE_DEFINITIONS.filter(definition => node[definition.hint]).map(({ type }) => type);
+}
+
+// Every hint set on the node, typed or not, in registry order.
+function getNodeHintBadges(node) {
+  if (!node) return [];
+  const badges = [];
+  for (const definition of FILE_TYPE_DEFINITIONS) {
+    if (node[definition.hint]) badges.push({ label: definition.label, className: definition.badgeClass || '' });
+  }
+  for (const definition of ADDITIONAL_HINT_DEFINITIONS) {
+    if (node[definition.hint]) badges.push({ label: definition.label, className: '' });
+  }
+  return badges;
 }
 
 function getFileTypeLabel(type) {
@@ -120,6 +147,8 @@ export {
   HINT_KEYS,
   getFileTypeLabel,
   getNodeFileType,
+  getNodeFileTypes,
+  getNodeHintBadges,
   isTransformableFileType,
   supportsColumnMapping,
   buildFileTypeOptionsHtml,

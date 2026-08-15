@@ -18,7 +18,7 @@ import { LIMITS } from '../core/definitions/patterns.js';
 import { toCSV } from '../transforms/shared.js';
 import { downloadBlob, copyToClipboard, SHARED_TEXT_DECODER } from '../core/shared.js';
 import { openColumnMapper } from './columnMapper.js';
-import { buildFileTypeOptionsHtml, getFileTypeLabel, getNodeFileType } from './fileTypeRegistry.js';
+import { buildFileTypeOptionsHtml, getFileTypeLabel, getNodeFileTypes } from './fileTypeRegistry.js';
 import {
   canOfferTransformAction,
   canTransformStructuredFile,
@@ -324,14 +324,20 @@ function revokeAllBlobUrls() {
 
 function updateTypeButton() {
   if (!elSetTypeBtn) return;
-  const label = getNodeFileType(currentNode);
-  if (label) {
-    elSetTypeBtn.textContent = getFileTypeLabel(label);
-    elSetTypeBtn.className = 'preview-btn preview-type-btn preview-type-' + label;
-  } else {
+  const types = getNodeFileTypes(currentNode);
+  if (types.length === 0) {
     elSetTypeBtn.textContent = 'Set Type';
+    elSetTypeBtn.title = '';
     elSetTypeBtn.className = 'preview-btn preview-type-btn';
+    return;
   }
+
+  // The primary type keeps the button's colour and drives the transforms; the
+  // rest are counted, because analysis parses the file as all of them.
+  const labels = types.map(getFileTypeLabel);
+  elSetTypeBtn.textContent = labels.length > 1 ? `${labels[0]} +${labels.length - 1}` : labels[0];
+  elSetTypeBtn.title = labels.length > 1 ? `Detected as: ${labels.join(', ')}` : '';
+  elSetTypeBtn.className = 'preview-btn preview-type-btn preview-type-' + types[0];
 }
 
 function showPreviewTypeMenu() {
