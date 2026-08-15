@@ -497,6 +497,25 @@ function initCurrentnessLab() {
   const contentEl = document.getElementById('currentnessLabContent');
   const metaEl = document.getElementById('currentnessLabMeta');
 
+  let dataReady = false;
+  let sysinfoReady = false;
+  let modelReady = false;
+
+  function resetInputs() {
+    sysinfoEntries = null;
+    dataReady = false;
+    sysinfoReady = false;
+    modelReady = false;
+  }
+
+  // Datasets and sysinfo land in either order; scoring the whole credential set
+  // is expensive, so wait for both and build once per case.
+  function buildWhenReady() {
+    if (modelReady || !dataReady || !sysinfoReady) return;
+    modelReady = true;
+    rebuildCurrentnessModel();
+  }
+
   bindDebouncedInput(searchInput, (value) => renderCurrentnessPage(value));
 
   metaEl?.addEventListener('click', (event) => {
@@ -549,23 +568,39 @@ function initCurrentnessLab() {
 
   on('analysis:sysinfo', (data) => {
     sysinfoEntries = data?.entries || null;
-    rebuildCurrentnessModel();
+    sysinfoReady = true;
+    // Only reachable when the backstop below built without sysinfo.
+    if (modelReady) rebuildCurrentnessModel();
+    else buildWhenReady();
   });
 
-  on('data:loaded', rebuildCurrentnessModel);
+  on('data:loaded', () => {
+    dataReady = true;
+    buildWhenReady();
+  });
 
-  // Domain category lists arrive asynchronously after first paint. Once they're
-  // ready, rebuild so credential rows pick up category labels.
+  // A sysinfo task that throws never emits, which would otherwise leave the
+  // page stranded for the whole case.
+  on('analysis:complete', () => {
+    sysinfoReady = true;
+    buildWhenReady();
+  });
+
+  // Domain category lists arrive asynchronously after first paint. If they land
+  // after the model, rebuild so credential rows pick up category labels;
+  // earlier and the pending build already sees them.
   on('domains:categoriesLoaded', () => {
-    if (currentnessModel) rebuildCurrentnessModel();
+    if (modelReady) rebuildCurrentnessModel();
   });
 
   on('page:currentnesslab', () => {
     renderCurrentnessPage(searchInput?.value || '');
   });
 
+  on('reanalyze', resetInputs);
+
   on('reset', () => {
-    sysinfoEntries = null;
+    resetInputs();
     currentnessModel = null;
     currentnessFiltered = [];
     currentnessShown = 0;

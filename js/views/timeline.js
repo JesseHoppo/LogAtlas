@@ -35,7 +35,6 @@ function isPlausibleTimelineDate(date) {
 
 function extractStealerEvents(entries) {
   if (!entries) return [];
-  const events = [];
 
   let timezone = '';
   for (const [key, value] of Object.entries(entries)) {
@@ -46,23 +45,33 @@ function extractStealerEvents(entries) {
     }
   }
 
+  const captures = [];
   for (const [key, value] of Object.entries(entries)) {
     if (IGNORE_DATE_KEYS.some(rx => rx.test(key))) continue;
-    if (CAPTURE_TIME_KEYS.some(rx => rx.test(key))) {
-      const date = parseTimestampValue(value);
-      if (isPlausibleTimelineDate(date)) {
-        let detail = `${key}: ${value}`;
-        if (timezone) detail += ` (${timezone})`;
-        events.push({
-          time: date,
-          category: 'stealer',
-          title: `Log captured`,
-          detail,
-        });
-      }
-    }
+    if (!CAPTURE_TIME_KEYS.some(rx => rx.test(key))) continue;
+    const date = parseTimestampValue(value);
+    if (isPlausibleTimelineDate(date)) captures.push({ key, value, date });
   }
-  return events;
+  if (captures.length === 0) return [];
+
+  // One capture instant, one event: the first capture-time key in sysinfo
+  // order, which is what the dashboard and currentness derivations use. Later
+  // keys can be a repack stamp days off, so keep them in the detail rather than
+  // as rival capture timestamps.
+  const [capture, ...rest] = captures;
+  let detail = `${capture.key}: ${capture.value}`;
+  if (timezone) detail += ` (${timezone})`;
+  const conflicting = rest.filter(other => other.date.getTime() !== capture.date.getTime());
+  if (conflicting.length) {
+    detail += ` - also reported: ${conflicting.map(other => `${other.key}: ${other.value}`).join('; ')}`;
+  }
+
+  return [{
+    time: capture.date,
+    category: 'stealer',
+    title: 'Log captured',
+    detail,
+  }];
 }
 
 function extractFileEvents(fileTree, rootName) {

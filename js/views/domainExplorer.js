@@ -26,6 +26,23 @@ const DOMAIN_PAGE_INPUTS = {
   notes: 'notesSearch',
 };
 
+// `android://…@com.app.name/` and `file:///…` rows resolve to a domain that
+// appears nowhere in the row text, so the handoff to a data page has to carry a
+// literal that page's search can actually hit.
+function rawSearchToken(lowerUrl) {
+  const android = lowerUrl.match(/^android:\/\/(?:[^@/]*@)?([^/\s?#]+)/);
+  if (android) return android[1];
+  if (lowerUrl.startsWith('file:')) return 'file://';
+  return '';
+}
+
+function recordQuery(entry, key, base, url) {
+  if (entry.queries[key] === base) return;
+  const raw = String(url).toLowerCase();
+  if (raw.includes(base)) entry.queries[key] = base;
+  else if (!entry.queries[key]) entry.queries[key] = rawSearchToken(raw) || base;
+}
+
 function buildDomainIndex() {
   const index = new Map();
 
@@ -40,6 +57,7 @@ function buildDomainIndex() {
         detections: [],
         notes: [],
         subdomains: new Set(),
+        queries: {},
         credentialsCount: 0,
         cookiesCount: 0,
         cookiesValidCount: 0,
@@ -66,6 +84,7 @@ function buildDomainIndex() {
       if (!domain) continue;
       const base = extractBaseDomain(domain);
       const entry = getEntry(base);
+      recordQuery(entry, 'passwords', base, url);
       entry.credentialsCount++;
       if (entry.credentials.length < SAMPLE) entry.credentials.push({
         url,
@@ -82,7 +101,7 @@ function buildDomainIndex() {
       const { validity, sessionType } = rowData;
       const host = getFieldByPattern(rowData, FIELD_PATTERNS.cookieDomain);
       if (!host) continue;
-      const cleanHost = host.replace(/^\./, '');
+      const cleanHost = host.replace(/^\./, '').toLowerCase();
       const base = extractBaseDomain(cleanHost) || cleanHost;
       const entry = getEntry(base);
       entry.cookiesCount++;
@@ -104,6 +123,7 @@ function buildDomainIndex() {
       if (!domain) continue;
       const base = extractBaseDomain(domain);
       const entry = getEntry(base);
+      recordQuery(entry, 'history', base, url);
       entry.historyCount++;
       if (entry.history.length < SAMPLE) entry.history.push({ url, title, visitCount });
       if (domain !== base) entry.subdomains.add(domain);
@@ -139,7 +159,9 @@ function buildDomainIndex() {
   const detections = getDomainDetectionsData();
   if (detections && detections.entries.length > 0) {
     for (const { section, label, target, count } of detections.entries) {
-      const resolved = extractDomain(target) || target.toLowerCase();
+      // Detect files also list paths and keywords ("/wp-login", ":2083",
+      // "ProtonMail"); only real hosts belong in a domain index.
+      const resolved = extractDomain(target);
       if (!resolved) continue;
       const base = extractBaseDomain(resolved);
       const entry = getEntry(base);
@@ -221,18 +243,19 @@ function domainRowBuilder(item) {
   </tr>`;
 }
 
-function buildDomainSectionFooter(pageName, baseDomain, totalCount, visibleCount, label) {
+function buildDomainSectionFooter(pageName, searchQuery, totalCount, visibleCount, label) {
   const remaining = Math.max(totalCount - visibleCount, 0);
   const moreText = remaining > 0
     ? `<div class="domain-detail-more">Showing ${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()} ${escapeHtml(label)}.</div>`
     : '';
   return `<div class="domain-detail-footer">
     ${moreText}
-    <button class="table-action-btn domain-detail-open-btn" data-domain-open-page="${escapeHtml(pageName)}" data-domain-open-query="${escapeHtml(baseDomain)}">Open full ${escapeHtml(label)} page</button>
+    <button class="table-action-btn domain-detail-open-btn" data-domain-open-page="${escapeHtml(pageName)}" data-domain-open-query="${escapeHtml(searchQuery)}">Open full ${escapeHtml(label)} page</button>
   </div>`;
 }
 
 function renderDomainDetail(data, baseDomain) {
+  const query = (pageName) => data.queries[pageName] || baseDomain;
   let html = '<div class="domain-detail">';
 
   if (data.subdomains.size > 0) {
@@ -253,7 +276,7 @@ function renderDomainDetail(data, baseDomain) {
       html += `<tr><td title="${escapeHtml(c.url)}">${escapeHtml(c.url)}</td><td>${escapeHtml(c.username)}</td><td class="password-cell masked">${escapeHtml(masked)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('passwords', baseDomain, data.credentialsCount, showCreds.length, 'credentials');
+    html += buildDomainSectionFooter('passwords', query('passwords'), data.credentialsCount, showCreds.length, 'credentials');
     html += '</div>';
   }
 
@@ -271,7 +294,7 @@ function renderDomainDetail(data, baseDomain) {
       html += `<td>${typeLabel ? `<span class="session-badge session-badge-${c.sessionType}">${typeLabel}</span>` : ''}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('cookies', baseDomain, data.cookiesCount, showCookies.length, 'cookies');
+    html += buildDomainSectionFooter('cookies', query('cookies'), data.cookiesCount, showCookies.length, 'cookies');
     html += '</div>';
   }
 
@@ -283,7 +306,7 @@ function renderDomainDetail(data, baseDomain) {
       html += `<tr><td title="${escapeHtml(h.url)}">${escapeHtml(h.url)}</td><td>${escapeHtml(h.title)}</td><td>${h.visitCount}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('history', baseDomain, data.historyCount, showHistory.length, 'history');
+    html += buildDomainSectionFooter('history', query('history'), data.historyCount, showHistory.length, 'history');
     html += '</div>';
   }
 
@@ -295,7 +318,7 @@ function renderDomainDetail(data, baseDomain) {
       html += `<tr><td title="${escapeHtml(bookmark.url)}">${escapeHtml(bookmark.url)}</td><td>${escapeHtml(bookmark.title)}</td><td>${escapeHtml(bookmark.folder)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('bookmarks', baseDomain, data.bookmarksCount, showBookmarks.length, 'bookmarks');
+    html += buildDomainSectionFooter('bookmarks', query('bookmarks'), data.bookmarksCount, showBookmarks.length, 'bookmarks');
     html += '</div>';
   }
 
@@ -307,7 +330,7 @@ function renderDomainDetail(data, baseDomain) {
       html += `<tr><td title="${escapeHtml(download.filePath)}">${escapeHtml(download.filePath)}</td><td title="${escapeHtml(download.sourceUrl)}">${escapeHtml(download.sourceUrl)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('downloads', baseDomain, data.downloadsCount, showDownloads.length, 'downloads');
+    html += buildDomainSectionFooter('downloads', query('downloads'), data.downloadsCount, showDownloads.length, 'downloads');
     html += '</div>';
   }
 
@@ -319,7 +342,7 @@ function renderDomainDetail(data, baseDomain) {
       html += `<tr><td>${escapeHtml(detection.section)}</td><td>${escapeHtml(detection.label || detection.target)}</td><td>${detection.count}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('detections', baseDomain, data.detectionsCount, showDetections.length, 'detections');
+    html += buildDomainSectionFooter('detections', query('detections'), data.detectionsCount, showDetections.length, 'detections');
     html += '</div>';
   }
 
@@ -331,7 +354,7 @@ function renderDomainDetail(data, baseDomain) {
       html += `<tr><td>${escapeHtml(note.title)}</td><td>${escapeHtml(note.indicators)}</td></tr>`;
     }
     html += '</tbody></table>';
-    html += buildDomainSectionFooter('notes', baseDomain, data.notesCount, showNotes.length, 'notes');
+    html += buildDomainSectionFooter('notes', query('notes'), data.notesCount, showNotes.length, 'notes');
     html += '</div>';
   }
 

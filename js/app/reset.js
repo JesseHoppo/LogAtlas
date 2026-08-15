@@ -1,42 +1,5 @@
-import { resetState } from '../core/state.js';
-
-const SYSINFO_EMPTY_STATE = '<div class="no-data" id="sysInfoNoData">No system information files detected.</div>';
-
-const HIDDEN_SECTIONS = [
-  'dashCredIntel',
-  'dashCookieIntel',
-  'overviewNoData',
-  'dashIOCs',
-  'dashFingerprint',
-  'dashCaseContext',
-  'dashVerdictCards',
-  'dashRiskSignals',
-  'dashScreenshot',
-  'dashAutofillIntel',
-  'dashDownloadIntel',
-  'dashDomainDetect',
-  'dashExtraIntel',
-];
-
-const TEXT_RESETS = [
-  { id: 'dashCredSummary', text: 'Analysing credential files...', loading: true },
-  { id: 'dashCookieSummary', text: 'Analysing cookie files...', loading: true },
-  { id: 'dashAutofillSummary', text: 'Analysing autofill files...', loading: true },
-  { id: 'dashDownloadSummary', text: 'Analysing download files...' },
-];
-
-const HTML_RESETS = [
-  { id: 'dashIOCBody', html: '' },
-  { id: 'dashFingerprintBody', html: '' },
-  { id: 'dashCaseContext', html: '' },
-  { id: 'dashVerdictCards', html: '' },
-  { id: 'dashRiskSignalsBody', html: '' },
-  { id: 'dashScreenshotBody', html: '' },
-  { id: 'dashDomainDetectBody', html: '' },
-  { id: 'dashExtraBody', html: '' },
-  { id: 'dashAutofillBody', html: '' },
-  { id: 'dashDownloadBody', html: '' },
-];
+import { on, resetState } from '../core/state.js';
+import { clearDomainCaches } from '../core/shared.js';
 
 const NAV_IDS_TO_DISABLE = [
   'navSysInfo',
@@ -47,19 +10,16 @@ const NAV_IDS_TO_DISABLE = [
   'navDomains',
 ];
 
-function setTextReset({ id, text, loading }) {
-  const element = document.getElementById(id);
-  if (!element) return;
-  element.textContent = text;
-  element.classList.toggle('dash-loading', Boolean(loading));
-}
-
 export function createResetUI({
   navigateToPage,
   refreshSidebarAvailability,
   searchRefs,
   resetOverviewState,
 }) {
+  // Also covers dropping a new archive over a loaded case, which resets state
+  // without going through the button.
+  on('reset', clearDomainCaches);
+
   return function resetUI() {
     resetOverviewState();
     resetState();
@@ -73,22 +33,6 @@ export function createResetUI({
     document.getElementById('addMoreInput').value = '';
     document.getElementById('addMoreBtn').classList.add('hidden');
     document.getElementById('pasteMoreBtn').classList.add('hidden');
-
-    for (const id of HIDDEN_SECTIONS) {
-      document.getElementById(id)?.classList.add('hidden');
-    }
-
-    for (const config of TEXT_RESETS) {
-      setTextReset(config);
-    }
-
-    for (const { id, html } of HTML_RESETS) {
-      const element = document.getElementById(id);
-      if (element) element.innerHTML = html;
-    }
-
-    const sysInfoBody = document.getElementById('dashSysInfoBody');
-    if (sysInfoBody) sysInfoBody.innerHTML = SYSINFO_EMPTY_STATE;
 
     for (const id of NAV_IDS_TO_DISABLE) {
       const element = document.getElementById(id);
@@ -104,9 +48,6 @@ export function createResetUI({
       searchRefs.searchStatus.textContent = '';
       searchRefs.searchStatus.className = 'search-page-status';
     }
-
-    document.getElementById('sysInfoOpenBtn')?.classList.add('hidden');
-    document.getElementById('sysInfoActions')?.classList.add('hidden');
 
     navigateToPage('overview');
     refreshSidebarAvailability();

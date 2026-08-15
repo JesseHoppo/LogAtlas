@@ -123,7 +123,24 @@ async function loadHistoryData(fileTree, rootName) {
       }
     } catch { /* skip */ }
   }
-  historyData = { entries, fileCount };
+
+  const domainCounts = new Map();
+  let mostRecentDate = null;
+  for (const entry of entries) {
+    const domain = baseDomainFromUrl(entry.url);
+    if (domain) domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
+    if (entry.lastVisitDate && (!mostRecentDate || entry.lastVisitDate > mostRecentDate)) mostRecentDate = entry.lastVisitDate;
+  }
+
+  historyData = {
+    entries,
+    fileCount,
+    stats: {
+      topDomains: [...domainCounts].sort((a, b) => b[1] - a[1]).slice(0, 10),
+      uniqueDomains: domainCounts.size,
+      mostRecentDate,
+    },
+  };
 }
 
 async function loadBookmarksData(fileTree, rootName) {
@@ -223,16 +240,8 @@ function renderHistoryPage(searchQuery = '') {
   historyFiltered = filtered;
   historyShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const domainCounts = {};
-  for (const { url } of historyData.entries) {
-    const domain = baseDomainFromUrl(url);
-    if (!domain) continue;
-    domainCounts[domain] = (domainCounts[domain] || 0) + 1;
-  }
-  const topDomains = Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const uniqueDomains = Object.keys(domainCounts).length;
-  const datedEntries = historyData.entries.filter(entry => entry.lastVisitDate);
-  const mostRecent = datedEntries.length > 0 ? datedEntries.reduce((latest, entry) => !latest || entry.lastVisitDate > latest.lastVisitDate ? entry : latest, null) : null;
+  const cached = historyData.stats || { topDomains: [], uniqueDomains: 0, mostRecentDate: null };
+  const topDomains = cached.topDomains;
 
   summary.textContent = filtered.length !== historyData.entries.length
     ? `Showing ${filtered.length.toLocaleString()} of ${historyData.entries.length.toLocaleString()} entries from ${historyData.fileCount} file(s)`
@@ -241,8 +250,8 @@ function renderHistoryPage(searchQuery = '') {
   addAdjustColumnsBtn(summary, '_historyHint', 'history');
 
   stats.innerHTML = `
-    <div class="data-page-stat"><div class="data-page-stat-value">${uniqueDomains.toLocaleString()}</div><div class="data-page-stat-label">Unique Domains</div></div>
-    ${mostRecent ? `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:0.95rem">${escapeHtml(formatTimestampDisplay(mostRecent.lastVisitDate))}</div><div class="data-page-stat-label">Most Recent Visit</div></div>` : ''}
+    <div class="data-page-stat"><div class="data-page-stat-value">${cached.uniqueDomains.toLocaleString()}</div><div class="data-page-stat-label">Unique Domains</div></div>
+    ${cached.mostRecentDate ? `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:0.95rem">${escapeHtml(formatTimestampDisplay(cached.mostRecentDate))}</div><div class="data-page-stat-label">Most Recent Visit</div></div>` : ''}
   `;
 
   let html = '';

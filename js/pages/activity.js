@@ -395,7 +395,25 @@ async function loadGrabbedFilesData(fileTree, rootName) {
     || (b.sizeBytes || 0) - (a.sizeBytes || 0)
     || a.relativePath.localeCompare(b.relativePath));
   const { highValueCount, highValueBreakdown } = summariseGrabbedFiles(entries);
-  grabbedFilesData = { entries, stats: { highValueCount, highValueBreakdown } };
+
+  const extensions = new Set();
+  let fileGrabberCount = 0, totalBytes = 0;
+  for (const entry of entries) {
+    if (entry.collection === 'FileGrabber') fileGrabberCount++;
+    if (entry.extension) extensions.add(entry.extension);
+    totalBytes += entry.sizeBytes || 0;
+  }
+
+  grabbedFilesData = {
+    entries,
+    stats: {
+      highValueCount,
+      highValueBreakdown,
+      fileGrabberCount,
+      extensionCount: extensions.size,
+      totalSizeDisplay: formatBytes(totalBytes),
+    },
+  };
 }
 
 async function loadScreenshotsData(fileTree, rootName) {
@@ -419,7 +437,6 @@ async function loadScreenshotsData(fileTree, rootName) {
 
       const blob = new Blob([content], { type: getImageMimeFromName(node.name) });
       const blobUrl = URL.createObjectURL(blob);
-      const dimensions = await measureImage(blobUrl);
       const sizeBytes = node.size || content.byteLength || 0;
       totalBytes += sizeBytes;
 
@@ -428,8 +445,8 @@ async function loadScreenshotsData(fileTree, rootName) {
         path,
         node,
         blobUrl,
-        width: dimensions.width,
-        height: dimensions.height,
+        width: null,
+        height: null,
         sizeBytes,
         sizeDisplay: formatBytes(sizeBytes),
         modifiedDate: parseTimestampValue(node.lastModified),
@@ -438,6 +455,12 @@ async function loadScreenshotsData(fileTree, rootName) {
       // skip
     }
   }
+
+  const dimensions = await Promise.all(entries.map(entry => measureImage(entry.blobUrl)));
+  entries.forEach((entry, index) => {
+    entry.width = dimensions[index].width;
+    entry.height = dimensions[index].height;
+  });
 
   screenshotsData = { entries, totalBytes };
 }
@@ -766,9 +789,7 @@ function renderGrabbedPage(searchQuery = '') {
   grabbedFiltered = filtered;
   grabbedShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const fileGrabberCount = filtered.filter(entry => entry.collection === 'FileGrabber').length;
-  const uniqueExtensions = new Set(filtered.map(entry => entry.extension).filter(Boolean));
-  const cached = grabbedFilesData.stats || { highValueCount: 0, highValueBreakdown: [] };
+  const cached = grabbedFilesData.stats || { highValueCount: 0, highValueBreakdown: [], fileGrabberCount: 0, extensionCount: 0, totalSizeDisplay: '-' };
   summary.textContent = filtered.length !== grabbedFilesData.entries.length
     ? `Showing ${filtered.length.toLocaleString()} of ${grabbedFilesData.entries.length.toLocaleString()} grabbed files`
     : `${grabbedFilesData.entries.length.toLocaleString()} grabbed files`;
@@ -779,15 +800,15 @@ function renderGrabbedPage(searchQuery = '') {
       <div class="data-page-stat-label">High-Value Files</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${fileGrabberCount.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.fileGrabberCount.toLocaleString()}</div>
       <div class="data-page-stat-label">FileGrabber</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${uniqueExtensions.size.toLocaleString()}</div>
+      <div class="data-page-stat-value">${cached.extensionCount.toLocaleString()}</div>
       <div class="data-page-stat-label">File Types</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${formatBytes(filtered.reduce((sum, entry) => sum + (entry.sizeBytes || 0), 0))}</div>
+      <div class="data-page-stat-value">${escapeHtml(cached.totalSizeDisplay)}</div>
       <div class="data-page-stat-label">Total Size</div>
     </div>
   `;

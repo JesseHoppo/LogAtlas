@@ -1,10 +1,82 @@
-import { state } from '../core/state.js';
+import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { collectFileNodes, SHARED_TEXT_DECODER } from '../core/shared.js';
 import { escapeHtml, isTextFile, looksLikeText } from '../core/utils.js';
 import { LIMITS } from '../core/definitions/patterns.js';
 import { navigateTo } from '../files/browser.js';
-import { emitPreview } from '../pages/shared.js';
+import { emitPreview, buildShowMoreButton, PAGE_SIZE } from '../pages/shared.js';
+
+const TEXT_INDEX_CHAR_BUDGET = 16 * 1024 * 1024;
+
+// Lowercased text per file, so repeat searches skip the decode + lowercase pass.
+const textIndex = new Map();
+let indexedChars = 0;
+
+function clearTextIndex() {
+  textIndex.clear();
+  indexedChars = 0;
+}
+
+function getLowerText(node, content) {
+  const cached = textIndex.get(node);
+  if (cached !== undefined) return cached;
+
+  const lower = SHARED_TEXT_DECODER.decode(content).toLowerCase();
+  if (indexedChars + lower.length <= TEXT_INDEX_CHAR_BUDGET) {
+    textIndex.set(node, lower);
+    indexedChars += lower.length;
+  }
+  return lower;
+}
+
+function stripRootPrefix(fullPath) {
+  let trimmed = fullPath;
+  if (state.rootZipName && trimmed.startsWith(state.rootZipName + '/')) {
+    trimmed = trimmed.slice(state.rootZipName.length + 1);
+  }
+  return trimmed;
+}
+
+function cleanDisplayPath(fullPath) {
+  let cleaned = stripRootPrefix(fullPath);
+  const archiveBase = (state.rootZipName || '').replace(/\.(zip|7z|rar|tar|tar\.gz|tgz)$/i, '');
+  if (archiveBase && cleaned.startsWith(archiveBase + '/')) {
+    cleaned = cleaned.slice(archiveBase.length + 1);
+  }
+  return cleaned || fullPath;
+}
+
+function getPathSegments(fullPath) {
+  return stripRootPrefix(fullPath).split('/').filter(Boolean);
+}
+
+// Highlight on the raw line, escape each fragment afterwards, so the marker can
+// never land inside an entity produced by escaping.
+function highlightLine(line, lowerQuery) {
+  const lower = line.toLowerCase();
+  const start = lowerQuery ? lower.indexOf(lowerQuery) : -1;
+  if (start < 0 || lower.length !== line.length) return escapeHtml(line);
+
+  const end = start + lowerQuery.length;
+  return escapeHtml(line.slice(0, start))
+    + `<mark class="search-highlight">${escapeHtml(line.slice(start, end))}</mark>`
+    + escapeHtml(line.slice(end));
+}
+
+function buildResultHtml(match, idx, lowerQuery) {
+  let html = `<div class="search-result-item">
+      <div class="search-result-path search-result-clickable" data-result-idx="${idx}">${escapeHtml(cleanDisplayPath(match.path))}</div>`;
+
+  if (match.contentMatches.length > 0) {
+    html += '<div class="search-result-lines">';
+    for (const cm of match.contentMatches) {
+      html += `<div class="search-result-line"><span class="search-result-linenum">${cm.lineNum}</span>${highlightLine(cm.line.trim(), lowerQuery)}</div>`;
+    }
+    html += '</div>';
+  }
+
+  return html + '</div>';
+}
 
 export function initSearch(navigateToPage) {
   const globalSearchInput = document.getElementById('globalSearchInput');
@@ -13,12 +85,35 @@ export function initSearch(navigateToPage) {
   const searchStatus = document.getElementById('searchStatus');
   const searchHints = document.getElementById('searchHints');
   let searchRunId = 0;
+  let currentMatches = [];
+  let currentQuery = '';
+  let shownResults = 0;
 
   function resetSearchUi() {
+    currentMatches = [];
+    currentQuery = '';
+    shownResults = 0;
     searchResults.innerHTML = '';
     searchStatus.textContent = '';
     searchStatus.className = 'search-page-status';
     searchHints?.classList.remove('hidden');
+  }
+
+  function renderMoreResults() {
+    const end = Math.min(shownResults + PAGE_SIZE, currentMatches.length);
+    let html = '';
+    for (let idx = shownResults; idx < end; idx++) {
+      html += buildResultHtml(currentMatches[idx], idx, currentQuery);
+    }
+
+    searchResults.querySelector('.data-show-more')?.remove();
+    searchResults.insertAdjacentHTML('beforeend', html);
+    shownResults = end;
+
+    const remaining = currentMatches.length - shownResults;
+    if (remaining > 0) {
+      searchResults.insertAdjacentHTML('beforeend', buildShowMoreButton(remaining, 'search'));
+    }
   }
 
   function hasStructuredSearchHint(node) {
@@ -38,23 +133,18 @@ export function initSearch(navigateToPage) {
     const isSearchableText = isTextFile(node.name) || looksLikeText(content);
     if (!isSearchableText && !allowBinaryFallback) return [];
 
-    const text = SHARED_TEXT_DECODER.decode(content);
+    const lower = getLowerText(node, content);
+    if (!lower.includes(lowerQuery)) return [];
+
     const matches = [];
-    const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (!lines[i].toLowerCase().includes(lowerQuery)) continue;
-      matches.push({ lineNum: i + 1, line: lines[i] });
+    const lines = SHARED_TEXT_DECODER.decode(content).split('\n');
+    const lowerLines = lower.split('\n');
+    for (let i = 0; i < lowerLines.length; i++) {
+      if (!lowerLines[i].includes(lowerQuery)) continue;
+      matches.push({ lineNum: i + 1, line: lines[i] ?? lowerLines[i] });
       if (matches.length >= LIMITS.searchMatchesPerFile) break;
     }
     return matches;
-  }
-
-  function stripRootPrefix(fullPath) {
-    let trimmed = fullPath;
-    if (state.rootZipName && trimmed.startsWith(state.rootZipName + '/')) {
-      trimmed = trimmed.slice(state.rootZipName.length + 1);
-    }
-    return trimmed;
   }
 
   async function runGlobalSearch(query) {
@@ -118,63 +208,32 @@ export function initSearch(navigateToPage) {
 
     searchStatus.textContent = `${matches.length} file(s) matched "${query}" (searched ${allNodes.length} files)`;
 
-    function cleanDisplayPath(fullPath) {
-      let cleaned = stripRootPrefix(fullPath);
-      const archiveBase = (state.rootZipName || '').replace(/\.(zip|7z|rar|tar|tar\.gz|tgz)$/i, '');
-      if (archiveBase && cleaned.startsWith(archiveBase + '/')) {
-        cleaned = cleaned.slice(archiveBase.length + 1);
-      }
-      return cleaned || fullPath;
-    }
-
-    function getPathSegments(fullPath) {
-      return stripRootPrefix(fullPath).split('/').filter(Boolean);
-    }
-
-    searchResults.innerHTML = matches.map((m, idx) => {
-      const displayPath = cleanDisplayPath(m.path);
-      let html = `<div class="search-result-item">
-      <div class="search-result-path search-result-clickable" data-result-idx="${idx}">${escapeHtml(displayPath)}</div>`;
-
-      if (m.contentMatches.length > 0) {
-        html += '<div class="search-result-lines">';
-        for (const cm of m.contentMatches) {
-          const escaped = escapeHtml(cm.line.trim());
-          const lowerEscaped = escaped.toLowerCase();
-          const lowerQ = escapeHtml(query).toLowerCase();
-          const highlightIdx = lowerEscaped.indexOf(lowerQ);
-          let highlighted = escaped;
-          if (highlightIdx >= 0) {
-            highlighted = escaped.substring(0, highlightIdx) +
-              '<mark class="search-highlight">' + escaped.substring(highlightIdx, highlightIdx + lowerQ.length) + '</mark>' +
-              escaped.substring(highlightIdx + lowerQ.length);
-          }
-          html += `<div class="search-result-line"><span class="search-result-linenum">${cm.lineNum}</span>${highlighted}</div>`;
-        }
-        html += '</div>';
-      }
-
-      html += '</div>';
-      return html;
-    }).join('');
-
-    searchResults.querySelectorAll('.search-result-clickable').forEach(el => {
-      el.addEventListener('click', () => {
-        const idx = parseInt(el.dataset.resultIdx, 10);
-        const match = matches[idx];
-        if (!match) return;
-
-        const segments = getPathSegments(match.path);
-        segments.pop();
-        const folderPath = segments;
-
-        navigateTo(folderPath);
-        navigateToPage('browser');
-
-        emitPreview(match.node, folderPath);
-      });
-    });
+    currentMatches = matches;
+    currentQuery = lowerQuery;
+    shownResults = 0;
+    renderMoreResults();
   }
+
+  searchResults.addEventListener('click', (e) => {
+    if (e.target.closest('.data-show-more')) {
+      renderMoreResults();
+      return;
+    }
+
+    const row = e.target.closest('.search-result-clickable');
+    if (!row) return;
+
+    const match = currentMatches[parseInt(row.dataset.resultIdx, 10)];
+    if (!match) return;
+
+    const segments = getPathSegments(match.path);
+    segments.pop();
+
+    navigateTo(segments);
+    navigateToPage('browser');
+
+    emitPreview(match.node, segments);
+  });
 
   globalSearchBtn.addEventListener('click', () => {
     runGlobalSearch(globalSearchInput.value.trim());
@@ -185,6 +244,12 @@ export function initSearch(navigateToPage) {
       runGlobalSearch(globalSearchInput.value.trim());
     }
   });
+
+  on('reset', () => {
+    clearTextIndex();
+    resetSearchUi();
+  });
+  on('extracted', clearTextIndex);
 
   return { globalSearchInput, searchResults, searchStatus };
 }

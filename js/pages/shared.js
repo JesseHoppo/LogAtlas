@@ -33,9 +33,24 @@ export function buildShowMoreButton(remaining, pageId) {
 }
 
 // Look up a cell value in a row by matching the column header against a regex.
-// Tabular data shapes here are always `{ row, headers }`.
+// Tabular data shapes here are always `{ row, headers }`. Cookie datasets share
+// one header array across every row, so resolved positions are cached against it
+// rather than re-scanned per row in 100k-row loops.
+const headerIndexCache = new WeakMap();
+
 export function getFieldByPattern({ row, headers }, pattern) {
-  const index = headers.findIndex((header) => pattern.test(header));
+  let byPattern = headerIndexCache.get(headers);
+  if (!byPattern) {
+    byPattern = new WeakMap();
+    headerIndexCache.set(headers, byPattern);
+  }
+
+  let index = byPattern.get(pattern);
+  if (index === undefined) {
+    index = headers.findIndex((header) => pattern.test(header));
+    byPattern.set(pattern, index);
+  }
+
   return index >= 0 ? (row[index] || '') : '';
 }
 
@@ -74,6 +89,8 @@ export function formatDateTimeLabel(value) {
   });
 }
 
+export { formatDateTimeLabel as formatTimestampDisplay };
+
 export function resolveSourcePathSegments(sourcePath) {
   const parts = String(sourcePath || '').split('/').filter(Boolean);
   if (parts.length > 0 && parts[0] === state.rootZipName) return parts.slice(1);
@@ -98,8 +115,6 @@ export function openSourcePreview(sourcePath) {
 
   emitPreview(node, segments.slice(0, -1));
 }
-
-export const formatTimestampDisplay = formatDateTimeLabel;
 
 export function getImageMimeFromName(name) {
   const ext = getFileExtension(name);

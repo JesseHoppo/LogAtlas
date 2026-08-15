@@ -62,8 +62,9 @@ function toggleSelection(key) {
 }
 
 function updateSelectionUI() {
-  const allItems = elFileList.querySelectorAll('[data-path]');
-  for (const el of allItems) {
+  const container = state.viewMode === 'grid' ? elFileGrid : elFileList;
+  if (!container) return;
+  for (const el of container.querySelectorAll('[data-path]')) {
     const key = el.dataset.path;
     const cb = el.querySelector('.file-select-cb');
     if (cb) cb.checked = selectedFiles.has(key);

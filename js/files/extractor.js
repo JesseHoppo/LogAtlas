@@ -5,16 +5,34 @@ import {
   isZipFile,
   isArchiveFile,
   isPreviewable,
+  isTextFile,
   isJunkFile,
   isMacOSMetadata,
+  looksLikeText,
 } from '../core/utils.js';
 import { promptForPassword, isRememberChecked } from './password.js';
-import { applyDetectionHints, reconcileAggregatePasswordFiles } from '../analysis/detection.js';
+import {
+  applyDetectionHints,
+  applyContentDetectionHints,
+  reconcileAggregatePasswordFiles,
+} from '../analysis/detection.js';
 import { HINT_KEYS, FILE_TYPE_TO_HINT } from './fileTypeRegistry.js';
 import { LIMITS } from '../core/definitions/patterns.js';
 import { collapseSingleWrapper } from '../core/shared.js';
 
 const MAX_DEPTH = 10;
+
+// Enough leading text for the password-pool sampler; on the zip path the whole
+// entry has to be inflated to see any of it, so only modest ones are sniffed.
+const CONTENT_SNIFF_BYTES = 64 * 1024;
+const SNIFF_MAX_INFLATE_BYTES = 8 * 1024 * 1024;
+
+// Decompressed bytes are cached so the pages that re-parse on every render, and
+// on reanalyze, don't inflate twice. Wallet stores, screenshots and unclassified
+// blobs are read once per pass and dominate a large log, so past this size they
+// are handed back without being retained.
+const RETAINED_CONTENT_MAX_BYTES = 2 * 1024 * 1024;
+const ONE_SHOT_HINTS = ['_cryptoWalletHint', '_screenshotHint', '_grabbedFileHint'];
 
 let _bytesUsed = 0;
 let _entriesUsed = 0;
@@ -42,6 +60,12 @@ function reportBudgetExceeded(path) {
   if (_budgetReported) return;
   _budgetReported = true;
   addError(`Extraction limit reached (${Math.round(LIMITS.maxDecompressedBytes / (1024 * 1024))} MB / ${LIMITS.maxEntries} entries); remaining contents left unexpanded near: ${path}`);
+}
+
+function reportArchiveRefused(path, bytes, entries) {
+  if (_budgetReported) return;
+  _budgetReported = true;
+  addError(`Archive declares ${Math.round(bytes / (1024 * 1024))} MB across ${entries} entries, past the extraction limit (${Math.round(LIMITS.maxDecompressedBytes / (1024 * 1024))} MB / ${LIMITS.maxEntries}); left unexpanded: ${path}`);
 }
 
 // Lazy-load libarchive so it doesn't break the ZIP path if it fails
@@ -78,31 +102,36 @@ function createNode(name, opts = {}) {
   };
 }
 
-// Insert path into tree, creating intermediate dirs
+// Insert path into tree, creating intermediate dirs. Archives may name a file
+// and a directory identically: an existing file on the way down is promoted to a
+// container (it keeps its payload), and a leaf landing on an occupied name is
+// stored beside it rather than replacing it.
 function insertPath(root, pathSegments, nodeData) {
   let current = root;
   for (let i = 0; i < pathSegments.length - 1; i++) {
     const seg = pathSegments[i];
-    if (!current.children[seg]) {
-      current.children[seg] = createNode(seg, {
-        type: 'directory',
-        depth: nodeData.depth,
-      });
+    let child = current.children[seg];
+    if (!child) {
+      child = createNode(seg, { type: 'directory', depth: nodeData.depth });
+      current.children[seg] = child;
+    } else if (!child.children) {
+      child.type = 'directory';
+      child.children = {};
     }
-    current = current.children[seg];
+    current = child;
   }
-  const leafName = pathSegments[pathSegments.length - 1];
+  let leafName = pathSegments[pathSegments.length - 1];
   if (leafName) {
     if (nodeData.type === 'directory') {
-      if (!current.children[leafName]) {
+      const existing = current.children[leafName];
+      if (!existing) {
         current.children[leafName] = createNode(leafName, nodeData);
       } else {
-        current.children[leafName].type = 'directory';
-        if (!current.children[leafName].children) {
-          current.children[leafName].children = {};
-        }
+        existing.type = 'directory';
+        if (!existing.children) existing.children = {};
       }
     } else {
+      leafName = getUniqueChildName(current, leafName);
       current.children[leafName] = createNode(leafName, nodeData);
     }
   }
@@ -166,6 +195,40 @@ async function readZipEntryData(entry, label, initialPassword = null) {
   }
 }
 
+// Read without the password prompt loop: used for the content sniff, which must
+// never interrupt extraction to ask about a file nothing has claimed yet.
+async function readZipEntryQuietly(entry, password) {
+  try {
+    return await entry.getData(new zip.Uint8ArrayWriter(), password ? { password } : undefined);
+  } catch (_) {
+    return null;
+  }
+}
+
+// Filename rules claim nothing on combolist/ULP pools, so their line shape is the
+// only signal. The sampler needs the head of the file, nothing more.
+const _sniffDecoder = new TextDecoder('utf-8', { fatal: false });
+
+function sniffContentType(node, bytes) {
+  if (!bytes || !looksLikeText(bytes)) return false;
+  return applyContentDetectionHints(node, _sniffDecoder.decode(bytes.subarray(0, CONTENT_SNIFF_BYTES)));
+}
+
+async function sniffBlobContent(node, blob) {
+  try {
+    const head = blob.size > CONTENT_SNIFF_BYTES ? blob.slice(0, CONTENT_SNIFF_BYTES) : blob;
+    return sniffContentType(node, new Uint8Array(await head.arrayBuffer()));
+  } catch (_) {
+    return false;
+  }
+}
+
+function retainsContent(node, byteLength) {
+  if (byteLength <= RETAINED_CONTENT_MAX_BYTES) return true;
+  if (ONE_SHOT_HINTS.some(key => node[key])) return false;
+  return HINT_KEYS.some(key => node[key]);
+}
+
 // Recursive: descends into nested archives.
 async function extractIntoTree(root, zipData, basePath, depth) {
   if (depth > MAX_DEPTH) {
@@ -220,9 +283,16 @@ async function extractIntoTree(root, zipData, basePath, depth) {
 
       const fileNode = insertPath(root, segments, nodeData);
       const parentDir = segments.length >= 2 ? segments[segments.length - 2] : '';
-      applyDetectionHints(fileNode, leafName, parentDir, entry.filename);
+      const detected = applyDetectionHints(fileNode, leafName, parentDir, entry.filename);
 
       const fullPath = basePath + '/' + entry.filename;
+
+      if (!detected && !isArchive && isTextFile(leafName) && entryBytes <= SNIFF_MAX_INFLATE_BYTES) {
+        const data = await readZipEntryQuietly(entry, fileNode._password || state.rememberedPassword);
+        if (data && sniffContentType(fileNode, data) && retainsContent(fileNode, data.length)) {
+          fileNode._cachedContent = data;
+        }
+      }
 
       if (isArchive) {
         try {
@@ -263,24 +333,40 @@ async function extractIntoTree(root, zipData, basePath, depth) {
 
 // Non-ZIP extraction (libarchive)
 
-function walkExtractedFiles(obj, depth, root, parentPath) {
+// getFilesObject() seeds the tree with lazy entry handles; extractFiles() swaps in
+// a File for every entry it could read. A handle still in place came back without
+// data, and must not be walked as if it were a directory.
+function isEntryLeaf(value) {
+  return value instanceof File || typeof value?.extract === 'function';
+}
+
+function declaredTotals(obj, totals) {
+  for (const key of Object.keys(obj)) {
+    const value = obj[key];
+    if (isMacOSMetadata(key)) continue;
+    if (isJunkFile(key.toLowerCase())) continue;
+    totals.entries += 1;
+    if (isEntryLeaf(value)) totals.bytes += value.size || 0;
+    else if (value && typeof value === 'object') declaredTotals(value, totals);
+  }
+  return totals;
+}
+
+async function walkExtractedFiles(obj, depth, root, parentPath) {
+  let fileCount = 0;
+
   for (const key of Object.keys(obj)) {
     const value = obj[key];
     if (isMacOSMetadata(key)) continue;
     if (isJunkFile(key.toLowerCase())) continue;
 
-    if (value instanceof File) {
-      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); continue; }
-      _bytesUsed += value.size || 0;
-      _entriesUsed += 1;
-    } else if (value && typeof value === 'object') {
-      if (!withinBudget(0)) { reportBudgetExceeded(parentPath.concat(key).join('/')); continue; }
-      _entriesUsed += 1;
-    }
-
     const segments = parentPath.concat(key);
 
-    if (value instanceof File) {
+    if (isEntryLeaf(value)) {
+      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(segments.join('/')); continue; }
+      _bytesUsed += value.size || 0;
+      _entriesUsed += 1;
+
       const isArchive = isArchiveFile(key);
       const nodeData = {
         type: 'file',
@@ -290,18 +376,30 @@ function walkExtractedFiles(obj, depth, root, parentPath) {
         isNestedArchive: isArchive,
         encrypted: false,
         previewable: isPreviewable(key),
-        lastModified: value.lastModified || null,
-        blobContent: value,
+        // The wasm build exposes only archive_entry_mtime_nsec, the sub-second
+        // fraction, so entry times are unrecoverable here. A File built without
+        // one reports the moment it was extracted, which the capture-date
+        // fallbacks would read as the log having been taken today.
+        lastModified: null,
+        blobContent: value instanceof File ? value : null,
       };
 
       const fileNode = insertPath(root, segments, nodeData);
       const parentDir = segments.length >= 2 ? segments[segments.length - 2] : '';
-      applyDetectionHints(fileNode, key, parentDir, segments.join('/'));
+      const detected = applyDetectionHints(fileNode, key, parentDir, segments.join('/'));
+      if (!detected && fileNode._blobContent) {
+        await sniffBlobContent(fileNode, fileNode._blobContent);
+      }
+      fileCount += 1;
     } else if (value && typeof value === 'object') {
+      if (!withinBudget(0)) { reportBudgetExceeded(segments.join('/')); continue; }
+      _entriesUsed += 1;
       insertPath(root, segments, { type: 'directory', depth });
-      walkExtractedFiles(value, depth + 1, root, segments);
+      fileCount += await walkExtractedFiles(value, depth + 1, root, segments);
     }
   }
+
+  return fileCount;
 }
 
 async function extractArchiveIntoTree(root, file, basePath, depth, parentPassword = null) {
@@ -338,8 +436,24 @@ async function extractArchiveIntoTree(root, file, basePath, depth, parentPasswor
       }
 
       setLoading(`Extracting: ${basePath}`);
+
+      // libarchive expands the whole archive into memory in one call, so the
+      // budget has to be settled against the declared sizes first; a bomb is
+      // refused here instead of being caught after it has already been inflated.
+      const declared = declaredTotals(await archive.getFilesObject(), { bytes: 0, entries: 0 });
+      if (!withinBudget(declared.bytes) || _entriesUsed + declared.entries > LIMITS.maxEntries) {
+        reportArchiveRefused(basePath, declared.bytes, declared.entries);
+        try { await archive.close?.(); } catch (_) { /* ignore */ }
+        return;
+      }
+
       const extracted = await archive.extractFiles();
-      walkExtractedFiles(extracted, depth, root, []);
+      const fileCount = await walkExtractedFiles(extracted, depth, root, []);
+      if (fileCount === 0) {
+        addError(hasEncrypted
+          ? `No files could be decrypted from: ${basePath} - wrong password or unsupported encryption`
+          : `Archive contained no readable files: ${basePath}`);
+      }
       await extractNestedArchives(root, basePath, depth);
       return;
     } catch (err) {
@@ -402,7 +516,7 @@ async function loadFileContent(node) {
     try {
       const buf = await node._blobContent.arrayBuffer();
       const result = new Uint8Array(buf);
-      node._cachedContent = result;
+      if (retainsContent(node, result.length)) node._cachedContent = result;
       return result;
     } catch (err) {
       console.warn(`Failed to read file content: ${node.name} - ${err.message}`);
@@ -419,7 +533,7 @@ async function loadFileContent(node) {
     if (!result) return null;
 
     node._password = result.password;
-    node._cachedContent = result.data;
+    if (retainsContent(node, result.data.length)) node._cachedContent = result.data;
     return result.data;
   } catch (err) {
     console.warn(`Failed to read file content: ${node.name} - ${err.message}`);
@@ -507,7 +621,9 @@ function flattenTree(root, basePath = '') {
 }
 
 function applyManualType(node, fileType) {
-  for (const key of HINT_KEYS) delete node[key];
+  for (const key of Object.keys(node)) {
+    if (key.endsWith('Hint')) delete node[key];
+  }
   delete node._parseConfig;
   delete node._parsedRows;
 
@@ -556,7 +672,7 @@ async function addFilesToTree(files) {
       root.children[storedName] = fileNode;
 
       const detected = applyDetectionHints(fileNode, file.name, '', storedName);
-      if (!detected) {
+      if (!detected && !await sniffBlobContent(fileNode, file)) {
         needsTypeSelection.push({ name: storedName, node: fileNode });
       }
     }

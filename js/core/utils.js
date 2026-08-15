@@ -6,10 +6,6 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, ch => ESC_MAP[ch]);
 }
 
-function escapeAttr(str) {
-  return escapeHtml(str);
-}
-
 function capitalise(str) {
   const s = String(str || '');
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -186,7 +182,7 @@ function syntaxHighlightJSON(jsonString) {
 
 export {
   escapeHtml,
-  escapeAttr,
+  escapeHtml as escapeAttr,
   capitalise,
   formatBytes,
   getFileExtension,

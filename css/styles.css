@@ -761,35 +761,6 @@ body {
   padding: 0.25rem 0;
 }
 
-.dash-triage-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 0.75rem;
-}
-
-.dash-triage-item {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.75rem 0.85rem;
-  background: var(--bg-secondary);
-}
-
-.dash-triage-value {
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-  color: var(--text-primary);
-  line-height: 1.2;
-  word-break: break-word;
-}
-
-.dash-triage-label {
-  margin-top: 0.2rem;
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
 .dash-list {
   display: grid;
   gap: 0.55rem;
@@ -820,10 +791,6 @@ body {
 
 .dash-list-item-warn::before {
   background: var(--warning);
-}
-
-.dash-list-item-brief {
-  color: var(--text-primary);
 }
 
 /* Case Verdict: the Overview leads with the analyst's decision. */
@@ -1494,6 +1461,33 @@ body {
   gap: 0.4rem;
   flex-shrink: 0;
 }
+.preview-btn {
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: var(--font-ui);
+  transition: all 0.1s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.preview-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.preview-btn-close:hover {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--text-on-accent);
+}
+
+/* Type modifiers follow the base button so their fills survive the cascade;
+   the dashed border marks a file whose type has not been set. */
 .preview-type-btn {
   font-family: var(--font-mono);
   font-size: 0.65rem;
@@ -1545,13 +1539,9 @@ body {
   color: var(--accent);
   border-style: solid;
 }
-.preview-type-tokens {
-  background: var(--error-dim);
-  border-color: var(--error);
-  color: var(--error);
-  border-style: solid;
-}
-.preview-type-cards {
+.preview-type-tokens,
+.preview-type-cards,
+.preview-type-wallets {
   background: var(--error-dim);
   border-color: var(--error);
   color: var(--error);
@@ -1566,36 +1556,13 @@ body {
 .preview-type-software,
 .preview-type-processes,
 .preview-type-sysinfo,
-.preview-type-screenshot {
+.preview-type-screenshot,
+.preview-type-notes,
+.preview-type-grabbed {
   background: var(--neutral-dim);
   border-color: var(--text-muted);
   color: var(--text-secondary);
   border-style: solid;
-}
-
-.preview-btn {
-  padding: 0.4rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.75rem;
-  font-family: var(--font-ui);
-  transition: all 0.1s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.preview-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-}
-.preview-btn-close:hover {
-  background: var(--error);
-  border-color: var(--error);
-  color: var(--text-on-accent);
 }
 
 /* Preview search bar */
@@ -2501,14 +2468,6 @@ body {
   color: var(--text-muted);
 }
 
-.identity-email-group {
-  margin-bottom: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-}
-
 .identity-email-addr {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -2530,12 +2489,6 @@ body {
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   border: 1px solid var(--border);
-}
-
-.identity-service-tag.has-session {
-  background: rgba(217, 119, 6, 0.08);
-  border-color: rgba(217, 119, 6, 0.25);
-  color: var(--warning);
 }
 
 
@@ -2608,33 +2561,12 @@ body {
 
 /* Autofill categories (Overview) */
 
-.dash-autofill-categories {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-top: 0.5rem;
-}
-
-.dash-autofill-cat-title {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.4rem;
-}
-
 .dash-autofill-entry {
   font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--text-primary);
   padding: 0.2rem 0;
   word-break: break-all;
-}
-
-.dash-autofill-field {
-  color: var(--text-muted);
 }
 
 /* Search page */
@@ -3141,7 +3073,7 @@ body {
   font-weight: 500;
 }
 .validity-badge-valid {
-  background: rgba(22, 163, 74, 0.1);
+  background: var(--success-dim);
   color: var(--success);
 }
 .validity-badge-expired {
@@ -3153,7 +3085,7 @@ body {
   color: var(--text-muted);
 }
 .validity-badge-unknown {
-  background: rgba(217, 119, 6, 0.12);
+  background: var(--warning-dim);
   color: var(--warning);
 }
 
@@ -3175,7 +3107,7 @@ body {
   font-weight: 500;
 }
 .session-badge-auth {
-  background: rgba(217, 119, 6, 0.1);
+  background: var(--warning-dim);
   color: var(--warning);
 }
 .session-badge-session {
@@ -3208,17 +3140,20 @@ body {
   border-color: var(--border-strong);
 }
 
+/* Active fills mirror the event dot of the same category. The base rule
+   carries a fill of its own so a category without one still reads. */
 .timeline-filter-btn.active {
+  background: var(--accent);
   color: var(--text-on-accent);
   border-color: transparent;
 }
 
-.timeline-filter-btn[data-cat="stealer"].active {
-  background: var(--text-secondary);
-}
-
+/* Ink flips with the theme; a mid-grey fill leaves the label unreadable
+   against light text in dark mode. */
+.timeline-filter-btn[data-cat="stealer"].active,
 .timeline-filter-btn[data-cat="file"].active {
-  background: var(--text-muted);
+  background: var(--text-primary);
+  color: var(--bg-primary);
 }
 
 .timeline-filter-btn[data-cat="cookie"].active {
@@ -3226,7 +3161,7 @@ body {
 }
 
 .timeline-filter-btn[data-cat="history"].active {
-  background: var(--accent);
+  background: var(--zip-color);
 }
 
 .timeline-track {
@@ -3433,8 +3368,7 @@ body {
 }
 
 @media (min-width: 1200px) {
-  .dash-ioc-grid,
-  .dash-autofill-categories {
+  .dash-ioc-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 }
@@ -3449,7 +3383,6 @@ body {
 @media (max-width: 640px) {
   .dash-intel-grid,
   .dash-ioc-grid,
-  .dash-autofill-categories,
   .identity-grid {
     grid-template-columns: 1fr;
   }
@@ -4441,7 +4374,7 @@ body {
   border-radius: 999px;
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  background: var(--bg-subtle, transparent);
+  background: var(--neutral-dim);
   white-space: nowrap;
 }
 .lab-cat-tag.lab-cat-unknown {
@@ -4461,7 +4394,7 @@ body {
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--bg-subtle, transparent);
+  background: var(--neutral-dim);
 }
 .lab-cat-pill strong {
   color: var(--text-primary);
@@ -4479,13 +4412,6 @@ body {
 .lab-cred-user {
   color: var(--text-secondary);
 }
-.lab-cred-score {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
 .lab-cred-score-num {
   color: var(--text-primary);
   min-width: 2ch;
@@ -4498,27 +4424,13 @@ body {
   vertical-align: middle;
 }
 
-.lab-action-dot {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  flex: 0 0 auto;
-}
-
 /* Action buckets: live / recent / stored / legacy. Live access is genuine
-   risk, so it keeps red, but without the ring that made a sorted column
-   read as a wall of alarms. */
-.lab-action-dot.lab-action-live {
-  background: var(--error);
-}
-.lab-action-dot.lab-action-recent { background: var(--warning); }
-.lab-action-dot.lab-action-stored { background: var(--text-muted); }
-.lab-action-dot.lab-action-legacy {
-  background: transparent;
-  border: 1px solid var(--text-muted);
-}
+   risk, so it keeps red; stored falls through to the neutral base so a
+   sorted column does not read as a wall of alarms. */
+.lab-cred-score-num.lab-score-live { color: var(--error); }
+.lab-cred-score-num.lab-score-recent { color: var(--warning); }
+.lab-cred-score-num.lab-score-legacy { color: var(--text-muted); }
+
 .lab-cred-action {
   display: flex;
   align-items: center;

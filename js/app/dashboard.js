@@ -8,6 +8,7 @@ import { escapeHtml, escapeAttr, capitalise } from '../core/utils.js';
 import { formatDateTimeLabel } from '../pages/shared.js';
 let sysInfoSourcePath = null;
 let overviewScreenshotUrl = null;
+let screenshotGeneration = 0;
 let sysinfoIocs = [];
 let clipboardIocs = [];
 let clipboardLures = [];
@@ -58,13 +59,24 @@ function joinNaturalList(values, conjunction = 'and') {
   return `${items.slice(0, -1).join(', ')}, ${conjunction} ${items[items.length - 1]}`;
 }
 
+// Only a sysinfo capture key is evidence of when the log was taken; the rest
+// are guesses and the chip says so.
+const CAPTURE_SOURCE_NOTES = {
+  'archive-name': 'archive name',
+  'file-modified': 'file modified',
+};
+
 function inferLikelyExfilDate(sysinfo) {
   const sysinfoDate = findSysinfoValue(sysinfo, CAPTURE_TIME_KEYS);
   const parsedSysinfoDate = parseTimestampValue(sysinfoDate);
   if (parsedSysinfoDate) return { date: parsedSysinfoDate, source: 'sysinfo' };
 
-  const archiveDate = parseArchiveTimestamp(state.rootZipName || '');
-  if (archiveDate) return { date: archiveDate, source: 'archive-name' };
+  // `rootZipName` may be a collapsed wrapper folder, so try the uploaded
+  // archive name too.
+  for (const name of [state.rootZipName, state.sourceFile?.name]) {
+    const archiveDate = parseArchiveTimestamp(name || '');
+    if (archiveDate) return { date: archiveDate, source: 'archive-name' };
+  }
 
   if (state.sourceFile?.lastModified) {
     const fallback = new Date(state.sourceFile.lastModified);
@@ -101,21 +113,37 @@ function renderCaseContext({ computer, resolvedUser, userSource, countryInfo, ex
   if (computer) push('host', computer);
   if (resolvedUser) push('user', userSource && userSource !== 'sysinfo' ? `${resolvedUser} (${userSource})` : resolvedUser);
   if (countryInfo?.value) push('location', countryInfo.source === 'sysinfo' ? countryInfo.value : `${countryInfo.value} (${countryInfo.source})`);
-  if (exfilInfo?.date) push('captured', formatDateTimeLabel(exfilInfo.date));
+  if (exfilInfo?.date) {
+    const sourceNote = CAPTURE_SOURCE_NOTES[exfilInfo.source];
+    const label = formatDateTimeLabel(exfilInfo.date);
+    push('captured', sourceNote ? `${label} (${sourceNote})` : label);
+  }
   if (state.rootZipName) push('source', state.rootZipName);
   if (items.length === 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   el.classList.remove('hidden');
   el.innerHTML = items.join('<span class="ctx-sep">·</span>');
 }
 
-function buildVerdictCard({ label, value, note, target }) {
-  const link = target ? `<button class="verdict-card-link" data-nav="${escapeAttr(target)}">View &rarr;</button>` : '';
+// `targets` is a priority list: the click handler takes the first page that is
+// actually available, so a card never offers a dead link.
+function buildVerdictCard({ label, value, note, targets }) {
+  const nav = (targets || []).filter(Boolean).join(' ');
+  const link = nav ? `<button class="verdict-card-link" data-nav="${escapeAttr(nav)}">View &rarr;</button>` : '';
   return `<div class="verdict-card">
     <div class="verdict-card-label">${escapeHtml(label)}</div>
     <div class="verdict-card-value">${escapeHtml(value)}</div>
     <div class="verdict-card-note">${escapeHtml(note)}</div>
     ${link}
   </div>`;
+}
+
+// The headline number and the card's link have to come from the same metric,
+// or the card counts one thing and drills into another.
+function pickHeadline(candidates) {
+  for (const [count, target] of candidates) {
+    if (count > 0) return { value: count, target };
+  }
+  return { value: 0, target: null };
 }
 
 // The four questions an IR responder asks first: what is still live, how wide
@@ -134,7 +162,7 @@ function renderVerdictCards({ credentials, cookies, cards, history, grabbed, scr
       note: live > 0
         ? 'Session tokens still valid at capture. May grant account access without a password; verify before relying.'
         : 'No session tokens were still valid at capture.',
-      target: 'cookies',
+      targets: ['cookies'],
     }));
   }
 
@@ -146,7 +174,7 @@ function renderVerdictCards({ credentials, cookies, cards, history, grabbed, scr
       note: topDomain
         ? `Recovered logins, heaviest on ${topDomain}. Rank live and reused ones in Credential Triage.`
         : 'Recovered logins. Rank live and reused ones in Credential Triage.',
-      target: 'currentnesslab',
+      targets: ['currentnesslab', 'passwords'],
     }));
   }
 
@@ -156,14 +184,18 @@ function renderVerdictCards({ credentials, cookies, cards, history, grabbed, scr
   if (idTotal > 0) finBits.push('government IDs');
   if (autofill?.totalEntries > 0) finBits.push(pluralise(autofill.totalEntries, 'autofill PII record'));
   if (finBits.length > 0) {
-    const value = cards?.totalCards > 0
-      ? cards.totalCards.toLocaleString()
-      : (idTotal > 0 ? idTotal.toLocaleString() : (autofill?.totalEntries || 0).toLocaleString());
+    // Government IDs are matched in credential usernames, so that count is
+    // read on the Passwords page.
+    const headline = pickHeadline([
+      [cards?.totalCards, 'cards'],
+      [idTotal, 'passwords'],
+      [autofill?.totalEntries, 'autofills'],
+    ]);
     out.push(buildVerdictCard({
       label: 'Financial & identity',
-      value,
+      value: headline.value.toLocaleString(),
       note: `${joinNaturalList(finBits)}.`,
-      target: cards?.totalCards > 0 ? 'cards' : 'autofills',
+      targets: [headline.target],
     }));
   }
 
@@ -172,14 +204,16 @@ function renderVerdictCards({ credentials, cookies, cards, history, grabbed, scr
   if (grabbed?.fileCount > 0) capBits.push(pluralise(grabbed.fileCount, 'grabbed file'));
   if (history?.totalEntries > 0) capBits.push(pluralise(history.totalEntries, 'history entry', 'history entries'));
   if (capBits.length > 0) {
-    const value = history?.totalEntries > 0
-      ? history.totalEntries.toLocaleString()
-      : (grabbed?.fileCount || screenshot?.entries?.length || 0).toLocaleString();
+    const headline = pickHeadline([
+      [history?.totalEntries, 'history'],
+      [grabbed?.fileCount, 'grabbed'],
+      [screenshot?.entries?.length, 'screenshots'],
+    ]);
     out.push(buildVerdictCard({
       label: 'Capture evidence',
-      value,
+      value: headline.value.toLocaleString(),
       note: `${joinNaturalList(capBits)}.`,
-      target: screenshot?.entries?.length > 0 ? 'screenshots' : 'browser',
+      targets: [headline.target],
     }));
   }
 
@@ -486,100 +520,87 @@ function renderConsistencyChecks({ credentials, cookies, history, countryInfo })
   }
 }
 
+const COUNTED_HINTS = [
+  '_passwordFileHint',
+  '_cookieFileHint',
+  '_autofillHint',
+  '_notesHint',
+  '_historyHint',
+  '_bookmarkHint',
+  '_browserMetadataHint',
+  '_sysInfoHint',
+  '_creditCardHint',
+  '_cryptoWalletHint',
+  '_accountTokenHint',
+  '_serviceArtifactHint',
+  '_messengerHint',
+  '_downloadHint',
+  '_domainDetectHint',
+  '_clipboardHint',
+  '_grabbedFileHint',
+  '_screenshotHint',
+  '_browserPluginHint',
+  '_softwareFileHint',
+  '_processListHint',
+];
+
+// Extension/plugin files on their own aren't a recognised dataset; they are
+// only listed under Other Artifacts.
+const RECOGNISED_HINTS = COUNTED_HINTS.filter((key) => key !== '_browserPluginHint');
+
+const EXTRA_ARTIFACTS = [
+  { hint: '_creditCardHint', icon: 'CC', label: 'credit card file(s) detected', warning: true },
+  { hint: '_cryptoWalletHint', icon: 'W', label: 'crypto wallet file(s) detected' },
+  { hint: '_accountTokenHint', icon: 'TK', label: 'account token file(s) detected', warning: true },
+  { hint: '_serviceArtifactHint', icon: 'SV', label: 'service artifact file(s) detected' },
+  { hint: '_messengerHint', icon: 'M', label: 'unclassified service file(s) detected' },
+  { hint: '_downloadHint', icon: 'DL', label: 'download history file(s) detected' },
+  { hint: '_clipboardHint', icon: 'CL', label: 'clipboard file(s) detected' },
+  { hint: '_notesHint', icon: 'NT', label: 'note file(s) detected' },
+  { hint: '_grabbedFileHint', icon: 'GF', label: 'grabbed file(s) detected', warning: true },
+  { hint: '_bookmarkHint', icon: 'BM', label: 'bookmark file(s) detected' },
+  { hint: '_browserMetadataHint', icon: 'MD', label: 'browser metadata file(s) detected' },
+  { hint: '_browserPluginHint', icon: 'EXT', label: 'browser extension/plugin file(s) detected' },
+  { hint: '_softwareFileHint', icon: 'SW', label: 'installed software file(s) detected' },
+  { hint: '_processListHint', icon: 'PS', label: 'process list file(s) detected' },
+];
+
+function countHintedFiles() {
+  const counts = {};
+  for (const key of COUNTED_HINTS) counts[key] = 0;
+  for (const file of state.flatFiles) {
+    for (const key of COUNTED_HINTS) {
+      if (file[key]) counts[key]++;
+    }
+  }
+  return counts;
+}
+
 function updateDashboardVisibility() {
-  const credFiles = state.flatFiles.filter(f => f._passwordFileHint);
-  const cookieFiles = state.flatFiles.filter(f => f._cookieFileHint);
-  const autofillFiles = state.flatFiles.filter(f => f._autofillHint);
-  const notesFiles = state.flatFiles.filter(f => f._notesHint);
-  const historyFiles = state.flatFiles.filter(f => f._historyHint);
-  const bookmarkFiles = state.flatFiles.filter(f => f._bookmarkHint);
-  const browserMetaFiles = state.flatFiles.filter(f => f._browserMetadataHint);
-  const sysInfoFiles = state.flatFiles.filter(f => f._sysInfoHint);
-  const creditCardFiles = state.flatFiles.filter(f => f._creditCardHint);
-  const cryptoWalletFiles = state.flatFiles.filter(f => f._cryptoWalletHint);
-  const tokenFiles = state.flatFiles.filter(f => f._accountTokenHint);
-  const serviceFiles = state.flatFiles.filter(f => f._serviceArtifactHint);
-  const messengerFiles = state.flatFiles.filter(f => f._messengerHint);
-  const downloadFiles = state.flatFiles.filter(f => f._downloadHint);
-  const domainDetectFiles = state.flatFiles.filter(f => f._domainDetectHint);
-  const clipboardFiles = state.flatFiles.filter(f => f._clipboardHint);
-  const grabbedFiles = state.flatFiles.filter(f => f._grabbedFileHint);
-  const screenshotFiles = state.flatFiles.filter(f => f._screenshotHint);
-  const browserPluginFiles = state.flatFiles.filter(f => f._browserPluginHint);
-  const softwareFiles = state.flatFiles.filter(f => f._softwareFileHint);
-  const processFiles = state.flatFiles.filter(f => f._processListHint);
+  const counts = countHintedFiles();
 
   const dashCred = document.getElementById('dashCredIntel');
   const dashCookie = document.getElementById('dashCookieIntel');
   const noData = document.getElementById('overviewNoData');
 
-  dashCred.classList.toggle('hidden', credFiles.length === 0);
-  dashCookie.classList.toggle('hidden', cookieFiles.length === 0);
-
-  const hasAnyData = credFiles.length > 0 || cookieFiles.length > 0 ||
-    autofillFiles.length > 0 || notesFiles.length > 0 || historyFiles.length > 0 || bookmarkFiles.length > 0 ||
-    browserMetaFiles.length > 0 || sysInfoFiles.length > 0 ||
-    creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || messengerFiles.length > 0 ||
-    tokenFiles.length > 0 || serviceFiles.length > 0 ||
-    downloadFiles.length > 0 || domainDetectFiles.length > 0 || clipboardFiles.length > 0 ||
-    grabbedFiles.length > 0 || screenshotFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0;
-  noData.classList.toggle('hidden', hasAnyData);
+  dashCred.classList.toggle('hidden', counts._passwordFileHint === 0);
+  dashCookie.classList.toggle('hidden', counts._cookieFileHint === 0);
+  noData.classList.toggle('hidden', RECOGNISED_HINTS.some((key) => counts[key] > 0));
 
   const extraEl = document.getElementById('dashExtraIntel');
   const extraBody = document.getElementById('dashExtraBody');
+  const extras = EXTRA_ARTIFACTS.filter(({ hint }) => counts[hint] > 0);
 
-  if (creditCardFiles.length > 0 || cryptoWalletFiles.length > 0 || tokenFiles.length > 0 || serviceFiles.length > 0 || messengerFiles.length > 0 || downloadFiles.length > 0 || clipboardFiles.length > 0 || notesFiles.length > 0 || grabbedFiles.length > 0 || browserPluginFiles.length > 0 || bookmarkFiles.length > 0 || browserMetaFiles.length > 0 || softwareFiles.length > 0 || processFiles.length > 0) {
-    extraEl.classList.remove('hidden');
-
-    let html = '<div class="dash-extra-items">';
-    if (creditCardFiles.length > 0) {
-      html += `<div class="dash-extra-item dash-extra-warning"><span class="dash-extra-icon">CC</span><span>${creditCardFiles.length} credit card file(s) detected</span></div>`;
-    }
-    if (cryptoWalletFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">W</span><span>${cryptoWalletFiles.length} crypto wallet file(s) detected</span></div>`;
-    }
-    if (tokenFiles.length > 0) {
-      html += `<div class="dash-extra-item dash-extra-warning"><span class="dash-extra-icon">TK</span><span>${tokenFiles.length} account token file(s) detected</span></div>`;
-    }
-    if (serviceFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">SV</span><span>${serviceFiles.length} service artifact file(s) detected</span></div>`;
-    }
-    if (messengerFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">M</span><span>${messengerFiles.length} unclassified service file(s) detected</span></div>`;
-    }
-    if (downloadFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">DL</span><span>${downloadFiles.length} download history file(s) detected</span></div>`;
-    }
-    if (clipboardFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">CL</span><span>${clipboardFiles.length} clipboard file(s) detected</span></div>`;
-    }
-    if (notesFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">NT</span><span>${notesFiles.length} note file(s) detected</span></div>`;
-    }
-    if (grabbedFiles.length > 0) {
-      html += `<div class="dash-extra-item dash-extra-warning"><span class="dash-extra-icon">GF</span><span>${grabbedFiles.length} grabbed file(s) detected</span></div>`;
-    }
-    if (bookmarkFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">BM</span><span>${bookmarkFiles.length} bookmark file(s) detected</span></div>`;
-    }
-    if (browserMetaFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">MD</span><span>${browserMetaFiles.length} browser metadata file(s) detected</span></div>`;
-    }
-    if (browserPluginFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">EXT</span><span>${browserPluginFiles.length} browser extension/plugin file(s) detected</span></div>`;
-    }
-    if (softwareFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">SW</span><span>${softwareFiles.length} installed software file(s) detected</span></div>`;
-    }
-    if (processFiles.length > 0) {
-      html += `<div class="dash-extra-item"><span class="dash-extra-icon">PS</span><span>${processFiles.length} process list file(s) detected</span></div>`;
-    }
-    html += '</div>';
-    extraBody.innerHTML = html;
-  } else {
+  if (extras.length === 0) {
     extraEl.classList.add('hidden');
     extraBody.innerHTML = '';
+    return;
   }
+
+  extraEl.classList.remove('hidden');
+  extraBody.innerHTML = `<div class="dash-extra-items">${extras.map(({ hint, icon, label, warning }) =>
+    `<div class="dash-extra-item${warning ? ' dash-extra-warning' : ''}"><span class="dash-extra-icon">${icon}</span><span>${counts[hint]} ${label}</span></div>`
+  ).join('')}</div>`;
 }
 
 export function getSysInfoSourcePath() {
@@ -591,6 +612,7 @@ export function resetOverviewState() {
   sysinfoIocs = [];
   clipboardIocs = [];
   clipboardLures = [];
+  screenshotGeneration++;
 
   if (overviewScreenshotUrl) {
     URL.revokeObjectURL(overviewScreenshotUrl);
@@ -600,6 +622,95 @@ export function resetOverviewState() {
   for (const key of Object.keys(overviewState)) {
     overviewState[key] = null;
   }
+}
+
+const OVERVIEW_SECTION_IDS = [
+  'dashSeedBanner',
+  'dashFingerprint',
+  'dashCaseContext',
+  'dashVerdictCards',
+  'dashRiskSignals',
+  'dashConsistency',
+  'dashScreenshot',
+  'dashStealerInfra',
+  'dashClipboardLures',
+  'dashIOCs',
+  'dashNationalIds',
+  'dashCredIntel',
+  'dashLocalNetworkCol',
+  'dashCookieIntel',
+  'dashAutofillIntel',
+  'dashDownloadIntel',
+  'dashDomainDetect',
+  'dashExtraIntel',
+  'overviewNoData',
+];
+
+const OVERVIEW_BODY_IDS = [
+  'dashSeedBanner',
+  'dashFingerprintBody',
+  'dashCaseContext',
+  'dashVerdictCards',
+  'dashRiskSignalsBody',
+  'dashConsistencyBody',
+  'dashScreenshotBody',
+  'dashStealerInfraBody',
+  'dashClipboardLuresBody',
+  'dashIOCBody',
+  'dashNationalIdsBody',
+  'dashTopDomains',
+  'dashTopUsernames',
+  'dashLocalNetwork',
+  'dashTopCookieDomains',
+  'dashAutofillBody',
+  'dashDownloadBody',
+  'dashDomainDetectBody',
+  'dashExtraBody',
+];
+
+const OVERVIEW_SUMMARIES = [
+  { id: 'dashCredSummary', text: 'Analysing credential files...', loading: true },
+  { id: 'dashCookieSummary', text: 'Analysing cookie files...', loading: true },
+  { id: 'dashAutofillSummary', text: 'Analysing autofill files...', loading: true },
+  { id: 'dashDownloadSummary', text: 'Analysing download files...' },
+];
+
+const SYSINFO_EMPTY_STATE = '<div class="no-data" id="sysInfoNoData">No system information files detected.</div>';
+
+// Every element the overview writes into. A case with no parsed credentials or
+// cookies takes branches that never repaint, so the previous victim's data has
+// to be wiped rather than overwritten.
+function clearOverview() {
+  resetOverviewState();
+
+  for (const id of OVERVIEW_SECTION_IDS) {
+    document.getElementById(id)?.classList.add('hidden');
+  }
+
+  for (const id of OVERVIEW_BODY_IDS) {
+    const element = document.getElementById(id);
+    if (element) element.innerHTML = '';
+  }
+
+  for (const { id, text, loading } of OVERVIEW_SUMMARIES) {
+    const element = document.getElementById(id);
+    if (!element) continue;
+    element.textContent = text;
+    element.classList.toggle('dash-loading', Boolean(loading));
+  }
+
+  const sysInfoBody = document.getElementById('dashSysInfoBody');
+  if (sysInfoBody) sysInfoBody.innerHTML = SYSINFO_EMPTY_STATE;
+  document.getElementById('sysInfoActions')?.classList.add('hidden');
+
+  const openBtn = document.getElementById('sysInfoOpenBtn');
+  if (openBtn) {
+    openBtn.classList.add('hidden');
+    openBtn.textContent = 'View Source';
+  }
+
+  const navSysInfo = document.getElementById('navSysInfo');
+  if (navSysInfo) navSysInfo.disabled = true;
 }
 
 export { updateDashboardVisibility };
@@ -627,13 +738,21 @@ export function initDashboard() {
   document.getElementById('pageOverview')?.addEventListener('click', (event) => {
     const link = event.target.closest('.verdict-card-link');
     if (!link) return;
-    const target = link.dataset.nav;
-    if (target) document.querySelector(`.sidebar-nav-item[data-page="${target}"]`)?.click();
+    for (const target of (link.dataset.nav || '').split(' ')) {
+      const navItem = document.querySelector(`.sidebar-nav-item[data-page="${target}"]`);
+      if (navItem && !navItem.disabled) {
+        navItem.click();
+        return;
+      }
+    }
   });
 
   on('loading', () => {
     loadingText.textContent = state.loadingText;
   });
+
+  on('reset', clearOverview);
+  on('reanalyze', clearOverview);
 
   on('analysis:credentials', (data) => {
     setOverviewState('credentials', data);
@@ -866,6 +985,7 @@ export function initDashboard() {
 
   on('analysis:screenshot', async (data) => {
     setOverviewState('screenshot', data);
+    const generation = ++screenshotGeneration;
     const section = document.getElementById('dashScreenshot');
     const body = document.getElementById('dashScreenshotBody');
 
@@ -881,7 +1001,8 @@ export function initDashboard() {
 
     try {
       const content = await loadFileContent(data.node);
-      if (!content) return;
+      // A reset or a newer screenshot event landed while this one was decoding.
+      if (!content || generation !== screenshotGeneration) return;
 
       const ext = data.node.name.split('.').pop().toLowerCase();
       const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', bmp: 'image/bmp', gif: 'image/gif', webp: 'image/webp' };

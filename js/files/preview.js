@@ -51,6 +51,7 @@ let showingAllTextLines = false;
 
 let searchMatches = [];
 let currentMatchIndex = -1;
+let hiddenMatchCount = 0;
 
 const ROW_CAP = LIMITS.previewRowCap;
 const LINE_CAP = LIMITS.previewLineCap;
@@ -379,6 +380,7 @@ function clearPreviewSearch(resetInput = true) {
   if (elSearchCount) elSearchCount.textContent = '';
   searchMatches = [];
   currentMatchIndex = -1;
+  hiddenMatchCount = 0;
 }
 
 function showSearchBar(show, { reset = false } = {}) {
@@ -405,12 +407,50 @@ function getPreviewDisplayText(text, fileName) {
   }
 }
 
-function getVisiblePreviewText() {
-  if (currentDecodedText == null) return '';
+function getPreviewTexts() {
+  if (currentDecodedText == null) return { displayText: '', visibleText: '' };
   const displayText = getPreviewDisplayText(currentDecodedText, currentFile?.name || '');
-  return showingAllTextLines
+  const visibleText = showingAllTextLines
     ? displayText
     : displayText.split('\n').slice(0, LINE_CAP).join('\n');
+  return { displayText, visibleText };
+}
+
+function getVisiblePreviewText() {
+  return getPreviewTexts().visibleText;
+}
+
+function countOccurrences(haystack, needle) {
+  let count = 0;
+  let idx = 0;
+  while ((idx = haystack.indexOf(needle, idx)) !== -1) {
+    count += 1;
+    idx += 1;
+  }
+  return count;
+}
+
+function formatSearchCount(current, total) {
+  return `${current} / ${total}${hiddenMatchCount > 0 ? ` +${hiddenMatchCount.toLocaleString()}` : ''}`;
+}
+
+// Matches past the line cap can't be highlighted, so name them on the cap banner.
+function updateCappedMatchNotice() {
+  const banner = elBody.querySelector('.preview-line-cap');
+  if (!banner) return;
+
+  let note = banner.querySelector('.preview-line-cap-note');
+  if (hiddenMatchCount === 0) {
+    if (note) note.remove();
+    return;
+  }
+  if (!note) {
+    note = document.createElement('span');
+    note.className = 'preview-line-cap-note';
+    note.style.color = 'var(--warning)';
+    banner.insertBefore(note, banner.querySelector('.preview-show-all-lines'));
+  }
+  note.textContent = `${hiddenMatchCount.toLocaleString()} more ${hiddenMatchCount === 1 ? 'match' : 'matches'} past the cap`;
 }
 
 function formatPreviewTextContent(text, fileName, lineCap = null) {
@@ -435,13 +475,15 @@ function performSearch(query) {
 
   searchMatches = [];
   currentMatchIndex = -1;
+  hiddenMatchCount = 0;
 
   if (!query || query.length < 1) {
+    updateCappedMatchNotice();
     restoreFormattedPreviewText(textContent, '');
     return;
   }
 
-  const visibleText = getVisiblePreviewText();
+  const { displayText, visibleText } = getPreviewTexts();
   const lowerText = visibleText.toLowerCase();
   const lowerQuery = query.toLowerCase();
   let idx = 0;
@@ -451,8 +493,14 @@ function performSearch(query) {
     idx += 1;
   }
 
+  // The visible text is a prefix of the display text, so the rest holds the capped-away matches.
+  if (displayText.length > visibleText.length) {
+    hiddenMatchCount = countOccurrences(displayText.slice(visibleText.length).toLowerCase(), lowerQuery);
+  }
+  updateCappedMatchNotice();
+
   if (matchPositions.length === 0) {
-    restoreFormattedPreviewText(textContent, '0 / 0');
+    restoreFormattedPreviewText(textContent, formatSearchCount(0, 0));
     return;
   }
 
@@ -476,7 +524,7 @@ function performSearch(query) {
 
   searchMatches = textContent.querySelectorAll('.preview-search-match');
   currentMatchIndex = searchMatches.length > 0 ? 0 : -1;
-  elSearchCount.textContent = `${searchMatches.length > 0 ? 1 : 0} / ${searchMatches.length}`;
+  elSearchCount.textContent = formatSearchCount(searchMatches.length > 0 ? 1 : 0, searchMatches.length);
   scrollToCurrentMatch();
 }
 
@@ -519,7 +567,7 @@ function scrollToCurrentMatch() {
     currentEl.classList.add('preview-search-match-current');
     currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
-  elSearchCount.textContent = `${currentMatchIndex + 1} / ${searchMatches.length}`;
+  elSearchCount.textContent = formatSearchCount(currentMatchIndex + 1, searchMatches.length);
 }
 
 function navigateMatch(direction) {
@@ -569,7 +617,7 @@ function renderPdfPreview(data, fileName) {
   const url = URL.createObjectURL(blob);
   trackBlobUrl(url);
   return `<div class="preview-pdf-container">` +
-    `<iframe src="${url}" class="preview-pdf-frame" sandbox title="${escapeHtml(fileName)}"></iframe></div>`;
+    `<iframe src="${url}" class="preview-pdf-frame" sandbox="allow-scripts" title="${escapeHtml(fileName)}"></iframe></div>`;
 }
 
 function attachShowAllLinesHandler() {
@@ -679,7 +727,7 @@ function addTransformButton(prominent) {
       if (parsed && parsed.rows.length > 0) {
         currentParsedData = parsed;
       } else {
-        showTransformError();
+        showPreviewNotice('No structured data detected in this file.');
         return;
       }
     }
@@ -720,15 +768,20 @@ function showCSVView(showAll) {
   const adjustBtn = document.getElementById('csvAdjustColumns');
   if (adjustBtn && currentNode && currentDecodedText != null) {
     adjustBtn.addEventListener('click', async () => {
+      const activeNode = currentNode;
       const fileName = currentFile ? currentFile.name : 'Unknown file';
       const config = await openColumnMapper(currentDecodedText, fileName, columnMappingType);
-      if (!config) return;
-      if (currentNode) currentNode._parseConfig = config;
+      if (!config || currentNode !== activeNode) return;
+
       const parsed = parsePreviewText(currentDecodedText, currentNode, config);
-      if (parsed && parsed.rows.length > 0) {
-        currentParsedData = parsed;
-        showCSVView(false);
+      if (!parsed || parsed.rows.length === 0) {
+        showPreviewNotice('Mapping produced no rows — not applied. Previous columns kept.');
+        return;
       }
+
+      currentNode._parseConfig = config;
+      currentParsedData = parsed;
+      showCSVView(false);
       emit('reanalyze');
     });
   }
@@ -758,15 +811,15 @@ function showTextView({ showAll = false, preserveSearch = false } = {}) {
   if (activeQuery) performSearch(activeQuery);
 }
 
-function showTransformError() {
+function showPreviewNotice(message) {
   const existing = document.querySelector('.preview-transform-error');
   if (existing) existing.remove();
 
   const el = document.createElement('div');
   el.className = 'preview-transform-error';
-  el.textContent = 'No structured data detected in this file.';
+  el.textContent = message;
   elBody.insertBefore(el, elBody.firstChild);
-  setTimeout(() => el.remove(), 4000);
+  setTimeout(() => el.remove(), 6000);
 }
 
 function downloadCurrentCSV() {

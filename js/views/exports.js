@@ -549,8 +549,8 @@ async function exportParsedDataZip() {
     }
 
     if (history.entries.length > 0) {
-      await addCsvFile('history.csv', ['URL', 'Title', 'Visits'], history.entries.map(
-        ({ url, title, visitCount }) => [url, title, visitCount]
+      await addCsvFile('history.csv', ['URL', 'Title', 'Visits', 'Last Visit'], history.entries.map(
+        ({ url, title, visitCount, lastVisit }) => [url, title, visitCount, lastVisit]
       ));
     }
 

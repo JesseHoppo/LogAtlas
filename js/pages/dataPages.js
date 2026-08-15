@@ -3,6 +3,7 @@ import { PAGE_SIZE, buildRowsHtml } from './shared.js';
 import {
   DATA_PAGE_CONTENT_IDS_BY_NAME,
   DATA_PAGE_NAV_IDS_BY_NAME,
+  PAGE_IDS,
 } from './registry.js';
 
 import {
@@ -113,8 +114,26 @@ function handleShowMore(pageId, contentEl) {
 
 // Data loading
 
-async function reloadData() {
-  if (!state.fileTree) return;
+let loadEpoch = 0;
+let loadQueue = Promise.resolve();
+
+function activePageName() {
+  return Object.keys(PAGE_IDS).find(
+    (name) => document.getElementById(PAGE_IDS[name])?.classList.contains('active')
+  );
+}
+
+// Reset and each new archive bump the epoch. Loads are queued so an in-flight
+// run cannot overwrite a newer case's datasets, and a superseded run bails
+// instead of publishing them.
+function reloadData() {
+  const epoch = ++loadEpoch;
+  loadQueue = loadQueue.catch(() => {}).then(() => runLoad(epoch));
+  return loadQueue;
+}
+
+async function runLoad(epoch) {
+  if (!state.fileTree || epoch !== loadEpoch) return;
 
   const tree = state.fileTree;
   const root = state.rootZipName;
@@ -136,6 +155,8 @@ async function reloadData() {
     }
   });
 
+  if (epoch !== loadEpoch) return;
+
   emit('data:loaded');
 
   // Update nav enabled/disabled states
@@ -149,6 +170,10 @@ async function reloadData() {
   for (const { updateNav } of COLLECTION_MODULES) {
     updateNav();
   }
+
+  // Otherwise the open page keeps showing pre-reanalyze rows and stats.
+  const openPage = activePageName();
+  if (openPage) emit(`page:${openPage}`);
 }
 
 export function initDataPages() {
@@ -203,6 +228,7 @@ export function initDataPages() {
   on('analysis:processList', setProcessListData);
 
   on('reset', () => {
+    loadEpoch++;
     credentialsController.reset();
     for (const { reset } of COLLECTION_MODULES) {
       reset();

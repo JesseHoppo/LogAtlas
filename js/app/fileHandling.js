@@ -1,17 +1,23 @@
-import { state, emit, resetState, setMultiFileMode } from '../core/state.js';
+import { state, on, emit, resetState, setMultiFileMode } from '../core/state.js';
 import { extractFile, flattenTree, addFilesToTree, applyManualType, getUniqueChildName } from '../files/extractor.js';
 import { formatBytes, isArchiveFile } from '../core/utils.js';
 import { showNotification } from '../core/shared.js';
 import { promptForFileType } from '../files/fileTypeModal.js';
 import { openPasteModal } from '../files/pasteText.js';
 
+// What the analyst handed over, kept apart from the tree: state.flatFiles is
+// post-extraction, so counting it reports nested-archive members and their
+// decompressed sizes instead of the dropped files.
+const sources = [];
+
+function recordSources(files) {
+  for (const file of files) sources.push({ name: file.name, size: file.size || 0 });
+}
+
 function updateMultiFileSummary() {
-  const totalFiles = state.flatFiles.filter((file) => file.type === 'file').length;
-  const totalSize = state.flatFiles.reduce(
-    (sum, file) => sum + (file.type === 'file' ? (file.size || 0) : 0),
-    0
-  );
-  document.getElementById('currentFileName').textContent = totalFiles === 1 ? '1 file' : `${totalFiles} files`;
+  const totalSize = sources.reduce((sum, source) => sum + source.size, 0);
+  document.getElementById('currentFileName').textContent =
+    sources.length === 1 ? sources[0].name : `${sources.length} files`;
   document.getElementById('currentFileSize').textContent = formatBytes(totalSize);
 }
 
@@ -62,6 +68,7 @@ async function handleFiles(files, { resetUI }) {
     ? fileArray.reduce((sum, f) => sum + f.size, 0)
     : fileArray[0].size;
   startFreshUI({ name, sizeBytes, multiFile: isMultiFile });
+  recordSources(fileArray);
 
   try {
     if (isMultiFile) {
@@ -90,6 +97,7 @@ async function handleAddMoreFiles(files) {
     const needsTypeSelection = await addFilesToTree(fileArray);
     await processTypeSelectionQueue(needsTypeSelection);
 
+    recordSources(fileArray);
     updateMultiFileSummary();
 
     loading.classList.remove('visible');
@@ -130,6 +138,7 @@ async function handlePasteText({ resetUI }) {
     try {
       await ingestPastedFile(file, fileName, type);
 
+      recordSources([file]);
       updateMultiFileSummary();
 
       loading.classList.remove('visible');
@@ -142,6 +151,7 @@ async function handlePasteText({ resetUI }) {
   } else {
     // Start new analysis
     startFreshUI({ name: fileName, sizeBytes: file.size, multiFile: true });
+    recordSources([file]);
 
     try {
       await ingestPastedFile(file, fileName, type);
@@ -171,6 +181,8 @@ async function processTypeSelectionQueue(files) {
 export function initFileHandling({ resetUI }) {
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
+
+  on('reset', () => { sources.length = 0; });
 
   const boundHandleFiles = (files) => handleFiles(files, { resetUI });
   const boundHandlePasteText = () => handlePasteText({ resetUI });

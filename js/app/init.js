@@ -91,8 +91,8 @@ initThemeToggle();
 
 document.getElementById('resetBtn')?.addEventListener('click', resetUI);
 
-// Fetch the vendored domain category data in the background. Lab and Domain
-// Explorer subscribe to `domains:categoriesLoaded` and rebuild when ready.
+// Fetch the vendored domain category data in the background. Credential Triage
+// subscribes to `domains:categoriesLoaded` and rebuilds when ready.
 void loadDomainCategories();
 
 void autoLoadFromQuery(fileHandling.handleFiles);
