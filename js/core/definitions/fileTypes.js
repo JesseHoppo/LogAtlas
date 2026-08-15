@@ -124,7 +124,12 @@ export const FILE_TYPE_PATTERNS = {
       /^(?:credit[\s_-]*)?cards?\.(txt|tsv|csv)$/i,
       /^cc[\s_-]?data\.(txt|tsv|csv)$/i,
       /^CreditCards?\.(txt|tsv|csv)$/i,
-      /^(?:google\s?chrome|microsoft\s?edge|chrome|chromium|edge|firefox|opera|brave|vivaldi|yandex|credit|bank|debit|payment)[^/]*[\s_-]cards?\.(txt|tsv|csv)$/i,
+      /^[^/]*[\s_-]cards?\.(txt|tsv|csv)$/i,
+    ],
+    // "card" also names hardware, ID documents and stationery; those turn up
+    // among grabbed desktop files and carry no payment data.
+    exclusions: [
+      /(?:^|[\s_-])(?:sim|sd|tf|memory|graphics|video|sound|network|wireless|nic|id|boarding|library|access|key|business|birthday|christmas|xmas|greeting|holiday|thank[\s_-]?you|place|score|report|flash|wild|tarot|gift|loyalty|reward|membership|club|points)[\s_-]cards?\.(txt|tsv|csv)$/i,
     ],
     folderPattern: /^(?:(?:(?:credit|bank)[\s_-]*)?cards?|credits?|cc)$/i,
   },
@@ -139,12 +144,16 @@ export const FILE_TYPE_PATTERNS = {
       /^wallet[\s_-]*data\.(txt|json)$/i,
       /^keychain(?:\s*data)?\.(txt|tsv|csv)$/i,
       /^metamask/i,
+      /^seed\.txt$/i,
     ],
+    // Names too generic to stand on their own; they only qualify under a
+    // wallet/crypto root that no pathPattern already claims outright,
+    // e.g. `Crypto/<app>/token.json`.
     pathScopedFilePatterns: [
       /^(?:current|lock|log(?:\.old)?|manifest-\d+|\d+\.(?:log|ldb)|.+\.(?:db|sqlite|sqlite3))$/i,
       /^(?:token|data)\.json$/i,
-      /^seed\.txt$/i,
     ],
+    scopePattern: /(^|\/)(?:wallets?|crypto)\//i,
     pathPatterns: [
       /(^|\/)wallets?\//i,
       /(^|\/)local extension settings\//i,
@@ -321,7 +330,8 @@ export const FILE_TYPE_PATTERNS = {
   // Combolist/ULP credential pools bundled alongside a log. They ship under
   // arbitrary titles ("14,4K ULP PRIV.txt"), so only the line shape identifies
   // them: scheme://host:user:pass, with user free of URL punctuation so plain
-  // history dumps carrying nested URLs do not qualify.
+  // history dumps carrying nested URLs do not qualify. The ratio floor leaves
+  // room for the resale banner these dumps are prefixed with.
   passwordPool: {
     linePattern: /^[a-z][a-z0-9+.-]*:\/\/[^\s:]+:[^\s:/?=%&][^:/?=%&]*:.+$/i,
     sampleLines: 400,

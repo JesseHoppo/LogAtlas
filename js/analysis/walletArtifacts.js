@@ -1,10 +1,12 @@
 import { inferBrowserFromPath, inferProfileFromPath, normalisePath, collectUniqueMatches, uniqueLimited, summariseList } from '../core/shared.js';
 import { URL_REGEX, SCAN_EMAIL_REGEX, EMAIL_REGEX, JWT_SCAN_REGEX, LIMITS } from '../core/definitions/patterns.js';
 import { inferStoreService } from '../core/serviceRegistry.js';
+import { DISCORD_TOKEN_PATTERN } from '../transforms/shared.js';
 
 const ETH_ADDRESS_REGEX = /\b0x[a-fA-F0-9]{40}\b/g;
 const BTC_ADDRESS_REGEX = /\b(?:bc1[a-z0-9]{25,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g;
 const UUID_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+const DISCORD_ID_SEGMENT = /^\d{17,20}$/;
 
 
 function extractPrintableStrings(bytes, minLength = 6) {
@@ -72,19 +74,20 @@ function decodeBase64Url(segment) {
   }
 }
 
-// The scan regex matches any dot-separated triple, so hostnames and version
-// strings read as tokens; a leading segment that base64url-decodes to a JSON
-// object (JOSE header, signed-cookie payload) does not.
+// The scan regex matches any dot-separated triple, so hostnames, slugs and
+// version strings read as tokens. Real ones give themselves away in the leading
+// segment: it decodes to a JOSE header (Steam pads its header with whitespace,
+// so the encoded form is not always `eyJ`) or to a Discord snowflake id.
 function looksLikeToken(value) {
-  const header = value.slice(0, value.indexOf('.'));
-  if (!header.startsWith('eyJ')) return false;
-  let parsed;
+  const decoded = decodeBase64Url(value.slice(0, value.indexOf('.')));
+  if (DISCORD_ID_SEGMENT.test(decoded)) return DISCORD_TOKEN_PATTERN.test(value);
+  if (!/^\s*\{/.test(decoded)) return false;
   try {
-    parsed = JSON.parse(decodeBase64Url(header));
+    const header = JSON.parse(decoded);
+    return Boolean(header) && typeof header === 'object' && !Array.isArray(header);
   } catch {
     return false;
   }
-  return Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
 }
 
 function collectTokens(text, limit = 6) {

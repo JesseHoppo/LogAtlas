@@ -1284,6 +1284,8 @@ function scoreCredential(entry, context) {
   const cookieMap = useFullHost ? siteIndexes.cookieByHost : siteIndexes.cookieByBase;
   const historyMap = useFullHost ? siteIndexes.historyByHost : siteIndexes.historyByBase;
 
+  const isGenericProviderSite = siteProvider?.kind === 'generic';
+
   // Own-site evidence always counts, generic providers included: a valid
   // session cookie for github.com is direct proof for a github.com credential.
   // Generic de-crediting applies only where an artifact would lend credit to a
@@ -1298,7 +1300,10 @@ function scoreCredential(entry, context) {
     } else if (cookieSummary?.validCookies) {
       addScore(result, 16, `${cookieSummary.validCookies} valid cookie${cookieSummary.validCookies === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
       siteSignalCount += 1;
-    } else if (cookieSummary?.expiredCookies) {
+    } else if (cookieSummary?.expiredCookies && !isGenericProviderSite) {
+      // Shared generic hosts (accounts.google.com, github.com...) accumulate
+      // stale cookies from any browser profile; that says nothing about this
+      // credential.
       addScore(result, -4, `Only expired cookies recovered for ${cookieLabel}`, 'competition');
     }
 

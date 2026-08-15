@@ -8,17 +8,11 @@ import { FILE_TYPE_PATTERNS } from '../core/definitions/fileTypes.js';
 // so the structure-only fallback ignores them when judging distinctiveness.
 const GENERIC_LABELS = /^(?:File: (?:All |unique_)?[Pp]asswords?\.txt(?: \(root\))?|File: [Cc]ookies?\.txt|File: cookie_list\.txt|File: [Ss]creenshot\.(?:png|jpg)|File: Screen\.png|File: domain detect\.txt|File: DomainDetects?\.txt|Structure: flat layout|Structure: top-level Autofills\/Cookies)/;
 
-// A self-ID that is a single bare word ("xfiles", "skalka", "stealc") also
-// reads as ordinary text, so a captured password, cookie domain or clipboard
-// line must not be able to raise it — those patterns only count inside sysinfo.
-// Multi-token brands and banner art stay case-global: resale brands stamp those
-// on the password and cookie dumps themselves.
-const BARE_WORD_SELF_ID = /^[a-z0-9]+$/i;
-
-function selfIdIsSysinfoOnly(si) {
-  if (si.scope) return si.scope === 'sysinfo';
-  return BARE_WORD_SELF_ID.test(si.pattern.source.replace(/\\b/g, ''));
-}
+// A self-ID that also reads as ordinary text ("ottoman", "xfiles", "amos")
+// carries `scope: 'sysinfo'` in its signature: a captured password, cookie
+// domain or clipboard line must not be able to raise it. Everything else is
+// case-global — resale brands stamp their name on the password and cookie
+// dumps themselves, and banner art only ever appears there.
 
 function scoreFamily(familyName, sig, ctx) {
   let score = 0;
@@ -45,7 +39,7 @@ function scoreFamily(familyName, sig, ctx) {
   if (sig.selfId && sig.selfId.length > 0) {
     maxScore += W.SELF_ID;
     for (const si of sig.selfId) {
-      const target = selfIdIsSysinfoOnly(si) ? sysinfoOnlyText : globalText;
+      const target = si.scope === 'sysinfo' ? sysinfoOnlyText : globalText;
       if (target && si.pattern.test(target)) {
         score += W.SELF_ID;
         matched.push(si.label);
@@ -184,8 +178,16 @@ function classifyOs(text) {
   // A lone hardware or SDK name decides nothing, in either direction.
   const win = WINDOWS_CUES.reduce((n, rx) => n + (rx.test(text) ? 1 : 0), 0);
   const mac = MACOS_CUES.reduce((n, rx) => n + (rx.test(text) ? 1 : 0), 0);
-  if (win === mac || Math.max(win, mac) < 2) return { osClass: null, keyed: false };
-  return { osClass: win > mac ? 'windows' : 'macos', keyed: false };
+  if (win !== mac && Math.max(win, mac) >= 2) {
+    return { osClass: win > mac ? 'windows' : 'macos', keyed: false };
+  }
+
+  // Terse sysinfo files carry neither an OS line nor two cues, but still name
+  // their platform once. Weakest reading, and last: enough to keep the other
+  // platform's families out, not enough to override one that names itself.
+  if (WINDOWS_NAME.test(text)) return { osClass: 'windows', keyed: false };
+  if (MACOS_NAME.test(text)) return { osClass: 'macos', keyed: false };
+  return { osClass: null, keyed: false };
 }
 
 // Walk the file tree and collect dirs, files, sysinfo node, and credits files.

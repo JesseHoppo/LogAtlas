@@ -87,9 +87,9 @@ function isLikelyScreenshot(name) {
 
 function isLikelyCreditCardFile(name, parentDir) {
   const cc = FILE_TYPE_PATTERNS.creditCard;
-  if (cc.filePatterns.some(rx => rx.test(name))) return true;
   if (parentDir && cc.folderPattern.test(parentDir) && TEXT_EXTENSIONS.test(name)) return true;
-  return false;
+  if (cc.exclusions.some(rx => rx.test(name))) return false;
+  return cc.filePatterns.some(rx => rx.test(name));
 }
 
 function isLikelyDownloadFile(name, parentDir) {
@@ -112,14 +112,9 @@ function isLikelyCryptoWalletFile(name, parentDir, fullPath) {
   const cw = FILE_TYPE_PATTERNS.cryptoWallet;
   const normalisedPath = normalisePath(fullPath);
   if (cw.filePatterns.some(rx => rx.test(name))) return true;
-  const inWalletScope = (parentDir && cw.folderPatterns.some(rx => rx.test(parentDir)))
-    || (cw.pathPatterns && cw.pathPatterns.some(rx => rx.test(normalisedPath)));
-  if (inWalletScope) {
-    return true;
-  }
-  return cw.pathScopedFilePatterns
-    && cw.pathScopedFilePatterns.some(rx => rx.test(name))
-    && /(^|\/)(?:wallets?|crypto)\//i.test(normalisedPath);
+  if (parentDir && cw.folderPatterns.some(rx => rx.test(parentDir))) return true;
+  if (cw.pathPatterns.some(rx => rx.test(normalisedPath))) return true;
+  return cw.pathScopedFilePatterns.some(rx => rx.test(name)) && cw.scopePattern.test(normalisedPath);
 }
 
 function isLikelyAccountTokenFile(name, parentDir, fullPath) {
@@ -219,23 +214,31 @@ function applyDetectionHints(node, rawName, parentDir, fullPath = '') {
   return detected;
 }
 
+// Sampled rather than split whole: these dumps run to six figures of lines.
 function isLikelyPasswordPool(text) {
   const pool = FILE_TYPE_PATTERNS.passwordPool;
-  const lines = [];
-  for (const raw of String(text || '').split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line) lines.push(line);
-    if (lines.length >= pool.sampleLines) break;
+  const source = String(text || '');
+  let cursor = 0;
+  let sampled = 0;
+  let hits = 0;
+  while (cursor < source.length && sampled < pool.sampleLines) {
+    let end = source.indexOf('\n', cursor);
+    if (end === -1) end = source.length;
+    const line = source.slice(cursor, end).trim();
+    cursor = end + 1;
+    if (!line) continue;
+    sampled += 1;
+    if (pool.linePattern.test(line)) hits += 1;
   }
-  if (lines.length < pool.minLines) return false;
-  const hits = lines.reduce((n, line) => n + (pool.linePattern.test(line) ? 1 : 0), 0);
-  return hits / lines.length >= pool.minRatio;
+  if (sampled < pool.minLines) return false;
+  return hits / sampled >= pool.minRatio;
 }
 
 // Content fallback for files no filename rule claimed. Combolist/ULP pools carry
 // no usable name, so they can only be recognised once their text is loaded.
 function applyContentDetectionHints(node, text) {
-  if (!node || Object.keys(node).some(key => key.endsWith('Hint'))) return false;
+  if (!node) return false;
+  if (Object.entries(node).some(([key, value]) => value && key.endsWith('Hint'))) return false;
   if (!isLikelyPasswordPool(text)) return false;
   node._passwordFileHint = true;
   return true;

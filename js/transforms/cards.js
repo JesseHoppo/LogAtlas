@@ -10,25 +10,9 @@ import {
   parseDelimited,
 } from './delimited.js';
 
-const CARD_NUMBER_KEYS = new Set(['cardnumber', 'card number', 'number', 'card', 'cn', 'pan']);
-
 function isPanLength(value) {
   const d = String(value || '').replace(/\D/g, '');
   return d.length >= 12 && d.length <= 19;
-}
-
-function buildCreditCardRow(record) {
-  const cardNumber = record.cardnumber || record['card number'] || record.number || record.card || record.cn || record.pan || '';
-  const month = record.month || record['exp month'] || record['expiry month'] || '';
-  const year = record.year || record['exp year'] || record['expiry year'] || '';
-  const nameOnCard = record.nameoncard || record['name on card'] || record.cardholder || record['card holder'] || record.name || record.holder || '';
-  const cvc = record.cvc || record.cvv || record.securitycode || record['security code'] || '';
-  const expiration = record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || buildExpirationValue(month, year);
-  const filePath = record.filepath || record['file path'] || record.path || record.target || '';
-
-  const pan = isPanLength(cardNumber) ? cardNumber : '';
-  if (!pan && !expiration && !nameOnCard && !cvc && !filePath) return null;
-  return [pan, nameOnCard, cvc, expiration, filePath];
 }
 
 function buildCreditCardRowsFromBlocks(clean) {
@@ -36,29 +20,24 @@ function buildCreditCardRowsFromBlocks(clean) {
   const rows = [];
 
   for (const block of blocks) {
-    const records = [];
-    let record = {};
-    let hasCardKey = false;
+    const record = {};
     for (const rawLine of block.split('\n')) {
       const match = rawLine.trim().match(CREDIT_CARD_KV_PATTERN);
       if (!match) continue;
-      const key = match[1].trim().toLowerCase();
-      // dumps that list cards back to back with no blank line between them only
-      // signal the next card by repeating a key of the card already in hand
-      if (hasCardKey && Object.prototype.hasOwnProperty.call(record, key)) {
-        records.push(record);
-        record = {};
-        hasCardKey = false;
-      }
-      record[key] = match[2].trim();
-      if (CARD_NUMBER_KEYS.has(key)) hasCardKey = true;
+      record[match[1].trim().toLowerCase()] = match[2].trim();
     }
-    records.push(record);
 
-    for (const entry of records) {
-      const row = buildCreditCardRow(entry);
-      if (row) rows.push(row);
-    }
+    const cardNumber = record.cardnumber || record['card number'] || record.number || record.card || record.cn || record.pan || '';
+    const month = record.month || record['exp month'] || record['expiry month'] || '';
+    const year = record.year || record['exp year'] || record['expiry year'] || '';
+    const nameOnCard = record.nameoncard || record['name on card'] || record.cardholder || record['card holder'] || record.name || record.holder || '';
+    const cvc = record.cvc || record.cvv || record.securitycode || record['security code'] || '';
+    const expiration = record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || buildExpirationValue(month, year);
+    const filePath = record.filepath || record['file path'] || record.path || record.target || '';
+
+    const pan = isPanLength(cardNumber) ? cardNumber : '';
+    if (!pan && !expiration && !nameOnCard && !cvc && !filePath) continue;
+    rows.push([pan, nameOnCard, cvc, expiration, filePath]);
   }
 
   return rows;

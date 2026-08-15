@@ -162,6 +162,7 @@ async function analyseCredentials(nodes) {
       totalCredentials: 0,
       uniqueCredentials: 0,
       urlsWithoutCredentials: 0,
+      accountsWithoutPasswords: 0,
       topDomains: [],
       localNetwork: [],
       onionCredentials: 0,
@@ -181,6 +182,22 @@ async function analyseCredentials(nodes) {
   const allUsernames = [];
   const seen = new Set();
   const urlOnlySeen = new Set();
+  const emptyPasswordSeen = new Set();
+  const recordExposure = (url, user) => {
+    const base = baseDomainFromUrl(url);
+    if (base) {
+      const host = extractDomain(url) || base;
+      if (isOnionHost(host) || isOnionHost(base)) onionDomains.add(base);
+      else if (isLocalNetworkHost(host) || isLocalNetworkHost(base)) localDomains.push(host);
+      else allDomains.push(base);
+    }
+    if (user && !isPlaceholderTopUsername(user)) {
+      allUsernames.push(user);
+      for (const id of detectNationalIds(user)) {
+        nationalIdHits.push({ type: id.type, country: id.country, last2: id.value.replace(/\D/g, '').slice(-2) });
+      }
+    }
+  };
   const fileHashes = new Set();
   const recoveredSeen = new Set();
   let recoveredFileCount = 0;
@@ -190,6 +207,7 @@ async function analyseCredentials(nodes) {
   let totalCredentials = 0;
   let uniqueCredentials = 0;
   let urlsWithoutCredentials = 0;
+  let accountsWithoutPasswords = 0;
   let parsedCount = 0;
 
   for (const { node, path } of nodes) {
@@ -265,10 +283,18 @@ async function analyseCredentials(nodes) {
         const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
         const pass = passIdx >= 0 ? (row[passIdx] || '').trim() : '';
 
-        // Saved-URL-only rows (URL present, no user/pass) are tracked
-        // separately so they don't inflate credential counts.
-        if (!pass && !user) {
-          if (url) {
+        // Rows with no captured password stay out of the credential counts:
+        // named accounts and bare saved sites each get their own tally. A named
+        // account still exposes the site and the username, so it feeds those.
+        if (!pass) {
+          if (user) {
+            const acctKey = dedupeDomainKey(url) + DEDUPE_KEY_SEP + usernameDedupeKey(user);
+            if (!emptyPasswordSeen.has(acctKey)) {
+              emptyPasswordSeen.add(acctKey);
+              accountsWithoutPasswords++;
+              recordExposure(url, user);
+            }
+          } else if (url) {
             const urlKey = dedupeDomainKey(url);
             if (!urlOnlySeen.has(urlKey)) {
               urlOnlySeen.add(urlKey);
@@ -287,18 +313,7 @@ async function analyseCredentials(nodes) {
         if (!seen.has(key)) {
           seen.add(key);
           uniqueCredentials++;
-          const base = baseDomainFromUrl(url);
-          if (base) {
-            const host = extractDomain(url) || base;
-            if (isOnionHost(host) || isOnionHost(base)) onionDomains.add(base);
-            else if (isLocalNetworkHost(host) || isLocalNetworkHost(base)) localDomains.push(host);
-            else allDomains.push(base);
-          }
-          if (user && !isPlaceholderTopUsername(user)) {
-            allUsernames.push(user);
-            const ids = detectNationalIds(user);
-            for (const id of ids) nationalIdHits.push({ type: id.type, country: id.country, last2: id.value.replace(/\D/g, '').slice(-2) });
-          }
+          recordExposure(url, user);
         }
       }
     } catch (err) {
@@ -320,6 +335,7 @@ async function analyseCredentials(nodes) {
     totalCredentials,
     uniqueCredentials,
     urlsWithoutCredentials,
+    accountsWithoutPasswords,
     topDomains: topN(allDomains, LIMITS.topDomains),
     localNetwork: topN(localDomains, LIMITS.topDomains),
     onionCredentials: onionDomains.size,

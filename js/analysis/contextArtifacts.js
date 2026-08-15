@@ -7,14 +7,38 @@ const CREDENTIAL_HINT_REGEX = /(password|passcode|passphrase|pwd\b|username|logi
 const WALLET_HINT_REGEX = /(wallet|seed phrase|mnemonic|private key|secret recovery|metamask|phantom|bitcoin|ethereum|solana|助记词|私钥|\b(?:btc|eth|ltc|xrp|sol|usdt|tron|bch)\b)/gi;
 const IP_LIKE_REGEX = /\b\d{1,3}(?:\.\d{1,3}){3}\b/;
 const DATE_LIKE_REGEX = /\b(?:\d{1,2}[.\-]\d{1,2}[.\-]\d{4}|\d{4}[.\-]\d{1,2}[.\-]\d{1,2})\b/;
-// The scan regex also grabs dotted quads, dates and long digit runs, so over-collect and sieve.
-const PHONE_CANDIDATE_LIMIT = 24;
+// The scan regex also grabs dotted quads, dates and long digit runs, so sieve inside the
+// collector: the limit has to apply to accepted phones, not to raw candidates.
+const PHONE_LIMIT = 6;
+const PHONE_CANDIDATE_LIMIT = 2000;
+
+const VERSION_LIKE_REGEX = /^\d+(?:\.\d+){2,}$/;
 
 function looksLikePhone(value) {
   const candidate = String(value).trim();
   if (IP_LIKE_REGEX.test(candidate) || DATE_LIKE_REGEX.test(candidate)) return false;
+  if (VERSION_LIKE_REGEX.test(candidate)) return false;
   const digits = candidate.replace(/\D/g, '').length;
   return digits >= 7 && digits <= 15;
+}
+
+function collectPhones(text) {
+  const seen = new Set();
+  const phones = [];
+  let candidates = 0;
+  let match;
+  SCAN_PHONE_REGEX.lastIndex = 0;
+  while ((match = SCAN_PHONE_REGEX.exec(text)) !== null) {
+    if (++candidates > PHONE_CANDIDATE_LIMIT) break;
+    const value = String(match[0] || '').trim();
+    if (!value || !looksLikePhone(value)) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    phones.push(value);
+    if (phones.length >= PHONE_LIMIT) break;
+  }
+  return phones;
 }
 
 function buildNoteTitle(fileName, text) {
@@ -59,7 +83,7 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
 
   const urls = collectUniqueMatches(clean, URL_REGEX, 6);
   const emails = collectUniqueMatches(clean, SCAN_EMAIL_REGEX, 6);
-  const phones = collectUniqueMatches(clean, SCAN_PHONE_REGEX, PHONE_CANDIDATE_LIMIT).filter(looksLikePhone).slice(0, 6);
+  const phones = collectPhones(clean);
   const credentialHints = countMatches(clean, CREDENTIAL_HINT_REGEX, { dedupe: false });
   const walletHints = countMatches(clean, WALLET_HINT_REGEX, { dedupe: false });
   const structuredPii = detectStructuredPii(clean);

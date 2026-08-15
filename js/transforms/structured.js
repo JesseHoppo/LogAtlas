@@ -583,22 +583,39 @@ export function parseDomainDetectFile(text) {
 }
 
 const SEED_PHRASE_LENGTHS = new Set([12, 15, 18, 21, 24]);
+const ALT_SEED_LENGTHS = new Set([13, 25]); // legacy Electrum, Monero
+const WORD_RUN_PATTERN = /^\p{L}+(?:\s+\p{L}+)+$/u;
+const WALLET_CONTEXT_PATTERN = /\b(?:seed|mnemonic|recovery\s*phrase|secret\s*phrase|passphrase|private\s*key|keystore|bip-?39|wallet|metamask|phantom|exodus|electrum|trezor|ledger|binance|coinbase|blockchain|0x[a-f0-9]{40}|bc1[ac-hj-np-z02-9]{25,71})\b/i;
 
-function looksLikeSeedPhrase(compact) {
-  if (!/^[a-z]+(?:\s+[a-z]+)+$/i.test(compact)) return false;
+// English function words that no BIP39 seed can contain; mark a run as prose.
+const PROSE_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'but', 'by', 'for', 'from',
+  'had', 'has', 'he', 'her', 'his', 'i', 'if', 'in', 'is', 'it', 'its', 'me',
+  'my', 'not', 'of', 'on', 'or', 'our', 'she', 'so', 'the', 'their', 'them',
+  'to', 'was', 'we', 'were', 'with', 'would', 'your',
+].filter(word => !BIP39_WORDS.has(word)));
+
+// Only the English list ships, so a non-English or mistyped seed scores low against
+// it; wallet context elsewhere in the file carries a valid-length run instead.
+function looksLikeSeedPhrase(compact, walletContext) {
+  if (!WORD_RUN_PATTERN.test(compact)) return false;
 
   const words = compact.toLowerCase().split(/\s+/);
-  if (!SEED_PHRASE_LENGTHS.has(words.length)) return false;
-
+  const standardLength = SEED_PHRASE_LENGTHS.has(words.length);
   const known = words.filter(word => BIP39_WORDS.has(word)).length;
-  return known / words.length >= 0.9;
+  const prose = words.some(word => PROSE_WORDS.has(word));
+  if (standardLength && !prose && known / words.length >= 0.75) return true;
+
+  if (!walletContext) return false;
+  if (!standardLength && !ALT_SEED_LENGTHS.has(words.length)) return false;
+  return !words.some(word => PROSE_WORDS.has(word));
 }
 
-function classifyClipboardEntry(text, urls) {
+function classifyClipboardEntry(text, urls, walletContext) {
   const compact = text.trim();
   const lower = compact.toLowerCase();
 
-  if (looksLikeSeedPhrase(compact)) {
+  if (looksLikeSeedPhrase(compact, walletContext)) {
     return 'Seed Phrase';
   }
   if (/^(?:0x[a-f0-9]{40}|bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|T[1-9A-HJ-NP-Za-km-z]{33})$/i.test(compact)) {
@@ -637,6 +654,7 @@ export function parseClipboardFile(text) {
   const clean = normaliseText(text).trim();
   if (!clean) return null;
 
+  const walletContext = WALLET_CONTEXT_PATTERN.test(clean);
   const rows = [];
   for (const entryText of splitClipboardEntries(clean)) {
     const trimmed = entryText.trim();
@@ -644,7 +662,7 @@ export function parseClipboardFile(text) {
     const urls = trimmed.match(CLIPBOARD_URL_PATTERN) || [];
     const lines = trimmed.split('\n').map(line => line.trim()).filter(Boolean);
     rows.push([
-      classifyClipboardEntry(trimmed, urls),
+      classifyClipboardEntry(trimmed, urls, walletContext),
       trimmed,
       urls.join(' '),
       String(lines.length),

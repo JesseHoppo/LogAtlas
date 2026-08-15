@@ -204,23 +204,51 @@ function parseLoosePasswordBlocks(text) {
   return { headers, rows: rows.map(record => headers.map(header => record[header] || '')) };
 }
 
+const GENERIC_HEADER = /^Column \d+$/;
+
 function applyPasswordFallbackHeaders(parsed, format) {
   if (!parsed || format?.hasHeaderRow) return parsed;
-  if (parsed.headers.some(header =>
-    FIELD_PATTERNS.url.test(header)
-    || FIELD_PATTERNS.username.test(header)
-    || FIELD_PATTERNS.password.test(header)
-  )) {
-    return parsed;
+
+  const roleIndex = pattern => parsed.headers.findIndex(header => pattern.test(header));
+  if (roleIndex(FIELD_PATTERNS.password) >= 0) return parsed;
+
+  const urlIdx = roleIndex(FIELD_PATTERNS.url);
+  const userIdx = roleIndex(FIELD_PATTERNS.username);
+  const effectiveColumns = format.columns - (format.dropColumns || []).length;
+
+  if (urlIdx < 0 && userIdx < 0) {
+    if (effectiveColumns !== 3) return parsed;
+    return {
+      headers: ['URL', 'Username', 'Password'],
+      rows: parsed.rows,
+    };
   }
 
-  const effectiveColumns = format.columns - (format.dropColumns || []).length;
-  if (effectiveColumns !== 3) return parsed;
+  // Content inference labelled a site/account column but left two or more
+  // unnamed ones, so nothing carries a Password role and the whole file is
+  // discarded downstream. Claim the first unnamed column past the account.
+  if (effectiveColumns < 4) return parsed;
+  const unnamed = parsed.headers.reduce((acc, header, i) => {
+    if (GENERIC_HEADER.test(header)) acc.push(i);
+    return acc;
+  }, []);
+  if (unnamed.length === 0) return parsed;
 
-  return {
-    headers: ['URL', 'Username', 'Password'],
-    rows: parsed.rows,
-  };
+  const anchor = userIdx >= 0 ? userIdx : urlIdx;
+  const passIdx = unnamed.find(i => i > anchor) ?? unnamed[unnamed.length - 1];
+  if (!looksLikeSecretColumn(parsed.rows, passIdx)) return parsed;
+
+  const headers = parsed.headers.slice();
+  headers[passIdx] = 'Password';
+  return { headers, rows: parsed.rows };
+}
+
+// Secrets are near-unique down a column; flags and paths repeat. Keeps the
+// fallback off Netscape-shaped files that reach the password parser.
+function looksLikeSecretColumn(rows, index) {
+  const sample = rows.slice(0, 200).map(row => (row[index] || '').trim()).filter(Boolean);
+  if (sample.length === 0) return false;
+  return new Set(sample).size / sample.length >= 0.5;
 }
 
 function finaliseAutofillDataset(parsed) {
@@ -524,7 +552,7 @@ function parseJSONCookies(text) {
       get(entry, 'secure', 'issecure', 'is_secure') === 'true' || get(entry, 'secure', 'issecure', 'is_secure') === '1' ? 'TRUE' : 'FALSE',
       convertCookieTimestamp(get(entry, 'expirationdate', 'expiration', 'expires', 'expiry', 'expires_utc')),
       get(entry, 'name', 'key'),
-      get(entry, 'value'),
+      decodeCookieValue(get(entry, 'value')),
     ]);
 
     return { headers: JSON_COOKIE_HEADERS, rows };
@@ -560,6 +588,31 @@ function decodeCookieValue(raw) {
   } catch (_) {
     return raw;
   }
+}
+
+// Count columns on the raw line so a trailing empty value still occupies one;
+// files padded with runs of empty columns only resolve once trimmed.
+function detectNetscapeLayout(sample) {
+  for (const trimFirst of [false, true]) {
+    const candidates = trimFirst ? sample.map(l => l.trim()) : sample;
+    const columns = mostCommonCount(candidates.map(l => l.split('\t').length));
+    if (![5, 6, 7].includes(columns)) continue;
+    const matching = candidates.filter(l => l.split('\t').length === columns).length;
+    if (matching / candidates.length >= 0.7) return { columns, trimFirst };
+  }
+  return null;
+}
+
+// Lay a row out by the file's column count, not by its own field count: a
+// trailing empty value would otherwise shift Name/Value/Expiration left.
+function splitNetscapeRow(line, columns) {
+  const parts = line.split('\t');
+  if (parts.length < 5) return null;
+
+  const fields = parts.slice(0, columns - 1).map(field => field.trim());
+  while (fields.length < columns - 1) fields.push('');
+  fields.push(parts.slice(columns - 1).join('\t').trim());
+  return fields;
 }
 
 // Bring manually-mapped cookie rows up to parity with the auto path: normalise
@@ -599,27 +652,26 @@ export function parseCookieFile(text, config) {
     }
   }
 
-  const allLines = (sanitised || clean).split('\n').map(l => l.trim()).filter(l => l !== '');
+  const allLines = (sanitised || clean).split('\n').filter(l => l.trim() !== '');
   if (allLines.length === 0) return null;
 
-  const lines = allLines
-    .filter(l => !/^#/.test(l) || /^#HttpOnly_/i.test(l))
-    .filter(l => !isPromotionalNoiseLine(l));
+  const lines = allLines.filter((l) => {
+    const trimmedLine = l.trim();
+    if (/^#/.test(trimmedLine) && !/^#HttpOnly_/i.test(trimmedLine)) return false;
+    return !isPromotionalNoiseLine(trimmedLine);
+  });
   if (lines.length === 0) return null;
 
-  const restoreTokens = parseGoogleRestoreTokens(lines);
+  const restoreTokens = parseGoogleRestoreTokens(lines.map(l => l.trim()));
   if (restoreTokens) return restoreTokens;
 
-  const sample = lines.slice(0, 20);
-  if (sample.length === 0) return null;
-  const tabCounts = sample.map(l => l.split('\t').length);
-  const netscapeCols = mostCommonCount(tabCounts);
-  const netscapeLines = sample.filter(l => l.split('\t').length === netscapeCols);
-  if ([5, 6, 7].includes(netscapeCols) && netscapeLines.length / sample.length >= 0.7) {
+  const layout = detectNetscapeLayout(lines.slice(0, 20));
+  if (layout) {
+    const { columns: netscapeCols } = layout;
     const rows = [];
     for (const line of lines) {
-      const fields = line.split('\t');
-      if (fields.length < 5) continue;
+      const fields = splitNetscapeRow(layout.trimFirst ? line.trim() : line, netscapeCols);
+      if (!fields) continue;
 
       const domain = fields[0].replace(/^#HttpOnly_/i, '');
       let subDomain = '';
@@ -629,25 +681,15 @@ export function parseCookieFile(text, config) {
       let name = '';
       let rawValue = '';
 
-      if (fields.length >= 7) {
-        [, subDomain, path, secure, expiry, name] = fields;
-        rawValue = fields[6];
-      } else if (fields.length === 6) {
-        [, path, secure, expiry, name] = fields;
-        rawValue = fields[5];
+      if (netscapeCols === 7) {
+        [, subDomain, path, secure, expiry, name, rawValue] = fields;
+      } else if (netscapeCols === 6) {
+        [, path, secure, expiry, name, rawValue] = fields;
       } else {
-        [, path, expiry, name] = fields;
-        rawValue = fields[4];
+        [, path, expiry, name, rawValue] = fields;
       }
 
-      let value = rawValue;
-      try {
-        value = decodeURIComponent(rawValue);
-      } catch (_) {
-        // keep raw value
-      }
-
-      rows.push([domain, subDomain, path, secure, convertCookieTimestamp(expiry), name, value]);
+      rows.push([domain, subDomain, path, secure, convertCookieTimestamp(expiry), name, decodeCookieValue(rawValue)]);
     }
 
     if (rows.length > 0) return { headers: COOKIE_HEADERS, rows };

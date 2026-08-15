@@ -1,21 +1,52 @@
 import { EMAIL_REGEX, FIELD_PATTERNS, SCAN_EMAIL_REGEX } from './definitions/patterns.js';
 
 const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
+const STRICT_TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
 const WIN1252_TEXT_DECODER = new TextDecoder('windows-1252');
 
+// Share of a file's non-ASCII bytes that must fail UTF-8 before Windows-1252
+// wins. A genuinely cp1252 file sits near 1.0 (every high byte is its own
+// error); valid UTF-8 carrying a few stray bytes sits near 0.
+const WIN1252_FAILURE_RATIO = 0.5;
+
+function asBytes(buffer) {
+  if (buffer instanceof Uint8Array) return buffer;
+  if (ArrayBuffer.isView(buffer)) return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  return new Uint8Array(buffer);
+}
+
 // Some logs ship sysinfo / software lists as Windows-1252 instead of UTF-8;
-// the unmarked accented bytes land as U+FFFD. If the UTF-8 attempt contains
-// replacement chars, retry as Windows-1252 and keep whichever has fewer.
+// the unmarked accented bytes land as U+FFFD. Comparing replacement counts
+// can't decide it — windows-1252 maps all 256 byte values, so it never
+// produces one — so cp1252 only wins when most of the file's non-ASCII bytes
+// failed and the bytes really don't decode as UTF-8.
 function decodeBufferWithFallback(buffer) {
-  const utf8 = SHARED_TEXT_DECODER.decode(buffer);
+  const bytes = asBytes(buffer);
+  const utf8 = SHARED_TEXT_DECODER.decode(bytes);
   if (!utf8.includes('�')) return utf8;
-  const win = WIN1252_TEXT_DECODER.decode(buffer);
-  const utf8Bad = (utf8.match(/�/g) || []).length;
-  const winBad = (win.match(/�/g) || []).length;
-  return winBad < utf8Bad ? win : utf8;
+
+  // Stop counting once the non-ASCII bytes are too many for the ratio to be
+  // reached — a big file with a couple of bad bytes settles in a few reads.
+  const budget = (utf8.match(/�/g) || []).length / WIN1252_FAILURE_RATIO;
+  let nonAscii = 0;
+  for (let i = 0; i < bytes.length && nonAscii <= budget; i++) {
+    if (bytes[i] > 0x7f) nonAscii++;
+  }
+  if (nonAscii > budget) return utf8;
+
+  try {
+    // A strict decode that still succeeds means every U+FFFD was written as one.
+    return STRICT_TEXT_DECODER.decode(bytes);
+  } catch {
+    return WIN1252_TEXT_DECODER.decode(bytes);
+  }
 }
 
 const CHROME_EPOCH_OFFSET = 11644473600000000n;
+const CHROME_EPOCH_SECONDS = 11644473600n;
+// 1601-epoch seconds for 2100-01-01: above it a bare second count is Unix
+// (the year-9999 "never expires" sentinel included).
+const CHROME_EPOCH_SECONDS_MAX = 15746918400n;
 const AUTOFILL_LATIN_VOWEL_PATTERN = /[aeiouy]/i;
 const BROWSER_PATH_PATTERNS = [
   { pattern: /\bgoogle chrome\b/i, label: 'Chrome' },
@@ -150,15 +181,44 @@ const BROWSER_INTERNAL_SCHEMES = new Set([
   'about', 'view-source', 'devtools',
 ]);
 
+// `mail.example.com:993` is a host and a port, not a URI scheme. A dotted
+// prefix followed by a port number is the only reading; anything else after
+// the colon stays a scheme so `about:`/`blob:`/`C:\…` keep their handling.
+const HOST_PORT_PATTERN = /^[a-z][a-z0-9+.-]*\.[a-z0-9-]+:\d{1,5}(?:[/?#]|$)/i;
+
+const DOMAIN_CACHE_LIMIT = 10000;
+const domainCache = new Map();
+const baseDomainCache = new Map();
+
+// The same URLs are re-resolved several times per load (analysis pass, page
+// loaders, exports). The cache stops taking entries once full instead of
+// evicting: on a dataset whose URL set dwarfs it, eviction costs more than the
+// parse it saves, while the entries it did keep still hit on every pass.
+function memoise(cache, key, compute) {
+  if (cache.has(key)) return cache.get(key);
+  const value = compute(key);
+  if (cache.size < DOMAIN_CACHE_LIMIT) cache.set(key, value);
+  return value;
+}
+
+export function clearDomainCaches() {
+  domainCache.clear();
+  baseDomainCache.clear();
+}
+
 function extractDomain(url) {
   if (!url) return null;
+  return memoise(domainCache, String(url), resolveDomain);
+}
+
+function resolveDomain(url) {
   const raw = String(url).trim();
   if (!raw) return null;
 
   // Non-HTTP schemes need their own branch. Without it the fallback below
   // prefixes `https://` and the parser swallows the scheme as the hostname.
   const schemeMatch = raw.match(/^([a-z][a-z0-9+.-]*):/i);
-  if (schemeMatch) {
+  if (schemeMatch && !HOST_PORT_PATTERN.test(raw)) {
     const scheme = schemeMatch[1].toLowerCase();
     if (BROWSER_INTERNAL_SCHEMES.has(scheme)) {
       return null;
@@ -183,7 +243,7 @@ function extractDomain(url) {
     }
     if (scheme === 'blob') {
       const inner = raw.slice(5);
-      return inner ? extractDomain(inner) : null;
+      return inner ? resolveDomain(inner) : null;
     }
     if (scheme !== 'http' && scheme !== 'https') {
       return null;
@@ -241,7 +301,12 @@ function extractBaseDomain(domain) {
 }
 
 function baseDomainFromUrl(url) {
-  const host = extractDomain(url);
+  if (!url) return null;
+  return memoise(baseDomainCache, String(url), resolveBaseDomainFromUrl);
+}
+
+function resolveBaseDomainFromUrl(url) {
+  const host = resolveDomain(url);
   return host ? (extractBaseDomain(host) || host) : null;
 }
 
@@ -726,6 +791,8 @@ function parseTimestampValue(value) {
         ms = Number(num / 1000n); // Unix microseconds (Firefox places.sqlite)
       } else if (num > 1000000000000n) {
         ms = Number(num); // already ms
+      } else if (num >= CHROME_EPOCH_SECONDS && num < CHROME_EPOCH_SECONDS_MAX) {
+        ms = Number((num - CHROME_EPOCH_SECONDS) * 1000n); // WebKit seconds since 1601
       } else {
         ms = Number(num * 1000n); // seconds
       }
@@ -850,6 +917,16 @@ function parseArchiveTimestamp(name) {
     if (date) return date;
   }
 
+  // Last resort: two-digit-year day-first (`28-10-25`). The separator has to
+  // repeat and can't be `_`, so `HH_MM_SS` clock groups don't read as dates.
+  // IPv4 literals in the name would read as dotted dates, so drop them first.
+  const shortDmy = source.replace(/\d{1,3}(?:\.\d{1,3}){3}/g, ' ')
+    .match(/(?:^|[^0-9])(\d{2})([-.])(\d{2})\2(\d{2})(?:$|[^0-9])/);
+  if (shortDmy) {
+    const date = buildLocalDate(2000 + Number(shortDmy[4]), Number(shortDmy[3]), Number(shortDmy[1]));
+    if (date && date.getTime() <= Date.now()) return date;
+  }
+
   return null;
 }
 
@@ -863,11 +940,15 @@ function checkCookieValidity(expiresValue, referenceDate) {
     return { status: 'unknown', label: 'Unknown expiry' };
   }
 
-  const now = (referenceDate instanceof Date && !isNaN(referenceDate.getTime())) ? referenceDate : new Date();
+  const now = toReferenceDate(referenceDate);
   if (expiryDate < now) {
-    return { status: 'expired', label: `Expired ${formatRelativeTime(expiryDate)}` };
+    return { status: 'expired', label: `Expired ${formatRelativeTime(expiryDate, now)}` };
   }
-  return { status: 'valid', label: `Valid until ${formatRelativeTime(expiryDate)}` };
+  return { status: 'valid', label: `Valid until ${formatRelativeTime(expiryDate, now)}` };
+}
+
+function toReferenceDate(value) {
+  return (value instanceof Date && !isNaN(value.getTime())) ? value : new Date();
 }
 
 // Best-effort capture date for validity: archive name timestamp, else the
@@ -898,8 +979,10 @@ function collapseSingleWrapper(root) {
   return node;
 }
 
-function formatRelativeTime(date) {
-  const now = new Date();
+// Relative to `referenceDate` when given, so a caller judging cookies in the
+// capture frame doesn't render its labels against analysis-time now.
+function formatRelativeTime(date, referenceDate) {
+  const now = toReferenceDate(referenceDate);
   const diff = date - now;
   const absDiff = Math.abs(diff);
 
@@ -1115,16 +1198,18 @@ function normaliseTimeZone(raw, country) {
     return out;
   }
 
-  // "UTC+5", "UTC-3", "UTC-05:00", "UTC+10:30"
-  const cleanMatch = s.match(/^UTC([+-])(\d{1,2})(?::?(\d{2}))?$/i);
+  // "UTC+5", "UTC-3", "UTC-05:00", "UTC+10:30", "UTC10",
+  // "UTC-03:00 (Brasilia)", "UTC+3 Moscow"
+  const cleanMatch = s.match(/^UTC\s*([+-])?\s*(\d{1,2})(?::?(\d{2}))?(?:\s*\(([^)]+)\)|\s+([A-Za-z][^()]*))?$/i);
   if (cleanMatch) {
     const sign = cleanMatch[1] === '-' ? -1 : 1;
     const h = parseInt(cleanMatch[2], 10);
     const m = cleanMatch[3] ? parseInt(cleanMatch[3], 10) : 0;
     const offset = sign * (h * 60 + m);
+    const region = (cleanMatch[4] || cleanMatch[5] || '').trim();
     out.offset = offset;
     out.source = 'string-offset';
-    out.label = formatTimeZoneLabel(offset);
+    out.label = formatTimeZoneLabel(offset, region || null);
     flagCountry();
     return out;
   }

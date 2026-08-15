@@ -17,6 +17,9 @@ export const CONFIDENCE_THRESHOLDS = {
   high:   0.60,   // >= this = "high"
 };
 
+// selfId patterns are matched across sysinfo, credits, clipboard and the
+// password/cookie headers. Mark one `scope: 'sysinfo'` when the id doubles as
+// ordinary text, so captured victim data can't raise it.
 export const SIGNATURES = {
   Vidar: {
     selfId: [
@@ -816,7 +819,7 @@ export const SIGNATURES = {
 
   XFiles: {
     selfId: [
-      { pattern: /xfiles/i, label: 'Self-ID: XFiles' },
+      { pattern: /xfiles/i, label: 'Self-ID: XFiles', scope: 'sysinfo' },
       { pattern: /luciferxfiles/i, label: 'Self-ID: luciferxfiles' },
     ],
     sysinfoFile: { pattern: /^(?:System(?:\s*)?)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
@@ -874,7 +877,7 @@ export const SIGNATURES = {
 
   Skalka: {
     selfId: [
-      { pattern: /skalka/i, label: 'Self-ID: Skalka' },
+      { pattern: /skalka/i, label: 'Self-ID: Skalka', scope: 'sysinfo' },
     ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -917,7 +920,7 @@ export const SIGNATURES = {
 
   Ailurophile: {
     selfId: [
-      { pattern: /ailurophile/i, label: 'Self-ID: Ailurophile' },
+      { pattern: /ailurophile/i, label: 'Self-ID: Ailurophile', scope: 'sysinfo' },
     ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [

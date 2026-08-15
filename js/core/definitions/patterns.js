@@ -88,8 +88,28 @@ export const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // Global scanning variants (for extracting matches from text blocks)
 export const URL_REGEX = /https?:\/\/[^\s"'<>]+/gi;
-export const SCAN_EMAIL_REGEX = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-export const SCAN_PHONE_REGEX = /\+?\d[\d().\- \t]{7,}\d/g;
+
+// Bounded runs, domain split label-wise: unbounded quantifiers over an
+// overlapping class backtrack quadratically on hostile file content. 64 is the
+// RFC 5321 local-part limit, 63 the DNS label limit.
+export const SCAN_EMAIL_REGEX = /\b[A-Z0-9._%+-]{1,64}@[A-Z0-9-]{1,63}(?:\.[A-Z0-9-]{1,63}){0,10}\.[A-Z]{2,63}\b/gi;
+
+// Phone-shaped runs, 7-15 digits (E.164). The guards reject the other shapes
+// built from the same characters: dotted quads, dd-mm-yyyy / yyyy-mm-dd dates,
+// card numbers, bare 13-digit ids and epoch stamps. The lookbehinds keep a
+// match from starting part-way through a longer digit group.
+const PHONE_RUN_START = '(?<!\\d)(?<![\\d)][ .()+-])';
+const PHONE_NOT_IP = '(?!\\d{1,3}(?:\\.\\d{1,3}){3}(?![\\d.]))';
+const PHONE_NOT_DATE = '(?!\\d{4}[-./]\\d{1,2}[-./]\\d{1,2}(?!\\d))(?!\\d{1,2}[-./]\\d{1,2}[-./]\\d{2,4}(?!\\d))';
+const PHONE_DIGITS = '(?=(?:[ ()+.-]{0,3}\\d){7,15}(?![ ()+.-]{0,3}\\d))';
+const PHONE_SPAN = '(?=[+(]{0,2}\\d[\\d ()+.-]{7,60}\\d)';
+const PHONE_GROUPS = '(?:\\+\\d{1,15}|\\(?\\d{1,12}\\)?)(?:[ .()-]{1,3}\\d{1,15}){0,14}(?!\\d)';
+
+export const SCAN_PHONE_REGEX = new RegExp(
+  PHONE_RUN_START + PHONE_NOT_IP + PHONE_NOT_DATE + PHONE_DIGITS + PHONE_SPAN + PHONE_GROUPS,
+  'g',
+);
+
 const JWT_TOKEN_PATTERN_SOURCE = '[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+';
 export const JWT_TOKEN_PATTERN = new RegExp(`^${JWT_TOKEN_PATTERN_SOURCE}$`);
 export const JWT_SCAN_REGEX = new RegExp(`\\b${JWT_TOKEN_PATTERN_SOURCE}\\b`, 'g');
@@ -150,7 +170,7 @@ export const STEALER_INFRA_PATTERNS = [
   { label: 'Stealer Panel', family: 'Lumma', pattern: /(?:@?lummanowork|@?lummamarketplace_bot|lumma\s*market)/gi },
   { label: 'Stealer Telegram', pattern: /t\.me\/\+[A-Za-z0-9_-]{8,}/g },
   { label: 'Forum URL', pattern: /\b(?:xss\.is|forum\.exploit\.in|exploit\.in|bhf\.im)\/[^\s"'<>]*/gi },
-  { label: 'Loader URL', pattern: /https?:\/\/(?:[a-z0-9-]+\.)*(?:gofile|anonfiles|mediafire|transfer\.sh|file\.io|pixeldrain|catbox\.moe|temp\.sh|workupload)\.[a-z]{2,4}\/[^\s"'<>]+/gi },
+  { label: 'Loader URL', pattern: /https?:\/\/(?:[a-z0-9-]+\.)*(?:(?:gofile|anonfiles|mediafire|pixeldrain|workupload)\.[a-z]{2,4}|transfer\.sh|file\.io|catbox\.moe|temp\.sh)\/[^\s"'<>]+/gi },
   { label: 'Loader Sample', pattern: /['"]?[A-Z]:\\Users\\[^\\'"<>\s]+\\AppData\\Local\\Temp\\[^\\'"<>\s]+\.(?:bat|ps1|exe|dll|cmd|vbs|hta)['"]?/gi },
 ];
 
@@ -227,18 +247,29 @@ function validateSsn(value) {
   return true;
 }
 
+function validateCuit(value) {
+  const d = digits(value);
+  if (d.length !== 11) return false;
+  const weights = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 10; i++) sum += Number(d[i]) * weights[i];
+  const rest = 11 - (sum % 11);
+  const check = rest === 11 ? 0 : rest === 10 ? 9 : rest;
+  return check === Number(d[10]);
+}
+
 export const NATIONAL_ID_PATTERNS = [
   { label: 'CPF', country: 'BR', rx: /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, validate: validateCpf },
   { label: 'Aadhaar', country: 'IN', rx: /\b\d{4}\s?\d{4}\s?\d{4}\b/g, validate: validateAadhaar },
   { label: 'PAN', country: 'IN', rx: /\b[A-Z]{5}\d{4}[A-Z]\b/g },
-  { label: 'CUIT/DNI', country: 'AR', rx: /\b(?:20|23|24|27|30|33|34)-?\d{8}-?\d\b/g },
+  { label: 'CUIT/DNI', country: 'AR', rx: /\b(?:20|23|24|27|30|33|34)-?\d{8}-?\d\b/g, validate: validateCuit },
   { label: 'SSN', country: 'US', rx: /\b\d{3}-\d{2}-\d{4}\b/g, validate: validateSsn },
 ];
 
 // Clipboard lure / clipper classification. First matching category wins;
 // order matters (more specific social-engineering lures before raw blobs).
 export const CLIPBOARD_LURE_PATTERNS = [
-  { category: 'clickfix', rx: /win[\s+]*r|⊞\s*r|press\s+win|verify\s+you\s+are\s+human|i\s+am\s+not\s+a\s+robot/i },
+  { category: 'clickfix', rx: /\bwin(?:dows)?[\s+]+r\b|⊞\s*r|press\s+win|verify\s+you\s+are\s+human|i\s+am\s+not\s+a\s+robot/i },
   { category: 'powershell', rx: /powershell|iex\s*\(|invoke-(?:expression|webrequest)|\biwr\b/i },
   { category: 'mshta', rx: /\bmshta\b/i },
   { category: 'certutil', rx: /\bcertutil\b/i },
