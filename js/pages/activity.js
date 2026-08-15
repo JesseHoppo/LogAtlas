@@ -158,6 +158,8 @@ const pageRegistry = createPagedCollectionRegistry({
   },
 });
 
+const SCREENSHOT_MEASURE_BATCH = 16;
+
 const LURE_LABELS = {
   clickfix: 'ClickFix',
   powershell: 'PowerShell',
@@ -456,11 +458,14 @@ async function loadScreenshotsData(fileTree, rootName) {
     }
   }
 
-  const dimensions = await Promise.all(entries.map(entry => measureImage(entry.blobUrl)));
-  entries.forEach((entry, index) => {
-    entry.width = dimensions[index].width;
-    entry.height = dimensions[index].height;
-  });
+  for (let start = 0; start < entries.length; start += SCREENSHOT_MEASURE_BATCH) {
+    const batch = entries.slice(start, start + SCREENSHOT_MEASURE_BATCH);
+    const dimensions = await Promise.all(batch.map(entry => measureImage(entry.blobUrl)));
+    batch.forEach((entry, index) => {
+      entry.width = dimensions[index].width;
+      entry.height = dimensions[index].height;
+    });
+  }
 
   screenshotsData = { entries, totalBytes };
 }

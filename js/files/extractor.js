@@ -22,10 +22,10 @@ import { collapseSingleWrapper } from '../core/shared.js';
 
 const MAX_DEPTH = 10;
 
-// Enough leading text for the password-pool sampler; on the zip path the whole
-// entry has to be inflated to see any of it, so only modest ones are sniffed.
+// Enough leading text for the password-pool sampler. Entries past the cap are
+// left unclassified rather than treated as a pool.
 const CONTENT_SNIFF_BYTES = 64 * 1024;
-const SNIFF_MAX_INFLATE_BYTES = 8 * 1024 * 1024;
+const SNIFF_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
 
 // Decompressed bytes are cached so the pages that re-parse on every render, and
 // on reanalyze, don't inflate twice. Wallet stores, screenshots and unclassified
@@ -195,14 +195,51 @@ async function readZipEntryData(entry, label, initialPassword = null) {
   }
 }
 
+// zip.js writer that keeps the leading `limit` bytes of an entry. Failing the
+// write past that window is what ends the transfer part-way: getData's `signal`
+// is only honoured once the entry has been inflated in full, while a writer that
+// stops accepting propagates back through the codec and closes the worker task.
+function headSink(limit) {
+  const chunks = [];
+  let length = 0;
+
+  return {
+    writable: new WritableStream({
+      write(chunk) {
+        const room = limit - length;
+        if (room > 0) {
+          const part = chunk.length > room ? chunk.subarray(0, room) : chunk;
+          chunks.push(part);
+          length += part.length;
+        }
+        if (length >= limit) throw new Error('sniff window full');
+      },
+    }),
+    collect() {
+      if (chunks.length === 1) return chunks[0];
+      const head = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) {
+        head.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return head;
+    },
+  };
+}
+
 // Read without the password prompt loop: used for the content sniff, which must
-// never interrupt extraction to ask about a file nothing has claimed yet.
-async function readZipEntryQuietly(entry, password) {
+// never interrupt extraction to ask about a file nothing has claimed yet. A short
+// entry, a stopped one and an unreadable one all land here, and whatever arrived
+// is what gets sampled.
+async function readZipEntryHead(entry, password, limit) {
+  const sink = headSink(limit);
+
   try {
-    return await entry.getData(new zip.Uint8ArrayWriter(), password ? { password } : undefined);
-  } catch (_) {
-    return null;
-  }
+    await entry.getData(sink, password ? { password } : undefined);
+  } catch (_) { /* ignore */ }
+
+  return sink.collect();
 }
 
 // Filename rules claim nothing on combolist/ULP pools, so their line shape is the
@@ -285,13 +322,13 @@ async function extractIntoTree(root, zipData, basePath, depth) {
       const parentDir = segments.length >= 2 ? segments[segments.length - 2] : '';
       const detected = applyDetectionHints(fileNode, leafName, parentDir, entry.filename);
 
-      const fullPath = basePath + '/' + entry.filename;
+      // insertPath renames a leaf that collides with a sibling, so the tree path
+      // is the only one that leads back to this node.
+      const fullPath = basePath + '/' + segments.slice(0, -1).concat(fileNode.name).join('/');
 
-      if (!detected && !isArchive && isTextFile(leafName) && entryBytes <= SNIFF_MAX_INFLATE_BYTES) {
-        const data = await readZipEntryQuietly(entry, fileNode._password || state.rememberedPassword);
-        if (data && sniffContentType(fileNode, data) && retainsContent(fileNode, data.length)) {
-          fileNode._cachedContent = data;
-        }
+      if (!detected && !isArchive && isTextFile(leafName) && entryBytes <= SNIFF_MAX_ENTRY_BYTES) {
+        const head = await readZipEntryHead(entry, fileNode._password || state.rememberedPassword, CONTENT_SNIFF_BYTES);
+        sniffContentType(fileNode, head);
       }
 
       if (isArchive) {
@@ -352,18 +389,15 @@ function declaredTotals(obj, totals) {
   return totals;
 }
 
-async function walkExtractedFiles(obj, depth, root, parentPath) {
-  let fileCount = 0;
-
+async function walkExtractedFiles(obj, depth, root, parentPath, counts) {
   for (const key of Object.keys(obj)) {
     const value = obj[key];
-    if (isMacOSMetadata(key)) continue;
-    if (isJunkFile(key.toLowerCase())) continue;
+    if (isMacOSMetadata(key) || isJunkFile(key.toLowerCase())) { counts.filtered += 1; continue; }
 
     const segments = parentPath.concat(key);
 
     if (isEntryLeaf(value)) {
-      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(segments.join('/')); continue; }
+      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(segments.join('/')); counts.unexpanded += 1; continue; }
       _bytesUsed += value.size || 0;
       _entriesUsed += 1;
 
@@ -390,16 +424,16 @@ async function walkExtractedFiles(obj, depth, root, parentPath) {
       if (!detected && fileNode._blobContent) {
         await sniffBlobContent(fileNode, fileNode._blobContent);
       }
-      fileCount += 1;
+      counts.files += 1;
     } else if (value && typeof value === 'object') {
-      if (!withinBudget(0)) { reportBudgetExceeded(segments.join('/')); continue; }
+      if (!withinBudget(0)) { reportBudgetExceeded(segments.join('/')); counts.unexpanded += 1; continue; }
       _entriesUsed += 1;
       insertPath(root, segments, { type: 'directory', depth });
-      fileCount += await walkExtractedFiles(value, depth + 1, root, segments);
+      await walkExtractedFiles(value, depth + 1, root, segments, counts);
     }
   }
 
-  return fileCount;
+  return counts;
 }
 
 async function extractArchiveIntoTree(root, file, basePath, depth, parentPassword = null) {
@@ -448,11 +482,15 @@ async function extractArchiveIntoTree(root, file, basePath, depth, parentPasswor
       }
 
       const extracted = await archive.extractFiles();
-      const fileCount = await walkExtractedFiles(extracted, depth, root, []);
-      if (fileCount === 0) {
-        addError(hasEncrypted
-          ? `No files could be decrypted from: ${basePath} - wrong password or unsupported encryption`
-          : `Archive contained no readable files: ${basePath}`);
+      const counts = await walkExtractedFiles(extracted, depth, root, [], { files: 0, filtered: 0, unexpanded: 0 });
+      // An archive holding nothing but OS metadata is empty, not broken, and the
+      // budget stop has already reported itself.
+      if (counts.files === 0 && counts.unexpanded === 0) {
+        if (hasEncrypted) {
+          addError(`No files could be decrypted from: ${basePath} - wrong password or unsupported encryption`);
+        } else if (counts.filtered === 0) {
+          addError(`Archive contained no readable files: ${basePath}`);
+        }
       }
       await extractNestedArchives(root, basePath, depth);
       return;

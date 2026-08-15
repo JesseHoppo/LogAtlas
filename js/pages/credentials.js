@@ -145,6 +145,21 @@ function foldCookieDuplicate(target, duplicate, pathIdx) {
   }
 }
 
+// One cookie counted once, on the same key as the analysis pass: per-browser
+// duplicates and Netscape .txt + CDP _json.txt twins collapse on content. A
+// manually mapped file can expose no name, value or expiry column at all, where
+// keying on the domain would fold every cookie for that host into a single row;
+// those rows key on the whole raw row instead, in a key space of their own.
+function cookieDedupeKey(row, src) {
+  if (src.name < 0 && src.value < 0 && src.expires < 0) return ['\u0001', ...row].join('\u0000');
+  return [
+    (src.domain >= 0 ? (row[src.domain] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase(),
+    src.name >= 0 ? row[src.name] : '',
+    src.value >= 0 ? (row[src.value] || '') : '',
+    src.expires >= 0 ? (row[src.expires] ?? '') : '',
+  ].join('\u0000');
+}
+
 function normaliseCookieRow(row, columnMap, includeSubDomain) {
   const normalised = [
     row[columnMap.domain] || '',
@@ -177,6 +192,7 @@ async function loadPasswordsData(fileTree, rootName) {
   const extraHeaders = [];
   const parsedFiles = [];
   const failedFiles = [];
+  const fileHashes = new Set();
   let fileCount = 0;
 
   for (const { node, path } of nodes) {
@@ -215,7 +231,18 @@ async function loadPasswordsData(fileTree, rootName) {
         colMap.set(i, canonicalHeaders.length + extraIdx);
       }
 
-      fileCount++;
+      // A format twin (passwords.txt + passwords.tsv) is one source of
+      // credentials, not two — the same count the analysis pass reports. Its
+      // rows are still merged below, for the extra columns and the source path.
+      const fileHash = parsed.rows
+        .map(r => `${(r[urlIdx] || '')}\t${(r[userIdx] || '')}\t${(r[passIdx] || '')}`)
+        .sort()
+        .join('\n');
+      if (!fileHashes.has(fileHash)) {
+        fileHashes.add(fileHash);
+        fileCount++;
+      }
+
       parsedFiles.push({ path: sourcePath, parsed, colMap });
     } catch (err) {
       failedFiles.push({ path: sourcePath, reason: err?.message || 'Failed to read or parse file' });
@@ -353,44 +380,33 @@ async function loadCookiesData(fileTree, rootName) {
   const domainIdx = headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
   const pathIdx = headers.findIndex(h => /^path$/i.test(h));
   const captureDate = deriveCaptureDate(nodes, rootName);
-  const rows = [];
   const seenCookies = new Map();
 
   for (const { parsed, columnMap } of parsedFiles) {
-    const srcDomainIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
-    const srcNameIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
-    const srcExpiresIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
-    const srcValueIdx = parsed.headers.findIndex(h => /^value$/i.test(h));
+    const srcIdx = {
+      domain: parsed.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h)),
+      name: parsed.headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h)),
+      expires: parsed.headers.findIndex(h => FIELD_PATTERNS.expires.test(h)),
+      value: parsed.headers.findIndex(h => /^value$/i.test(h)),
+    };
 
     for (const row of parsed.rows) {
-      // Same key as the analysis pass, so the tiles here and the dashboard
-      // count one cookie once: per-browser duplicates and Netscape .txt + CDP
-      // _json.txt twins collapse on content.
-      const dedupeKey = [
-        (srcDomainIdx >= 0 ? (row[srcDomainIdx] || '') : (row[0] || '')).replace(/^\./, '').toLowerCase(),
-        srcNameIdx >= 0 ? row[srcNameIdx] : '',
-        srcValueIdx >= 0 ? (row[srcValueIdx] || '') : '',
-        srcExpiresIdx >= 0 ? (row[srcExpiresIdx] ?? '') : '',
-      ].join('\u0000');
+      const dedupeKey = cookieDedupeKey(row, srcIdx);
       const normalisedRow = normaliseCookieRow(row, columnMap, includeSubDomain);
       const seenRow = seenCookies.get(dedupeKey);
-      if (seenRow) {
-        foldCookieDuplicate(seenRow, normalisedRow, pathIdx);
-        continue;
-      }
-      seenCookies.set(dedupeKey, normalisedRow);
-
-      const expiresVal = expiresIdx >= 0 ? normalisedRow[expiresIdx] : null;
-      const cookieName = nameIdx >= 0 ? normalisedRow[nameIdx] : '';
-      const cookieDomain = domainIdx >= 0 ? normalisedRow[domainIdx] : '';
-      rows.push({
-        row: normalisedRow,
-        validity: checkCookieValidity(expiresVal, captureDate),
-        sessionType: classifyCookie(cookieName, cookieDomain),
-        headers,
-      });
+      if (seenRow) foldCookieDuplicate(seenRow, normalisedRow, pathIdx);
+      else seenCookies.set(dedupeKey, normalisedRow);
     }
   }
+
+  // Derived once every fold is in, so a badge can't contradict the expiry,
+  // name or domain a duplicate filled in.
+  const rows = [...seenCookies.values()].map(row => ({
+    row,
+    validity: checkCookieValidity(expiresIdx >= 0 ? row[expiresIdx] : null, captureDate),
+    sessionType: classifyCookie(nameIdx >= 0 ? row[nameIdx] : '', domainIdx >= 0 ? row[domainIdx] : ''),
+    headers,
+  }));
 
   let valid = 0, expired = 0, browserSession = 0, auth = 0, session = 0, liveSession = 0;
   for (const r of rows) {
@@ -686,9 +702,13 @@ function renderPasswordsPage(searchQuery = '') {
 
   const total = passwordsData.rows.length;
   const showing = passwordsFiltered.length;
+  // Rows here are per site + username + password and include accounts with no
+  // captured password; unique credentials is the dashboard's narrower count.
+  const unique = credAnalysis?.uniqueCredentials || 0;
+  const uniquePart = unique > 0 ? ` (${unique.toLocaleString()} unique credentials)` : '';
   const baseSummary = showing !== total
-    ? `Showing ${showing.toLocaleString()} of ${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`
-    : `${total.toLocaleString()} credentials from ${passwordsData.fileCount} file(s)`;
+    ? `Showing ${showing.toLocaleString()} of ${total.toLocaleString()} rows${uniquePart} from ${passwordsData.fileCount} file(s)`
+    : `${total.toLocaleString()} rows${uniquePart} from ${passwordsData.fileCount} file(s)`;
   summary.textContent = failedFiles.length > 0
     ? `${baseSummary} (${failedFiles.length.toLocaleString()} file(s) skipped)`
     : baseSummary;

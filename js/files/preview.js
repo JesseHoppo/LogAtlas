@@ -447,7 +447,6 @@ function updateCappedMatchNotice() {
   if (!note) {
     note = document.createElement('span');
     note.className = 'preview-line-cap-note';
-    note.style.color = 'var(--warning)';
     banner.insertBefore(note, banner.querySelector('.preview-show-all-lines'));
   }
   note.textContent = `${hiddenMatchCount.toLocaleString()} more ${hiddenMatchCount === 1 ? 'match' : 'matches'} past the cap`;

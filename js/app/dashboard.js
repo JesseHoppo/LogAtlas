@@ -51,6 +51,14 @@ function pluralise(value, singular, plural = singular + 's') {
   return `${value.toLocaleString()} ${value === 1 ? singular : plural}`;
 }
 
+// Rows with no captured password are tallied separately, so "nothing parsed"
+// only holds when all three credential tallies are zero.
+function parsedCredentialRows(credentials) {
+  return (credentials?.uniqueCredentials || 0)
+    + (credentials?.accountsWithoutPasswords || 0)
+    + (credentials?.urlsWithoutCredentials || 0);
+}
+
 function joinNaturalList(values, conjunction = 'and') {
   const items = (values || []).filter(Boolean);
   if (items.length === 0) return '';
@@ -166,15 +174,18 @@ function renderVerdictCards({ credentials, cookies, cards, history, grabbed, scr
     }));
   }
 
-  if (credentials?.uniqueCredentials > 0) {
+  const accountsOnly = credentials?.accountsWithoutPasswords || 0;
+  if (credentials?.uniqueCredentials > 0 || accountsOnly > 0) {
+    const withPasswords = credentials.uniqueCredentials > 0;
     const topDomain = credentials.topDomains?.[0]?.value;
+    const heaviest = topDomain ? `, heaviest on ${topDomain}` : '';
     out.push(buildVerdictCard({
-      label: 'Credentials',
-      value: credentials.uniqueCredentials.toLocaleString(),
-      note: topDomain
-        ? `Recovered logins, heaviest on ${topDomain}. Rank live and reused ones in Credential Triage.`
-        : 'Recovered logins. Rank live and reused ones in Credential Triage.',
-      targets: ['currentnesslab', 'passwords'],
+      label: withPasswords ? 'Credentials' : 'Accounts',
+      value: (withPasswords ? credentials.uniqueCredentials : accountsOnly).toLocaleString(),
+      note: withPasswords
+        ? `Recovered logins${heaviest}. Rank live and reused ones in Credential Triage.`
+        : `Accounts, no captured passwords${heaviest}. Sites and usernames are exposed; there is nothing to rank in Credential Triage.`,
+      targets: withPasswords ? ['currentnesslab', 'passwords'] : ['passwords'],
     }));
   }
 
@@ -493,7 +504,7 @@ function renderConsistencyChecks({ credentials, cookies, history, countryInfo })
   const credDomains = (credentials?.topDomains || []).map(d => d.value);
   const histDomains = (history?.topDomains || []).map(d => d.value);
 
-  if (cookies?.totalCookies > 0 && (!credentials || credentials.uniqueCredentials === 0)) {
+  if (cookies?.totalCookies > 0 && parsedCredentialRows(credentials) === 0) {
     checks.push({ text: 'Session cookies recovered but no credentials parsed — credential files may be encrypted, missing, or unparsed.', variant: 'warn' });
   }
 
@@ -759,31 +770,42 @@ export function initDashboard() {
     const summaryEl = document.getElementById('dashCredSummary');
     summaryEl.classList.remove('dash-loading');
     const skipped = data.failedFiles?.length || 0;
+    const skippedNote = skipped > 0 ? `; ${skipped.toLocaleString()} file(s) skipped` : '';
+    const parsedRows = parsedCredentialRows(data);
 
     if (data.totalCredentials > 0) {
       let summary = `${data.uniqueCredentials.toLocaleString()} unique credentials from ${data.fileCount} file(s)`;
       if (data.totalCredentials !== data.uniqueCredentials) {
         summary += ` (${data.totalCredentials.toLocaleString()} total, ${(data.totalCredentials - data.uniqueCredentials).toLocaleString()} duplicates removed)`;
       }
-      if (skipped > 0) {
-        summary += `; ${skipped.toLocaleString()} file(s) skipped`;
+      summaryEl.textContent = summary + skippedNote;
+    } else if (parsedRows > 0) {
+      const bits = [];
+      if (data.accountsWithoutPasswords > 0) {
+        bits.push(pluralise(data.accountsWithoutPasswords, 'account with a username only', 'accounts with a username only'));
       }
-      summaryEl.textContent = summary;
-      renderBarList(document.getElementById('dashTopDomains'), data.topDomains);
-      renderBarList(document.getElementById('dashTopUsernames'), data.topUsernames);
-      const localCol = document.getElementById('dashLocalNetworkCol');
-      if (data.localNetwork?.length) {
-        localCol.classList.remove('hidden');
-        renderBarList(document.getElementById('dashLocalNetwork'), data.localNetwork);
-      } else {
-        localCol.classList.add('hidden');
-        document.getElementById('dashLocalNetwork').innerHTML = '';
+      if (data.urlsWithoutCredentials > 0) {
+        bits.push(pluralise(data.urlsWithoutCredentials, 'saved site'));
       }
+      summaryEl.textContent = `No passwords captured; ${joinNaturalList(bits)} from ${data.fileCount} file(s)${skippedNote}`;
     } else {
       summaryEl.textContent = skipped > 0
         ? `No structured credential data could be parsed; ${skipped.toLocaleString()} file(s) were skipped.`
         : 'No structured credential data could be parsed.';
-      document.getElementById('dashLocalNetworkCol').classList.add('hidden');
+    }
+
+    if (parsedRows > 0) {
+      renderBarList(document.getElementById('dashTopDomains'), data.topDomains);
+      renderBarList(document.getElementById('dashTopUsernames'), data.topUsernames);
+    }
+
+    const localCol = document.getElementById('dashLocalNetworkCol');
+    if (data.localNetwork?.length) {
+      localCol.classList.remove('hidden');
+      renderBarList(document.getElementById('dashLocalNetwork'), data.localNetwork);
+    } else {
+      localCol.classList.add('hidden');
+      document.getElementById('dashLocalNetwork').innerHTML = '';
     }
   });
 

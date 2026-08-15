@@ -1876,6 +1876,10 @@ body {
   font-family: var(--font-mono);
 }
 
+.preview-line-cap-note {
+  color: var(--warning);
+}
+
 .preview-show-all-lines {
   padding: 0.2rem 0.6rem;
   font-size: 0.7rem;

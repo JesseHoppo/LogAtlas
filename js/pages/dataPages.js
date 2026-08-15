@@ -123,6 +123,11 @@ function activePageName() {
   );
 }
 
+function pageSearchQuery(pageName) {
+  const pageEl = document.getElementById(PAGE_IDS[pageName]);
+  return pageEl?.querySelector('.data-page-search')?.value || '';
+}
+
 // Reset and each new archive bump the epoch. Loads are queued so an in-flight
 // run cannot overwrite a newer case's datasets, and a superseded run bails
 // instead of publishing them.
@@ -171,9 +176,10 @@ async function runLoad(epoch) {
     updateNav();
   }
 
-  // Otherwise the open page keeps showing pre-reanalyze rows and stats.
+  // Otherwise the open page keeps showing pre-reanalyze rows and stats. The
+  // query goes with it so the re-render matches the search box on screen.
   const openPage = activePageName();
-  if (openPage) emit(`page:${openPage}`);
+  if (openPage) emit(`page:${openPage}`, pageSearchQuery(openPage));
 }
 
 export function initDataPages() {

@@ -309,6 +309,15 @@ function initIdentityGraph() {
   on('analysis:sysinfo', (d) => { sysinfoData = d; sysinfoReceived = true; tryBuild(); });
   on('analysis:autofill', (d) => { autofillData = d; autofillReceived = true; tryBuild(); });
 
+  // Analysers run under allSettled, so a throwing one never emits its event.
+  // Build from what did arrive rather than leaving the page blank forever.
+  on('analysis:complete', () => {
+    if (sysinfoReceived && autofillReceived) return;
+    sysinfoReceived = true;
+    autofillReceived = true;
+    tryBuild();
+  });
+
   on('reanalyze', clearGating);
   on('reset', clearGating);
 }
