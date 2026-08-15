@@ -830,7 +830,7 @@ function buildIdentityDomainScores(identitySets, siteIndexes, providerArtifacts)
     if (!baseDomain) continue;
 
     const cookieSummary = siteIndexes.cookieByBase.get(baseDomain);
-    if (cookieSummary?.liveSessions || cookieSummary?.validCookies) {
+    if (cookieSummary?.liveSessions || cookieSummary?.validCookies || cookieSummary?.sessionCookies) {
       entry.score += 4;
       entry.webSignals += 1;
       entry.sources.add('cookies');
@@ -897,7 +897,7 @@ function buildIdentityDomainScores(identitySets, siteIndexes, providerArtifacts)
 }
 
 function emptyCookieSummary() {
-  return { liveSessions: 0, validCookies: 0, expiredCookies: 0 };
+  return { liveSessions: 0, validCookies: 0, expiredCookies: 0, sessionCookies: 0 };
 }
 function emptyHistorySummary() {
   return { latestVisitDate: null, totalEntries: 0, totalVisitCount: 0, loginHits: 0 };
@@ -924,6 +924,9 @@ function buildSiteIndexes({ cookies, history, notes, downloads, bookmarks }) {
       if (live) summary.liveSessions += 1;
       if (entry.validityStatus === 'valid') summary.validCookies += 1;
       else if (entry.validityStatus === 'expired') summary.expiredCookies += 1;
+      // No expiry and not an auth token: it died with the browser, so it is no
+      // live session, but it was present at capture and is not expired either.
+      else if (entry.validityStatus === 'session' && !live) summary.sessionCookies += 1;
     }
   }
 
@@ -1272,6 +1275,11 @@ function scoreCredential(entry, context) {
       siteSignalCount += 1;
     } else if (cookieSummary?.validCookies) {
       addScore(result, 16, `${cookieSummary.validCookies} valid cookie${cookieSummary.validCookies === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
+      siteSignalCount += 1;
+    } else if (cookieSummary?.sessionCookies) {
+      // Presence at capture, not usability after it: scored below a dated valid
+      // cookie, and never enough to mark the row as having a live session.
+      addScore(result, 8, `${cookieSummary.sessionCookies} cookie${cookieSummary.sessionCookies === 1 ? '' : 's'} with no expiry for ${cookieLabel}`, 'site');
       siteSignalCount += 1;
     } else if (cookieSummary?.expiredCookies && !isGenericProviderSite) {
       // Shared generic hosts (accounts.google.com, github.com...) accumulate
