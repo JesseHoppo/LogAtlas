@@ -62,6 +62,46 @@ function detectArtifactType(fileName, sourcePath, storeType) {
 }
 
 
+function decodeBase64Url(segment) {
+  const padding = (4 - (segment.length % 4)) % 4;
+  if (padding === 3) return '';
+  try {
+    return atob(segment.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(padding));
+  } catch {
+    return '';
+  }
+}
+
+// The scan regex matches any dot-separated triple, so hostnames and version
+// strings read as tokens; a leading segment that base64url-decodes to a JSON
+// object (JOSE header, signed-cookie payload) does not.
+function looksLikeToken(value) {
+  const header = value.slice(0, value.indexOf('.'));
+  if (!header.startsWith('eyJ')) return false;
+  let parsed;
+  try {
+    parsed = JSON.parse(decodeBase64Url(header));
+  } catch {
+    return false;
+  }
+  return Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
+}
+
+function collectTokens(text, limit = 6) {
+  const tokens = [];
+  const seen = new Set();
+  JWT_SCAN_REGEX.lastIndex = 0;
+  let match;
+  while ((match = JWT_SCAN_REGEX.exec(text)) !== null) {
+    const token = match[0];
+    if (seen.has(token) || !looksLikeToken(token)) continue;
+    seen.add(token);
+    tokens.push(token);
+    if (tokens.length >= limit) break;
+  }
+  return tokens;
+}
+
 function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: [], tokenCount: 0, seedHints: 0 }, depth = 0) {
   if (value == null) return results;
   if (depth > LIMITS.flattenMaxDepth) return results;
@@ -191,9 +231,7 @@ function parseWalletArtifact(content, fileName, sourcePath) {
   const btcAddresses = collectUniqueMatches(combinedText, BTC_ADDRESS_REGEX, 4);
   const ids = uniqueLimited(jsonSignals.ids, 3);
 
-  let tokenCount = jsonSignals.tokenCount;
-  const jwtMatches = collectUniqueMatches(combinedText, JWT_SCAN_REGEX, 6);
-  tokenCount += jwtMatches.length;
+  const tokenCount = jsonSignals.tokenCount + collectTokens(combinedText).length;
 
   const seedHints = jsonSignals.seedHints + ((/mnemonic|seed phrase|recovery phrase|secret recovery/i.test(combinedText)) ? 1 : 0);
   const isPasswordManager = service.category === 'Password Manager' || service.category === 'Vault'

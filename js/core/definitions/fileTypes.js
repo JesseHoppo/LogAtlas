@@ -40,6 +40,11 @@ export const FILE_TYPE_PATTERNS = {
       /^(?:chrome|firefox|edge|opera|brave|vivaldi|chromium)[_\s]?\d+\.txt$/i,
       /^(?:google\s?chrome|microsoft\s?edge)[_\s]?(?:default|profile)?\s*\d*\.txt$/i,
     ],
+    // Service-checker exports prefix the hit count: `(11 facebook) Cookies_Chrome_Default.txt`.
+    servicePrefix: /^\(\s*\d+\s+[^)]*\)\s*/,
+    pathPatterns: [
+      /(^|\/)\[simple checker\]\//i,
+    ],
     textExtensions: TEXT_EXTENSIONS,
     exclusions: [/^cookie[\s_-]*list\.txt$/i, /cookie[\s_-]*restore[\s_-]*data/i],
     excludeFolders: /^(?:auto[\s_-]*fills?|histor(?:y|ies)|downloads?|bookmarks?|passwords?|logins?|credit[\s_-]*cards?)$/i,
@@ -119,7 +124,7 @@ export const FILE_TYPE_PATTERNS = {
       /^(?:credit[\s_-]*)?cards?\.(txt|tsv|csv)$/i,
       /^cc[\s_-]?data\.(txt|tsv|csv)$/i,
       /^CreditCards?\.(txt|tsv|csv)$/i,
-      /^[^/]*_cards?\.(txt|tsv|csv)$/i,
+      /^(?:google\s?chrome|microsoft\s?edge|chrome|chromium|edge|firefox|opera|brave|vivaldi|yandex|credit|bank|debit|payment)[^/]*[\s_-]cards?\.(txt|tsv|csv)$/i,
     ],
     folderPattern: /^(?:(?:(?:credit|bank)[\s_-]*)?cards?|credits?|cc)$/i,
   },
@@ -134,12 +139,11 @@ export const FILE_TYPE_PATTERNS = {
       /^wallet[\s_-]*data\.(txt|json)$/i,
       /^keychain(?:\s*data)?\.(txt|tsv|csv)$/i,
       /^metamask/i,
-      /^token\.json$/i,
-      /^seed\.txt$/i,
-      /^data\.json$/i,
     ],
     pathScopedFilePatterns: [
       /^(?:current|lock|log(?:\.old)?|manifest-\d+|\d+\.(?:log|ldb)|.+\.(?:db|sqlite|sqlite3))$/i,
+      /^(?:token|data)\.json$/i,
+      /^seed\.txt$/i,
     ],
     pathPatterns: [
       /(^|\/)wallets?\//i,
@@ -210,13 +214,19 @@ export const FILE_TYPE_PATTERNS = {
 
   messenger: {
     filePatterns: [
-      /^token[s]?\.txt$/i,
       /^discord[\s_-]*token/i,
-      /^accounts\.txt$/i,
       /^Token_EAAB\.txt$/i,
       /^IDs\.txt$/i,
       /^steam[\s_-]*tokens?\.txt$/i,
+    ],
+    pathScopedFilePatterns: [
+      /^token[s]?\.txt$/i,
+      /^accounts\.txt$/i,
       /^(?:system|service|user)\.conf$/i,
+    ],
+    pathPatterns: [
+      /(^|\/)(?:messengers?|clients?|soft(?:ware)?|applications|apps?|games)\//i,
+      /(^|\/)(?:discord|telegram|steam|skype|signal|element|pidgin|whatsapp|viber|tox|icq)\//i,
     ],
   },
 
@@ -306,5 +316,16 @@ export const FILE_TYPE_PATTERNS = {
       /^plugins?$/i,
       /^extensions?$/i,
     ],
+  },
+
+  // Combolist/ULP credential pools bundled alongside a log. They ship under
+  // arbitrary titles ("14,4K ULP PRIV.txt"), so only the line shape identifies
+  // them: scheme://host:user:pass, with user free of URL punctuation so plain
+  // history dumps carrying nested URLs do not qualify.
+  passwordPool: {
+    linePattern: /^[a-z][a-z0-9+.-]*:\/\/[^\s:]+:[^\s:/?=%&][^:/?=%&]*:.+$/i,
+    sampleLines: 400,
+    minLines: 20,
+    minRatio: 0.6,
   },
 };

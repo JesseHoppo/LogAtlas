@@ -30,6 +30,7 @@ import {
   parseWithConfig,
 } from './delimited.js';
 import { LIMITS, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
+import { BIP39_WORDS } from '../core/definitions/bip39.js';
 
 // Victim identity keys the downstream graph looks for; whitelisted so a bare
 // "User:"/"PC:"/"NetBIOS:" before any structured section is retained, not dropped.
@@ -60,6 +61,32 @@ function flattenObjectEntries(value, prefix = '', out = [], depth = 0) {
   return out;
 }
 
+const STEAM_ID64_PATTERN = /^7656119\d{10}$/;
+
+function decodeJwtPayload(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length < 2) return null;
+
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(base64 + '='.repeat((4 - base64.length % 4) % 4)));
+  } catch {
+    return null;
+  }
+}
+
+function isSteamJwt(token, accountId, lowerHint) {
+  if (/steam/.test(lowerHint)) return true;
+  if (STEAM_ID64_PATTERN.test(String(accountId || '').trim())) return true;
+
+  const payload = decodeJwtPayload(token);
+  if (!payload) return false;
+  if (STEAM_ID64_PATTERN.test(String(payload.sub || ''))) return true;
+
+  const audience = Array.isArray(payload.aud) ? payload.aud.join(' ') : String(payload.aud || '');
+  return /steam/i.test(`${payload.iss || ''} ${audience}`);
+}
+
 function inferTokenKind(value, accountId = '', hint = '') {
   const token = String(value || '').trim();
   const lowerHint = String(hint || '').toLowerCase();
@@ -68,7 +95,7 @@ function inferTokenKind(value, accountId = '', hint = '') {
   if (/^1\/\//.test(token)) return 'Google OAuth refresh token';
   if (token && /restore/.test(lowerHint)) return 'Restore Token';
   if (/^EAAB/i.test(token)) return 'Facebook Token';
-  if (/^eyJ/.test(token) && JWT_TOKEN_PATTERN.test(token)) return /steam/i.test(lowerHint) || accountId ? 'Steam JWT' : 'JWT';
+  if (/^eyJ/.test(token) && JWT_TOKEN_PATTERN.test(token)) return isSteamJwt(token, accountId, lowerHint) ? 'Steam JWT' : 'JWT';
   if (DISCORD_TOKEN_PATTERN.test(token)) return 'Discord Token';
   if (accountId) return 'Token + Account ID';
   return 'Token';
@@ -555,11 +582,23 @@ export function parseDomainDetectFile(text) {
   } : null;
 }
 
+const SEED_PHRASE_LENGTHS = new Set([12, 15, 18, 21, 24]);
+
+function looksLikeSeedPhrase(compact) {
+  if (!/^[a-z]+(?:\s+[a-z]+)+$/i.test(compact)) return false;
+
+  const words = compact.toLowerCase().split(/\s+/);
+  if (!SEED_PHRASE_LENGTHS.has(words.length)) return false;
+
+  const known = words.filter(word => BIP39_WORDS.has(word)).length;
+  return known / words.length >= 0.9;
+}
+
 function classifyClipboardEntry(text, urls) {
   const compact = text.trim();
   const lower = compact.toLowerCase();
 
-  if (/^(?:[a-z]+(?:\s+[a-z]+){11,23})$/i.test(compact)) {
+  if (looksLikeSeedPhrase(compact)) {
     return 'Seed Phrase';
   }
   if (/^(?:0x[a-f0-9]{40}|bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|T[1-9A-HJ-NP-Za-km-z]{33})$/i.test(compact)) {

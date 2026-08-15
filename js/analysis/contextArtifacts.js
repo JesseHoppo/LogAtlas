@@ -5,6 +5,17 @@ import { detectStructuredPii, hasStructuredPii } from './structuredPii.js';
 
 const CREDENTIAL_HINT_REGEX = /(password|passcode|passphrase|pwd\b|username|login|credential|account|token|backup code|recovery code|密码|用户名|账号|登录名|登陆名|口令)/gi;
 const WALLET_HINT_REGEX = /(wallet|seed phrase|mnemonic|private key|secret recovery|metamask|phantom|bitcoin|ethereum|solana|助记词|私钥|\b(?:btc|eth|ltc|xrp|sol|usdt|tron|bch)\b)/gi;
+const IP_LIKE_REGEX = /\b\d{1,3}(?:\.\d{1,3}){3}\b/;
+const DATE_LIKE_REGEX = /\b(?:\d{1,2}[.\-]\d{1,2}[.\-]\d{4}|\d{4}[.\-]\d{1,2}[.\-]\d{1,2})\b/;
+// The scan regex also grabs dotted quads, dates and long digit runs, so over-collect and sieve.
+const PHONE_CANDIDATE_LIMIT = 24;
+
+function looksLikePhone(value) {
+  const candidate = String(value).trim();
+  if (IP_LIKE_REGEX.test(candidate) || DATE_LIKE_REGEX.test(candidate)) return false;
+  const digits = candidate.replace(/\D/g, '').length;
+  return digits >= 7 && digits <= 15;
+}
 
 function buildNoteTitle(fileName, text) {
   const baseName = String(fileName || '').replace(/\.[^.]+$/, '').trim();
@@ -48,7 +59,7 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
 
   const urls = collectUniqueMatches(clean, URL_REGEX, 6);
   const emails = collectUniqueMatches(clean, SCAN_EMAIL_REGEX, 6);
-  const phones = collectUniqueMatches(clean, SCAN_PHONE_REGEX, 6);
+  const phones = collectUniqueMatches(clean, SCAN_PHONE_REGEX, PHONE_CANDIDATE_LIMIT).filter(looksLikePhone).slice(0, 6);
   const credentialHints = countMatches(clean, CREDENTIAL_HINT_REGEX, { dedupe: false });
   const walletHints = countMatches(clean, WALLET_HINT_REGEX, { dedupe: false });
   const structuredPii = detectStructuredPii(clean);
@@ -97,25 +108,22 @@ function summariseNotes(entries) {
   };
 }
 
+// Ordered: "Important Files" wins over the bare "Files" root when a log nests both.
+const GRAB_COLLECTIONS = [
+  { collection: 'Important Files', pattern: /(?:^|\/)important files\/(.+)$/i },
+  // tolerate the spaced folder form "File Grabber"
+  { collection: 'FileGrabber', pattern: /(?:^|\/)file ?grabber\/(.+)$/i },
+  { collection: 'Files', pattern: /(?:^|\/)files\/(.+)$/i },
+];
+
 function splitGrabCollection(pathText) {
   const normalised = normalisePath(pathText);
-  const importantMatch = normalised.match(/^(.*?)(?:\/|^)(Important Files)\/(.+)$/i);
-  if (importantMatch) {
-    return {
-      collection: 'Important Files',
-      relativePath: importantMatch[3],
-    };
+  for (const { collection, pattern } of GRAB_COLLECTIONS) {
+    const match = normalised.match(pattern);
+    if (match) {
+      return { collection, relativePath: match[1] };
+    }
   }
-
-  // tolerate the spaced folder form "File Grabber"
-  const grabMatch = normalised.match(/^(.*?)(?:\/|^)(File ?Grabber)\/(.+)$/i);
-  if (grabMatch) {
-    return {
-      collection: 'FileGrabber',
-      relativePath: grabMatch[3],
-    };
-  }
-
   return null;
 }
 

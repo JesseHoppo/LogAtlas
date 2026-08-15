@@ -42,7 +42,7 @@ export const SIGNATURES = {
       { pattern: /VIDAR/i, label: 'Sysinfo header: VIDAR branding' },
       { pattern: /vidars\.su/i, label: 'Sysinfo content: vidars.su URL' },
       { pattern: /[\u0400-\u04FF]{3,}/u, label: 'Sysinfo content: Cyrillic text' },
-      { pattern: /^\s*Version\s*:\s*.+\n\s*Date\s*:\s*.+\n\s*MachineID\s*:/i, label: 'Sysinfo content: Version/Date/MachineID ordering' },
+      { pattern: /^\s*Version\s*:\s*.+\r?\n\s*Date\s*:\s*.+\r?\n\s*MachineID\s*:/im, label: 'Sysinfo content: Version/Date/MachineID ordering' },
       { pattern: /^\[Hardware\]$/m, label: 'Sysinfo section: [Hardware]' },
       { pattern: /^\[Network\]$/m, label: 'Sysinfo section: [Network]' },
       { pattern: /^\[Processes\]$/m, label: 'Sysinfo section: [Processes]' },
@@ -233,7 +233,7 @@ export const SIGNATURES = {
     ],
     sysinfoContent: [
       { pattern: /LummaC2/i, label: 'Sysinfo content: LummaC2 branding' },
-      { pattern: /LID[\s(]*/i, label: 'Sysinfo content: LID field' },
+      { pattern: /^\s*-?\s*LID\s*[:(]/im, label: 'Sysinfo content: LID field' },
       { pattern: /@lummanowork/i, label: 'Sysinfo content: @lummanowork contact' },
       { pattern: /lummamarketplace/i, label: 'Sysinfo content: lummamarketplace' },
       { pattern: /\(sig:[0-9a-f]+\.[0-9a-f]+\)/i, label: 'Sysinfo content: Time with (sig:...) hash' },
@@ -502,7 +502,7 @@ export const SIGNATURES = {
     ],
     sysinfoContent: [
       { pattern: /RisePro/i, label: 'Sysinfo content: RisePro branding' },
-      { pattern: /^\s*Build\s*:\s*.+\n\s*Version\s*:/i, label: 'Sysinfo content: Build before Version' },
+      { pattern: /^\s*Build\s*:\s*.+\r?\n\s*Version\s*:/im, label: 'Sysinfo content: Build before Version' },
       { pattern: /^\[Hardware\]$/m, label: 'Sysinfo section: [Hardware]' },
       { pattern: /^\[Processes\]$/m, label: 'Sysinfo section: [Processes]' },
     ],
@@ -530,7 +530,7 @@ export const SIGNATURES = {
     require: ({ ctx, matchedCounts }) => {
       return matchedCounts.selfId > 0 ||
         (ctx.sysinfoKeys || []).some(k => /^Build$/i.test(k)) ||
-        /^\s*Build\s*:\s*.+\n\s*Version\s*:/i.test(ctx.sysinfoText || '');
+        /^\s*Build\s*:\s*.+\r?\n\s*Version\s*:/im.test(ctx.sysinfoText || '');
     },
   },
 
@@ -698,7 +698,7 @@ export const SIGNATURES = {
   Meduza: {
     selfId: [
       { pattern: /meduza\s+stealer/i, label: 'Self-ID: Meduza stealer' },
-      { pattern: /⚡️?\s*NEW\s*LOG\s*\(NOT\s*ENCRYPTED\)/i, label: 'Self-ID: Meduza NEW LOG banner' },
+      { pattern: /(?:⚡️?\s*)?NEW\s*LOG\s*\(NOT\s*ENCRYPTED\)/i, label: 'Self-ID: Meduza NEW LOG banner' },
     ],
     sysinfoFile: { pattern: /^(?:UserInfo|Information|PC_info)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -976,8 +976,11 @@ export const SIGNATURES = {
       { pattern: /^Browsers$/i, label: 'Folder: Browsers/' },
     ],
     files: [
-      { pattern: /^Browsers\/Logins_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Browsers/Logins_{Browser}_{Profile}.txt' },
-      { pattern: /^Browsers\/Token_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Browsers/Token_{Browser}_{Profile}.txt' },
+      // Browsers/ is the usual home, but a minimal log ships the trio at the root.
+      { pattern: /^(?:Browsers\/)?Logins_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Logins_{Browser}_{Profile}.txt' },
+      { pattern: /^(?:Browsers\/)?Autofills_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Autofills_{Browser}_{Profile}.txt' },
+      { pattern: /^(?:Browsers\/)?Cookies_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Cookies_{Browser}_{Profile}.txt' },
+      { pattern: /^(?:Browsers\/)?Token_[A-Za-z]+_[^./]+\.txt$/i, label: 'File: Token_{Browser}_{Profile}.txt' },
       { pattern: /^Clients\/DiscordTokens\.txt$/i, label: 'File: Clients/DiscordTokens.txt' },
     ],
     structures: [
@@ -992,7 +995,8 @@ export const SIGNATURES = {
       },
     ],
     require: ({ matchedCounts }) =>
-      matchedCounts.sysinfoKey >= 2 || matchedCounts.structure > 0 || matchedCounts.folder >= 2,
+      matchedCounts.sysinfoKey >= 2 || matchedCounts.structure > 0 ||
+      matchedCounts.folder >= 2 || matchedCounts.file >= 2,
   },
 
   BlankGrabber: {
@@ -1009,9 +1013,10 @@ export const SIGNATURES = {
     structures: [
       {
         test: (dirs, files) => {
+          const hasSysinfo = files.some(f => /^System(?:\s*)?Info(?:rmation)?\.txt$/i.test(f));
           const hasTaskList = files.some(f => /^Task\s*List\.txt$/i.test(f));
           const hasDisplayShot = files.some(f => /^Display(?: \(\d+\))?\.png$/i.test(f));
-          return hasTaskList || hasDisplayShot;
+          return hasSysinfo && (hasTaskList || hasDisplayShot);
         },
         label: 'Structure: systeminfo output plus task list or display screenshot',
       },

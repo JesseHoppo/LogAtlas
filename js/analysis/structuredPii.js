@@ -6,8 +6,8 @@ const PAN_REGEX = /\b(?:\d[ -]?){13,19}\b/g;
 const IBAN_REGEX = /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g;
 const ETH_ADDRESS_REGEX = /\b0x[a-fA-F0-9]{40}\b/g;
 const BTC_ADDRESS_REGEX = /\b(?:bc1[a-z0-9]{25,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g;
-const SEED_RUN_REGEX = /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){11,23}\b/g;
-const SEED_LENGTHS = new Set([12, 15, 18, 21, 24]);
+const SEED_RUN_REGEX = /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){11,}\b/g;
+const MIN_SEED_WORDS = 12;
 
 function isLuhnValid(digits) {
   if (!/^\d+$/.test(digits)) return false;
@@ -61,13 +61,10 @@ function detectSeedPhrase(text) {
   SEED_RUN_REGEX.lastIndex = 0;
   let match;
   while ((match = SEED_RUN_REGEX.exec(value)) !== null) {
-    const words = match[0].split(/\s+/);
-    for (let start = 0; start < words.length; start++) {
-      let len = 0;
-      while (start + len < words.length && BIP39_WORDS.has(words[start + len])) len++;
-      if (len < 12) { start += len; continue; }
-      if (SEED_LENGTHS.has(len)) return true;
-      start += len;
+    let run = 0;
+    for (const word of match[0].split(/\s+/)) {
+      run = BIP39_WORDS.has(word) ? run + 1 : 0;
+      if (run >= MIN_SEED_WORDS) return true;
     }
   }
   return false;

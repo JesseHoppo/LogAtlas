@@ -31,14 +31,16 @@ function isLikelyAggregatePasswordFile(name) {
   return patterns.some(rx => rx.test(trimmedName));
 }
 
-function isLikelyCookieFile(name, parentDir) {
+function isLikelyCookieFile(name, parentDir, fullPath) {
   const c = FILE_TYPE_PATTERNS.cookie;
-  if (c.exclusions && c.exclusions.some(rx => rx.test(name))) return false;
+  const bareName = name.replace(c.servicePrefix, '');
+  if (c.exclusions && c.exclusions.some(rx => rx.test(bareName))) return false;
   if (parentDir && c.excludeFolders.test(parentDir)) return false;
   if (parentDir && c.parentDirMatch.test(parentDir) && c.textExtensions.test(name)) return true;
-  if (c.patterns.some(rx => rx.test(name))) return true;
-  if (parentDir && c.parentDirMatch.test(parentDir) && c.browserProfiles.some(rx => rx.test(name))) return true;
-  return false;
+  if (c.patterns.some(rx => rx.test(bareName))) return true;
+  if (parentDir && c.parentDirMatch.test(parentDir) && c.browserProfiles.some(rx => rx.test(bareName))) return true;
+  return c.pathPatterns.some(rx => rx.test(normalisePath(fullPath)))
+    && c.browserProfiles.some(rx => rx.test(bareName));
 }
 
 function isLikelySystemInfoFile(name, parentDir) {
@@ -157,7 +159,9 @@ function isLikelyMessengerFile(name, parentDir, fullPath) {
   if (isLikelyAccountTokenFile(name, parentDir, fullPath) || isLikelyServiceArtifactFile(name, parentDir, fullPath)) {
     return false;
   }
-  return m.filePatterns.some(rx => rx.test(name));
+  if (m.filePatterns.some(rx => rx.test(name))) return true;
+  return m.pathScopedFilePatterns.some(rx => rx.test(name))
+    && m.pathPatterns.some(rx => rx.test(normalisePath(fullPath)));
 }
 
 function isLikelyClipboardFile(name) {
@@ -189,7 +193,7 @@ function applyDetectionHints(node, rawName, parentDir, fullPath = '') {
   let detected = false;
   if (isLikelyPasswordFilename(name, parentDir, fullPath)) { node._passwordFileHint = true; detected = true; }
   else if (isLikelyAggregatePasswordFile(name)) { node._passwordFileAggregateHint = true; detected = true; }
-  if (isLikelyCookieFile(name, parentDir))        { node._cookieFileHint = true;   detected = true; }
+  if (isLikelyCookieFile(name, parentDir, fullPath)) { node._cookieFileHint = true; detected = true; }
   if (isLikelySystemInfoFile(name, parentDir))     { node._sysInfoHint = true;      detected = true; }
   if (isLikelyAutofillFile(name, parentDir))       { node._autofillHint = true;     detected = true; }
   if (isLikelyHistoryFile(name, parentDir))        { node._historyHint = true;      detected = true; }
@@ -215,6 +219,28 @@ function applyDetectionHints(node, rawName, parentDir, fullPath = '') {
   return detected;
 }
 
+function isLikelyPasswordPool(text) {
+  const pool = FILE_TYPE_PATTERNS.passwordPool;
+  const lines = [];
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line) lines.push(line);
+    if (lines.length >= pool.sampleLines) break;
+  }
+  if (lines.length < pool.minLines) return false;
+  const hits = lines.reduce((n, line) => n + (pool.linePattern.test(line) ? 1 : 0), 0);
+  return hits / lines.length >= pool.minRatio;
+}
+
+// Content fallback for files no filename rule claimed. Combolist/ULP pools carry
+// no usable name, so they can only be recognised once their text is loaded.
+function applyContentDetectionHints(node, text) {
+  if (!node || Object.keys(node).some(key => key.endsWith('Hint'))) return false;
+  if (!isLikelyPasswordPool(text)) return false;
+  node._passwordFileHint = true;
+  return true;
+}
+
 // Promote every aggregate-password file to a real password file. Aggregates may
 // be supersets of the per-profile files, so suppressing them risks dropping
 // rows; exact (url,user,pass) duplicates are removed at the credential layer.
@@ -237,4 +263,4 @@ function reconcileAggregatePasswordFiles(tree) {
   }
 }
 
-export { applyDetectionHints, reconcileAggregatePasswordFiles };
+export { applyDetectionHints, applyContentDetectionHints, reconcileAggregatePasswordFiles };

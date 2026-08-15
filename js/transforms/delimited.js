@@ -429,7 +429,9 @@ export function finaliseCredentialDataset(parsed) {
     const password = (row[passIdx] || '').trim();
     const username = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
     const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
-    return Boolean((password && (username || url)) || (url && !password && !username));
+    // A site plus an account name is an exposure even with no stored password.
+    // URL-only stubs survive here; the passwords page drops them.
+    return Boolean(url || (username && password));
   });
 
   if (rows.length === 0) return null;

@@ -8,6 +8,18 @@ import { FILE_TYPE_PATTERNS } from '../core/definitions/fileTypes.js';
 // so the structure-only fallback ignores them when judging distinctiveness.
 const GENERIC_LABELS = /^(?:File: (?:All |unique_)?[Pp]asswords?\.txt(?: \(root\))?|File: [Cc]ookies?\.txt|File: cookie_list\.txt|File: [Ss]creenshot\.(?:png|jpg)|File: Screen\.png|File: domain detect\.txt|File: DomainDetects?\.txt|Structure: flat layout|Structure: top-level Autofills\/Cookies)/;
 
+// A self-ID that is a single bare word ("xfiles", "skalka", "stealc") also
+// reads as ordinary text, so a captured password, cookie domain or clipboard
+// line must not be able to raise it — those patterns only count inside sysinfo.
+// Multi-token brands and banner art stay case-global: resale brands stamp those
+// on the password and cookie dumps themselves.
+const BARE_WORD_SELF_ID = /^[a-z0-9]+$/i;
+
+function selfIdIsSysinfoOnly(si) {
+  if (si.scope) return si.scope === 'sysinfo';
+  return BARE_WORD_SELF_ID.test(si.pattern.source.replace(/\\b/g, ''));
+}
+
 function scoreFamily(familyName, sig, ctx) {
   let score = 0;
   let maxScore = 0;
@@ -33,7 +45,7 @@ function scoreFamily(familyName, sig, ctx) {
   if (sig.selfId && sig.selfId.length > 0) {
     maxScore += W.SELF_ID;
     for (const si of sig.selfId) {
-      const target = si.scope === 'sysinfo' ? sysinfoOnlyText : globalText;
+      const target = selfIdIsSysinfoOnly(si) ? sysinfoOnlyText : globalText;
       if (target && si.pattern.test(target)) {
         score += W.SELF_ID;
         matched.push(si.label);
@@ -134,6 +146,46 @@ function scoreFamily(familyName, sig, ctx) {
   const selfIdMatched = matchedCounts.selfId > 0;
 
   return { family: familyName, score, maxScore, matched, matchedCounts, selfIdMatched, osClass: sig.osClass || null, sysinfoFilename: ctx.sysinfoFilename || '' };
+}
+
+// Platform reading. Windows logs list macOS SDK packages and macOS logs list
+// "Windows App", so a single substring decides nothing: take the OS line when
+// the sysinfo has one, else weigh how many distinct platform-only cues each
+// side shows.
+const OS_KEY_PATTERN = /(?:^|[\s|>*-])(?:OS|OS[\s_-]*Name|OS[\s_-]*Version|Operat(?:ing|ion)[\s_-]*System|System[\s_-]*Version|ProductName|Windows)[ \t]*[:=][ \t]*([^\r\n|]{0,60})/gi;
+const MACOS_NAME = /\b(?:mac\s?os|os\s?x|darwin)\b/i;
+const WINDOWS_NAME = /\bwindows\b/i;
+const WINDOWS_CUES = [
+  /\bWindows[\s_](?:1[01]|[78]|XP|Vista|Server|NT)\b/i,
+  /\bMicrosoft Windows\b/i,
+  /\b[A-Za-z]:[\\/](?:Users|Windows|Program Files)/i,
+  /\bAppData[\\/](?:Roaming|Local)/i,
+  /\bHKEY_[A-Z_]+/,
+  /\bWindows Defender/i,
+];
+const MACOS_CUES = [
+  /\bmac\s?os\b/i,
+  /\bos\s?x\b/i,
+  /\bdarwin\b/i,
+  /\b(?:MacBook|iMac|Mac\s?mini|Mac\s?Studio|Macintosh)\b/i,
+  /\bApple\s+M[1-9]\b/i,
+  /\/Users\/[^/\s]+\/Library\b/,
+  /\bSystem Integrity Protection\b/i,
+];
+
+function classifyOs(text) {
+  if (!text) return { osClass: null, keyed: false };
+
+  for (const m of text.matchAll(OS_KEY_PATTERN)) {
+    if (MACOS_NAME.test(m[1])) return { osClass: 'macos', keyed: true };
+    if (WINDOWS_NAME.test(m[1])) return { osClass: 'windows', keyed: true };
+  }
+
+  // A lone hardware or SDK name decides nothing, in either direction.
+  const win = WINDOWS_CUES.reduce((n, rx) => n + (rx.test(text) ? 1 : 0), 0);
+  const mac = MACOS_CUES.reduce((n, rx) => n + (rx.test(text) ? 1 : 0), 0);
+  if (win === mac || Math.max(win, mac) < 2) return { osClass: null, keyed: false };
+  return { osClass: win > mac ? 'windows' : 'macos', keyed: false };
 }
 
 // Walk the file tree and collect dirs, files, sysinfo node, and credits files.
@@ -272,14 +324,22 @@ function fingerprintStealer(ctx) {
 
   // OS-class veto: a Windows stealer family must not win a macOS log (and a
   // macOS family must not win a Windows log). macOS families are tagged
-  // osClass:'macos'; the log's OS is read from sysinfo text. Unknown OS → no veto.
-  const osText = ctx.combinedSysinfoText || ctx.sysinfoText || '';
-  const isWindows = /\bWindows\b/i.test(osText);
-  const isMacOS = !isWindows && /\b(?:mac\s?os|macos|os\s?x|darwin)\b/i.test(osText);
-  const isMacFamily = (r) => r.osClass === 'macos';
-  const osEligible = (r) => (isMacOS ? isMacFamily(r) : isWindows ? !isMacFamily(r) : true);
+  // osClass:'macos'. Unknown OS → no veto, and a family that named itself
+  // outranks a platform inferred from loose cues rather than the OS line.
+  const os = classifyOs(ctx.combinedSysinfoText || ctx.sysinfoText || '');
+  const osEligible = (r) => {
+    if (!os.osClass) return true;
+    if ((r.osClass === 'macos') === (os.osClass === 'macos')) return true;
+    return !os.keyed && (r.selfIdMatched || (r.matchedCounts && r.matchedCounts.asciiBanner > 0));
+  };
 
-  const best = results.find(osEligible);
+  let best = results.find(osEligible);
+  if (!os.keyed && (!best || evidenceTier(best) < 1)) {
+    // The veto picks between candidates. Unless the OS line itself contradicts
+    // the family, it must not erase an identification the evidence supports.
+    best = results.find(r => evidenceTier(r) >= 2) || best;
+  }
+
   if (best && evidenceTier(best) >= 1) {
     const c = best.matchedCounts;
     const strongCats = strongCategoryCount(c);

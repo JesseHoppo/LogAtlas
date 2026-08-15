@@ -23,6 +23,7 @@ Example Logs/
 reports/
 scripts/
 processed examples/
+.tmp-review/
 
 # Internal docs (architecture, backlog, audit, review history) + sweep harness.
 docs/

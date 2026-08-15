@@ -1015,6 +1015,8 @@ function buildSiteIndexes({ cookies, history, notes, downloads, bookmarks }) {
   };
 }
 
+// `host` and `text` are stored already lower-cased: collectTenantSignal scans
+// every artifact once per credential, so re-normalising there is O(n*m).
 function buildProviderArtifacts({ cookies, history, downloads, notes }) {
   const artifacts = [];
 
@@ -1029,7 +1031,7 @@ function buildProviderArtifacts({ cookies, history, downloads, notes }) {
       providerLabel: provider.label,
       kind: provider.kind,
       host,
-      text: `${host} ${entry.name || ''}`,
+      text: normaliseText(`${host} ${entry.name || ''}`),
       date: null,
       recentWeight: entry.validityStatus === 'valid' ? 2 : 1,
     });
@@ -1046,7 +1048,7 @@ function buildProviderArtifacts({ cookies, history, downloads, notes }) {
       providerLabel: provider.label,
       kind: provider.kind,
       host,
-      text: `${entry.url || ''} ${entry.title || ''}`,
+      text: normaliseText(`${entry.url || ''} ${entry.title || ''}`),
       date: entry.lastVisitDate || null,
       recentWeight: Math.max(1, Number(entry.visitCount) || 1),
     });
@@ -1063,7 +1065,7 @@ function buildProviderArtifacts({ cookies, history, downloads, notes }) {
       providerLabel: provider.label,
       kind: provider.kind,
       host,
-      text: `${entry.sourceUrl || ''} ${entry.filePath || ''}`,
+      text: normaliseText(`${entry.sourceUrl || ''} ${entry.filePath || ''}`),
       date: null,
       recentWeight: 1,
     });
@@ -1071,7 +1073,7 @@ function buildProviderArtifacts({ cookies, history, downloads, notes }) {
 
   for (const entry of notes || []) {
     const joinedDomains = (entry.domains || []).join(' ');
-    const joinedText = `${entry.title || ''} ${entry.text || ''} ${joinedDomains}`;
+    const joinedText = normaliseText(`${entry.title || ''} ${entry.text || ''} ${joinedDomains}`);
     for (const domain of entry.domains || []) {
       if (!isLikelyWebHost(domain)) continue;
       const provider = getProviderDescriptor(domain);
@@ -1108,6 +1110,7 @@ function collectTenantSignal({ usernameEmail, usernameDomain, providerArtifacts,
   }
 
   const tokens = getDomainTokens(usernameDomain);
+  const tokenPatterns = tokens.map(tokenPattern);
   const exactEmail = normaliseText(usernameEmail);
   const evidence = [];
   let score = 0;
@@ -1115,20 +1118,18 @@ function collectTenantSignal({ usernameEmail, usernameDomain, providerArtifacts,
   let tokenMatched = false;
 
   for (const artifact of providerArtifacts) {
-    const artifactText = normaliseText(artifact.text);
-    const host = normaliseText(artifact.host);
-    const recentStrength = getRecentStrength(artifact.date, captureDate);
+    const artifactText = artifact.text;
 
-    if (!exactDomainMatched && artifact.kind === 'tenant' && (artifactText.includes(usernameDomain) || host.includes(usernameDomain))) {
-      const amount = recentStrength >= 2 ? 14 : 9;
+    if (!exactDomainMatched && artifact.kind === 'tenant' && (artifactText.includes(usernameDomain) || artifact.host.includes(usernameDomain))) {
+      const amount = getRecentStrength(artifact.date, captureDate) >= 2 ? 14 : 9;
       score += amount;
       evidence.push({ amount, label: `${artifact.providerLabel} tenant activity mentions ${usernameDomain}` });
       exactDomainMatched = true;
       continue;
     }
 
-    if (!tokenMatched && artifact.kind === 'tenant' && tokens.some((token) => tokenPattern(token).test(artifactText))) {
-      const amount = recentStrength >= 2 ? 10 : 6;
+    if (!tokenMatched && artifact.kind === 'tenant' && tokenPatterns.some((pattern) => pattern.test(artifactText))) {
+      const amount = getRecentStrength(artifact.date, captureDate) >= 2 ? 10 : 6;
       score += amount;
       evidence.push({ amount, label: `${artifact.providerLabel} tenant activity matches ${tokens[0]}` });
       tokenMatched = true;
@@ -1220,6 +1221,7 @@ function scoreCredential(entry, context) {
     identityDomains,
     siteIndexes,
     providerArtifacts,
+    genericProviderSupport,
   } = context;
 
   if (usernameEmail) {
@@ -1282,7 +1284,11 @@ function scoreCredential(entry, context) {
   const cookieMap = useFullHost ? siteIndexes.cookieByHost : siteIndexes.cookieByBase;
   const historyMap = useFullHost ? siteIndexes.historyByHost : siteIndexes.historyByBase;
 
-  if (siteBase && (!siteProvider || siteProvider.kind !== 'generic')) {
+  // Own-site evidence always counts, generic providers included: a valid
+  // session cookie for github.com is direct proof for a github.com credential.
+  // Generic de-crediting applies only where an artifact would lend credit to a
+  // credential on a different host (see genericProviderSupport below).
+  if (siteBase) {
     const cookieSummary = cookieMap.get(cookieKey);
     const cookieLabel = useFullHost ? siteHost : siteBase;
     if (cookieSummary?.validSessions) {
@@ -1366,7 +1372,6 @@ function scoreCredential(entry, context) {
     }
   }
 
-  const genericProviderSupport = collectGenericProviderSupport({ providerArtifacts, captureDate });
   const canUseGenericProviderSupport = Boolean(
     genericProviderSupport.length > 0
     && !result.conflictDomain
@@ -1693,6 +1698,10 @@ function buildCredentialCurrentnessModel(input) {
     identityDomains,
     siteIndexes,
     providerArtifacts,
+    genericProviderSupport: collectGenericProviderSupport({
+      providerArtifacts,
+      captureDate: captureContext.date,
+    }),
     passwordReuse,
   };
 
