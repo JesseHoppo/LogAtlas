@@ -465,6 +465,7 @@ function renderTriageOverview() {
   const grabbed = overviewState.grabbedFiles;
   const screenshot = overviewState.screenshot;
   const autofill = overviewState.autofill;
+  const notes = overviewState.notes;
   const readErrors = overviewState.readErrors;
 
   const osUser = findSysinfoValue(sysinfo, [/^user\s*name$/i, /^username$/i, /^os user$/i]);
@@ -514,21 +515,29 @@ function renderTriageOverview() {
     riskBody.innerHTML = '';
   }
 
-  renderSeedBanner(wallets);
+  renderSeedBanner(wallets, notes);
   renderNationalIds(credentials);
-  renderConsistencyChecks({ credentials, cookies, history, countryInfo });
+  renderConsistencyChecks({ credentials, cookies, history, countryInfo, capture: exfilInfo });
 }
 
-function renderSeedBanner(wallets) {
+// A recovery phrase is as good as the wallet whether it sits in the wallet
+// store or in a text file the victim kept it in, so both sources raise the
+// same banner and it names the ones that fired.
+function renderSeedBanner(wallets, notes) {
   const banner = document.getElementById('dashSeedBanner');
   if (!banner) return;
-  if (wallets?.withSeedHints > 0) {
-    banner.classList.remove('hidden');
-    banner.textContent = `${pluralise(wallets.withSeedHints, 'wallet store')} contain seed / recovery-phrase material — treat as full account compromise.`;
-  } else {
+  const stores = wallets?.withSeedHints || 0;
+  const seedNotes = notes?.seedPhraseNotes || 0;
+  if (stores === 0 && seedNotes === 0) {
     banner.classList.add('hidden');
     banner.textContent = '';
+    return;
   }
+  const bits = [];
+  if (stores > 0) bits.push(countLabel(stores, 'wallet store'));
+  if (seedNotes > 0) bits.push(countLabel(seedNotes, 'note'));
+  banner.classList.remove('hidden');
+  banner.textContent = `${joinNaturalList(bits)} with seed / recovery-phrase material — treat as full wallet compromise.`;
 }
 
 function renderNationalIds(credentials) {
