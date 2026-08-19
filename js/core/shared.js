@@ -559,15 +559,19 @@ function inferBrowserFromContent(text) {
   return '';
 }
 
-function inferProfileFromPath(pathText) {
-  const value = String(pathText || '');
-  const explicitMatch = value.match(/\b(?:Default|Guest Profile|Profile\s*\d+|Profile_\d+|Default\[[^\]]+\]|Profile\s*\d+\[[^\]]+\]|[a-z0-9._-]+\.default(?:-release)?)\b/i);
-  if (explicitMatch) {
-    return explicitMatch[0].replace(/\[[^\]]+\]/g, '').trim();
-  }
+// The names a browser actually gives a profile, and nothing else. Whatever a
+// stealer puts next to the browser in a filename is usually the artifact, the
+// release channel or a per-file hash — `Chrome_Debug.txt`, `Opera GX
+// Stable_[a9aec27e]`, `keys/Google Chrome/v10.txt` — and reading those as
+// profiles scattered one profile across as many labels as there were files.
+const PROFILE_NAME_PATTERN = /\b(?:Default|Guest Profile|System Profile|Profile\s*\d+|[a-z0-9.-]+\.default(?:-release)?)\b/i;
 
-  const pathProfileMatch = value.match(/(?:Chrome|Edge|Firefox|Opera|Brave|Vivaldi|Chromium|YandexBrowser|Google Chrome|Microsoft Edge|Arc)[_\s/-]+([^/.]+(?:\s+\d+)*)/i);
-  return pathProfileMatch ? pathProfileMatch[1].trim() : '';
+function inferProfileFromPath(pathText) {
+  // `Edge_Default_passwords.txt` hides `Default` behind an underscore, which is
+  // a word character, so `\b` never fires there. Reading `_` as a separator
+  // first lets the names match however the stealer joined them.
+  const match = String(pathText || '').replace(/_/g, ' ').match(PROFILE_NAME_PATTERN);
+  return match ? match[0].trim() : '';
 }
 
 function normaliseAutofillValue(value) {
