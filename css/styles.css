@@ -429,6 +429,13 @@ body {
   color: var(--text-secondary);
 }
 
+/* Sidebar contents animate `all`, so the visibility the narrow-screen drawer
+   inherits would ride that timing and stay focusable for a beat after it
+   closes. Everything the sidebar actually animates is still in this list. */
+.sidebar * {
+  transition-property: background-color, border-color, color, opacity, box-shadow, transform;
+}
+
 .main-content {
   flex: 1;
   margin-left: var(--sidebar-width);
@@ -3522,15 +3529,32 @@ body {
     min-width: 44px;
     min-height: 44px;
   }
+  /* Off-canvas by transform alone still holds focus and stays in the
+     accessibility tree, so the closed drawer is hidden outright. Visibility
+     stays out of the transition so it flips with the state, not after it. */
   .sidebar {
     width: 220px;
     transform: translateX(-100%);
+    visibility: hidden;
     transition: transform 0.2s ease;
     box-shadow: none;
   }
+  /* `none`, not `translateX(0)`: any transform would make the panel the
+     containing block for its own fixed-position dimmer, collapsing it to
+     nothing. The slide still animates — none interpolates as the identity. */
   .sidebar.open {
-    transform: translateX(0);
+    transform: none;
+    visibility: visible;
     box-shadow: var(--shadow-float);
+  }
+  /* Dims the page behind the open drawer and swallows the tap that closes it,
+     so dismissing the drawer cannot also press whatever sits underneath. */
+  .sidebar.open::after {
+    content: '';
+    position: fixed;
+    inset: 0 0 0 220px;
+    background: rgba(0, 0, 0, 0.45);
+    pointer-events: auto;
   }
   .main-content {
     margin-left: 0;
