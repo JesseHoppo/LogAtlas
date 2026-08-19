@@ -49,10 +49,6 @@ function setOverviewState(key, value) {
   renderTriageOverview();
 }
 
-function pluralise(value, singular, plural = singular + 's') {
-  return `${value.toLocaleString()} ${value === 1 ? singular : plural}`;
-}
-
 // Rows with no captured password are tallied separately, so "nothing parsed"
 // only holds when all three credential tallies are zero.
 function parsedCredentialRows(credentials) {
@@ -465,27 +461,27 @@ function renderTriageOverview() {
   const riskItems = [];
   if (credentials?.onionCredentials > 0) {
     riskItems.push({
-      text: `Tor hidden-service (.onion) credentials in ${pluralise(credentials.onionCredentials, 'domain')}: strong indicator of darknet-market or carding activity.`,
+      text: `Tor hidden-service (.onion) credentials in ${countLabel(credentials.onionCredentials, 'domain')} — darknet-market or carding indicator.`,
       variant: 'warn',
     });
   }
   if (clipboardLures.length > 0) {
     riskItems.push({
-      text: 'Clipboard holds a likely social-engineering lure or clipper (ClickFix / PowerShell / address-swap).',
+      text: 'Clipboard lure or clipper (ClickFix / PowerShell / address-swap).',
       variant: 'warn',
     });
   }
   if (cards?.withCvc > 0) {
     riskItems.push({
-      text: `${pluralise(cards.withCvc, 'payment card')} recovered with a CVC value; treat as full card compromise.`,
+      text: `${countLabel(cards.withCvc, 'payment card')} recovered with a CVC value; treat as full card compromise.`,
       variant: 'warn',
     });
   }
   if (credentials?.failedFiles?.length > 0) {
-    riskItems.push(`${pluralise(credentials.failedFiles.length, 'password file')} could not be parsed cleanly; review manually.`);
+    riskItems.push(`${countLabel(credentials.failedFiles.length, 'password file')} could not be parsed cleanly; review manually.`);
   }
   if (readErrors?.failedFiles?.length > 0) {
-    riskItems.push(`${pluralise(readErrors.failedFiles.length, 'file')} could not be read or decoded and were skipped.`);
+    riskItems.push(`${countLabel(readErrors.failedFiles.length, 'file')} could not be read or decoded and were skipped.`);
   }
 
   if (riskItems.length > 0) {
@@ -526,7 +522,7 @@ function renderNationalIds(credentials) {
   section.classList.remove('hidden');
   renderSimpleList(body, ids.map((n) => {
     const where = n.country ? ` (${n.country})` : '';
-    return `${n.type}${where}: ${pluralise(n.count, 'field')}`;
+    return `${n.type}${where}: ${countLabel(n.count, 'field')}`;
   }));
 }
 
@@ -872,7 +868,7 @@ export function initDashboard() {
     summaryEl.classList.remove('dash-loading');
 
     if (data.totalCookies > 0) {
-      let summaryHtml = `${data.totalCookies.toLocaleString()} cookies across ${data.uniqueDomains} domains from ${data.fileCount} file(s) &mdash; <span class="cookie-valid">${data.totalValid.toLocaleString()} valid</span>, <span class="cookie-expired">${data.totalExpired.toLocaleString()} expired</span>`;
+      let summaryHtml = `${data.totalCookies.toLocaleString()} cookies across ${data.uniqueDomains.toLocaleString()} domains from ${countLabel(data.fileCount, 'file')} &mdash; <span class="cookie-valid">${data.totalValid.toLocaleString()} valid</span>, <span class="cookie-expired">${data.totalExpired.toLocaleString()} expired</span>`;
       if (data.totalSession > 0) {
         summaryHtml += `, <span class="cookie-session">${data.totalSession.toLocaleString()} session</span>`;
       }
@@ -894,7 +890,7 @@ export function initDashboard() {
       summaryEl.innerHTML = summaryHtml;
       renderCookieBarList(document.getElementById('dashTopCookieDomains'), data.topDomains);
     } else {
-      summaryEl.textContent = 'No structured cookie data could be parsed.';
+      summaryEl.textContent = 'No cookies parsed.';
     }
   });
 
@@ -1023,7 +1019,7 @@ export function initDashboard() {
     }
 
     section.classList.remove('hidden');
-    summaryEl.textContent = `${data.totalDownloads.toLocaleString()} download entr${data.totalDownloads === 1 ? 'y' : 'ies'} from ${data.fileCount} file(s)`;
+    summaryEl.textContent = `${countLabel(data.totalDownloads, 'download entry', 'download entries')} from ${countLabel(data.fileCount, 'file')}`;
     renderBarList(body, data.topDomains);
   });
 
