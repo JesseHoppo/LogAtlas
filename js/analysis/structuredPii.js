@@ -1,12 +1,11 @@
 import { NATIONAL_ID_PATTERNS } from '../core/definitions/patterns.js';
 import { BIP39_WORDS } from '../core/definitions/bip39.js';
 import { countMatches } from '../core/shared.js';
+import { BTC_ADDRESS_REGEX, ETH_ADDRESS_REGEX, isValidBitcoinAddress } from '../core/cryptoAddress.js';
 
 const PAN_REGEX = /\b(?:\d[ -]?){13,19}\b/g;
 const IBAN_REGEX = /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g;
-const ETH_ADDRESS_REGEX = /\b0x[a-fA-F0-9]{40}\b/g;
-const BTC_ADDRESS_REGEX = /\b(?:bc1[a-z0-9]{25,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g;
-const SEED_RUN_REGEX = /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){11,}\b/g;
+const SEED_WORD_REGEX = /[a-z]+/g;
 const MIN_SEED_WORDS = 12;
 
 function isLuhnValid(digits) {
@@ -55,19 +54,37 @@ function detectNationalIds(text) {
   return out;
 }
 
-function detectSeedPhrase(text) {
+// A seed gets written down however its owner felt like it — commas, numbering, bullets,
+// one word per line — so the walk ignores whatever sits between letter tokens. Bridging
+// separators that freely also bridges unrelated lines, hence the distinctness test: a
+// seed draws its words from 2048 and repeats at most one, while the log noise that
+// tokenises into a long BIP39 run (`true, true, ...`, `[enter]`) is a word or two cycling.
+// Runs are taken end to end, never overlapping, so a 24-word seed counts once.
+function countSeedPhrases(text, limit = Infinity) {
   const value = String(text || '').toLowerCase();
-  if (!value) return false;
-  SEED_RUN_REGEX.lastIndex = 0;
+  if (!value) return 0;
+  SEED_WORD_REGEX.lastIndex = 0;
+  const run = [];
+  let found = 0;
   let match;
-  while ((match = SEED_RUN_REGEX.exec(value)) !== null) {
-    let run = 0;
-    for (const word of match[0].split(/\s+/)) {
-      run = BIP39_WORDS.has(word) ? run + 1 : 0;
-      if (run >= MIN_SEED_WORDS) return true;
+  while ((match = SEED_WORD_REGEX.exec(value)) !== null) {
+    if (!BIP39_WORDS.has(match[0])) {
+      run.length = 0;
+      continue;
+    }
+    run.push(match[0]);
+    if (run.length > MIN_SEED_WORDS) run.shift();
+    if (run.length === MIN_SEED_WORDS && new Set(run).size >= MIN_SEED_WORDS - 1) {
+      found++;
+      if (found >= limit) return found;
+      run.length = 0;
     }
   }
-  return false;
+  return found;
+}
+
+function detectSeedPhrase(text) {
+  return countSeedPhrases(text, 1) > 0;
 }
 
 function detectStructuredPii(text) {
@@ -98,7 +115,9 @@ function hasStructuredPii(pii) {
 }
 
 export {
+  countSeedPhrases,
   detectNationalIds,
+  detectSeedPhrase,
   detectStructuredPii,
   hasStructuredPii,
   isLuhnValid,
