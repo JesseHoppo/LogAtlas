@@ -32,15 +32,8 @@ function startFreshUI({ name, sizeBytes, multiFile }) {
   document.getElementById('currentFileName').textContent = name;
   document.getElementById('currentFileSize').textContent = formatBytes(sizeBytes);
 
-  const addMoreBtn = document.getElementById('addMoreBtn');
-  const pasteMoreBtn = document.getElementById('pasteMoreBtn');
-  if (multiFile) {
-    addMoreBtn.classList.remove('hidden');
-    pasteMoreBtn.classList.remove('hidden');
-  } else {
-    addMoreBtn.classList.add('hidden');
-    pasteMoreBtn.classList.add('hidden');
-  }
+  document.getElementById('addMoreBtn').classList.remove('hidden');
+  document.getElementById('pasteMoreBtn').classList.remove('hidden');
 
   document.getElementById('results').classList.remove('visible');
   document.getElementById('errorList').classList.remove('visible');
@@ -53,16 +46,18 @@ async function handleFiles(files, { resetUI }) {
   const fileArray = Array.from(files);
   if (fileArray.length === 0) return;
 
-  const isMultiFile = fileArray.length > 1 ||
-    (fileArray.length === 1 && !isArchiveFile(fileArray[0].name));
-
-  if (state.fileTree && state.isMultiFileMode) {
+  // Anything arriving over an open case joins it, whether that case came out of
+  // an archive or out of a folder drop.
+  if (state.fileTree) {
     await handleAddMoreFiles(fileArray);
     return;
   }
 
+  const isMultiFile = fileArray.length > 1 ||
+    (fileArray.length === 1 && !isArchiveFile(fileArray[0].name));
+
   const name = isMultiFile
-    ? (fileArray.length === 1 ? fileArray[0].name : `${fileArray.length} files`)
+    ? (fileArray.length === 1 ? fileArray[0].name : countLabel(fileArray.length, 'file'))
     : fileArray[0].name;
   const sizeBytes = isMultiFile
     ? fileArray.reduce((sum, f) => sum + f.size, 0)
