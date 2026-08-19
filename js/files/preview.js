@@ -16,7 +16,7 @@ import {
 } from '../core/utils.js';
 import { LIMITS } from '../core/definitions/patterns.js';
 import { toCSV } from '../transforms/shared.js';
-import { downloadBlob, copyToClipboard, SHARED_TEXT_DECODER } from '../core/shared.js';
+import { downloadBlob, copyToClipboard, decodeBufferWithFallback, decodeNodeCached } from '../core/shared.js';
 import { openColumnMapper } from './columnMapper.js';
 import { buildFileTypeOptionsHtml, getFileTypeLabel, getNodeFileTypes } from './fileTypeRegistry.js';
 import {
@@ -123,7 +123,7 @@ async function readZipEntryText(entry, budgetState) {
   if (budgetState && budgetState.totalDecoded + size > LIMITS.ooxmlTotalMaxBytes) return null;
   const data = await entry.getData(new zip.Uint8ArrayWriter());
   if (budgetState) budgetState.totalDecoded += size;
-  return SHARED_TEXT_DECODER.decode(data);
+  return decodeBufferWithFallback(data);
 }
 
 async function extractWordOpenXmlPreview(entryMap, budgetState) {
@@ -908,10 +908,10 @@ async function showPreview(name, size, pathSegments) {
     }
   } else if (isTextFile(name)) {
     try {
-      const text = SHARED_TEXT_DECODER.decode(content);
+      const text = decodeNodeCached(node, content);
       currentDecodedText = text;
       const parsed = parsePreviewText(text, node);
-      currentParsedData = parsed && parsed.rows.length > 0 ? parsed : null;
+      currentParsedData = hasUsableColumns(parsed) ? parsed : null;
       showTextView();
       elCopyBtn.classList.remove('hidden');
     } catch (_) {
@@ -919,7 +919,7 @@ async function showPreview(name, size, pathSegments) {
     }
   } else if (looksLikeText(content)) {
     try {
-      const text = SHARED_TEXT_DECODER.decode(content);
+      const text = decodeNodeCached(node, content);
       currentDecodedText = text;
       currentParsedData = null;
       showTextView();

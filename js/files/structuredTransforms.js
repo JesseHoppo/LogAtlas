@@ -1,5 +1,5 @@
 import { isTextFile, looksLikeText } from '../core/utils.js';
-import { SHARED_TEXT_DECODER } from '../core/shared.js';
+import { decodeNodeCached } from '../core/shared.js';
 import { getNodeFileType, isTransformableFileType, supportsColumnMapping } from './fileTypeRegistry.js';
 import {
   parsePasswordFile,
@@ -66,7 +66,7 @@ function parseStructuredFile({
   const getText = () => {
     if (decodedText != null) return decodedText;
     if (!(content instanceof Uint8Array)) return '';
-    decodedText = SHARED_TEXT_DECODER.decode(content);
+    decodedText = decodeNodeCached(node, content);
     return decodedText;
   };
 
@@ -124,7 +124,7 @@ function canOfferTransformAction(node, fileName = '', content = null) {
   if (!shouldAttemptFallbackTransform(fileName, content)) return false;
   if (!(content instanceof Uint8Array)) return false;
   try {
-    const text = SHARED_TEXT_DECODER.decode(content);
+    const text = decodeNodeCached(node, content);
     return detectFormat(text) != null;
   } catch {
     return false;
