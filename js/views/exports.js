@@ -755,8 +755,19 @@ async function exportParsedDataZip() {
       await addTextFile(filename, buildCsvText(headers, rows));
     }
 
+    // The page that owns a dataset owns its column set. Writing those columns
+    // out a second time here is how the packaged CSV and the on-screen one
+    // drifted apart, so the page's spec is used verbatim.
+    async function addPageCsv(pageId, entries) {
+      const spec = CSV_SPECS[pageId];
+      await addCsvFile(spec.file, spec.headers, entries.map(spec.row));
+    }
+
     if (passwords.rows.length > 0) {
-      await addCsvFile('credentials.csv', passwords.headers, passwords.rows.map(({ row }) => row));
+      // A row merged from several dumps carries every path it came from, and a
+      // log's own columns may already be called Source.
+      await addCsvFile('credentials.csv', [...passwords.headers, 'Source File'],
+        passwords.rows.map(({ row, source }) => [...row, source]));
     }
 
     if (cookies.rows.length > 0) {
