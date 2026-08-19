@@ -234,7 +234,10 @@ export function classifyPasswordFieldKey(key) {
 }
 
 export function canonicalisePasswordExtraHeader(key) {
-  const raw = String(key || '').trim().replace(/\s+/g, ' ');
+  // Dumps that number their records — `Site 1:`, `Server 1:`, `Server 2:` — label
+  // every record with a different key. Without dropping the ordinal each one opens
+  // a column of its own and the table grows a column per record.
+  const raw = String(key || '').trim().replace(/\s+/g, ' ').replace(/\s\d{1,6}$/, '');
   const normalised = normalisePasswordFieldKey(raw);
   if (!normalised) return '';
   if (['soft', 'software', 'application', 'app', 'program', 'client'].includes(normalised)) return 'Software';
