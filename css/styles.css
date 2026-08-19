@@ -728,6 +728,7 @@ body {
 
 .dash-intel-heading {
   font-size: 0.7rem;
+  font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2029,7 +2030,7 @@ body {
 .error-list.visible {
   display: block;
 }
-.error-list h4 {
+.error-list h3 {
   color: var(--error);
   font-size: 0.8rem;
   margin-bottom: 0.5rem;

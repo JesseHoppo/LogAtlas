@@ -108,100 +108,100 @@
           <div class="dash-verdict-cards hidden" id="dashVerdictCards"></div>
 
           <div class="dash-section hidden" id="dashRiskSignals">
-            <div class="dash-section-title">Assessment</div>
+            <h3 class="dash-section-title">Assessment</h3>
             <div class="dash-list" id="dashRiskSignalsBody"></div>
           </div>
           <div class="dash-section hidden" id="dashConsistency">
-            <div class="dash-section-title">Cross-checks</div>
+            <h3 class="dash-section-title">Cross-checks</h3>
             <div class="dash-list" id="dashConsistencyBody"></div>
           </div>
           <div class="dash-section hidden" id="dashScreenshot">
-            <div class="dash-section-title">Screenshot</div>
+            <h3 class="dash-section-title">Screenshot</h3>
             <div class="dash-screenshot-body" id="dashScreenshotBody"></div>
           </div>
           <div class="dash-section hidden" id="dashStealerInfra">
-            <div class="dash-section-title">Stealer Infrastructure</div>
+            <h3 class="dash-section-title">Stealer infrastructure</h3>
             <div class="dash-ioc-grid" id="dashStealerInfraBody"></div>
           </div>
           <div class="dash-section hidden" id="dashClipboardLures">
-            <div class="dash-section-title">Clipboard Lures</div>
+            <h3 class="dash-section-title">Clipboard lures</h3>
             <div class="dash-ioc-grid" id="dashClipboardLuresBody"></div>
           </div>
           <div class="dash-section hidden" id="dashIOCs">
-            <div class="dash-section-title">Identifiers</div>
+            <h3 class="dash-section-title">Identifiers</h3>
             <div class="dash-ioc-grid" id="dashIOCBody"></div>
           </div>
           <div class="dash-section hidden" id="dashNationalIds">
-            <div class="dash-section-title">Government Identifiers</div>
+            <h3 class="dash-section-title">Government identifiers</h3>
             <div class="dash-list" id="dashNationalIdsBody"></div>
           </div>
           <div class="dash-section hidden" id="dashCredIntel">
-            <div class="dash-section-title">Credential Intelligence</div>
-            <div class="dash-section-subtitle dash-loading" id="dashCredSummary">Analysing credential files...</div>
+            <h3 class="dash-section-title">Credentials</h3>
+            <div class="dash-section-subtitle dash-loading" id="dashCredSummary">Analysing…</div>
             <div class="dash-intel-grid">
               <div class="dash-intel-col">
-                <div class="dash-intel-heading">Top Domains</div>
+                <h4 class="dash-intel-heading">Top domains</h4>
                 <div class="dash-bar-list" id="dashTopDomains"></div>
               </div>
               <div class="dash-intel-col">
-                <div class="dash-intel-heading">Top Usernames</div>
+                <h4 class="dash-intel-heading">Top usernames</h4>
                 <div class="dash-bar-list" id="dashTopUsernames"></div>
               </div>
               <div class="dash-intel-col hidden" id="dashLocalNetworkCol">
-                <div class="dash-intel-heading">Local Network</div>
+                <h4 class="dash-intel-heading">Local network</h4>
                 <div class="dash-bar-list" id="dashLocalNetwork"></div>
               </div>
             </div>
           </div>
           <div class="dash-section hidden" id="dashCookieIntel">
-            <div class="dash-section-title">Cookie Intelligence</div>
-            <div class="dash-section-subtitle dash-loading" id="dashCookieSummary">Analysing cookie files...</div>
+            <h3 class="dash-section-title">Cookies</h3>
+            <div class="dash-section-subtitle dash-loading" id="dashCookieSummary">Analysing…</div>
             <div class="dash-intel-grid">
               <div class="dash-intel-col">
-                <div class="dash-intel-heading">Top Domains</div>
+                <h4 class="dash-intel-heading">Top domains</h4>
                 <div class="dash-bar-list" id="dashTopCookieDomains"></div>
               </div>
             </div>
           </div>
           <div class="dash-section hidden" id="dashAutofillIntel">
-            <div class="dash-section-title">Autofill Data</div>
-            <div class="dash-section-subtitle dash-loading" id="dashAutofillSummary">Analysing autofill files...</div>
+            <h3 class="dash-section-title">Autofill</h3>
+            <div class="dash-section-subtitle dash-loading" id="dashAutofillSummary">Analysing…</div>
             <div id="dashAutofillBody"></div>
           </div>
 
           <div class="dash-section hidden" id="dashDownloadIntel">
-            <div class="dash-section-title">Download Activity</div>
-            <div class="dash-section-subtitle" id="dashDownloadSummary">Analysing download files...</div>
+            <h3 class="dash-section-title">Downloads</h3>
+            <div class="dash-section-subtitle" id="dashDownloadSummary">Analysing…</div>
             <div class="dash-bar-list" id="dashDownloadBody"></div>
           </div>
           <div class="dash-section hidden" id="dashDomainDetect">
-            <div class="dash-section-title">Domain Detections</div>
+            <h3 class="dash-section-title">Domain detections</h3>
             <div id="dashDomainDetectBody"></div>
           </div>
           <div class="dash-section hidden" id="dashExtraIntel">
-            <div class="dash-section-title">Other Artifacts</div>
+            <h3 class="dash-section-title">Other artifacts</h3>
             <div class="dash-extra-body" id="dashExtraBody"></div>
           </div>
           <div class="no-data hidden" id="overviewNoData">
-            No recognised data detected.
+            No recognised data.
           </div>
           <div class="error-list" id="errorList" aria-live="polite">
-            <h4>Extraction Errors</h4>
+            <h3>Extraction errors</h3>
             <ul id="errorListItems"></ul>
           </div>
         </div>
         <div class="page" id="pageSysInfo">
-          <h2 class="page-title">System Information</h2>
+          <h2 class="page-title">System information</h2>
           <div class="dash-section">
             <div class="dash-section-header sysinfo-toolbar">
-              <button class="sysinfo-open-btn hidden" id="sysInfoOpenBtn">View Source File</button>
+              <button class="sysinfo-open-btn hidden" id="sysInfoOpenBtn"></button>
               <div class="sysinfo-actions hidden" id="sysInfoActions">
-                <button class="export-btn" id="sysInfoCopyAll" title="Copy all key-value pairs to clipboard">Copy All</button>
-                <button class="export-btn" id="sysInfoExportCsv" title="Download as CSV">Export CSV</button>
+                <button class="export-btn" id="sysInfoCopyAll" title="Copy all key-value pairs to clipboard">Copy all</button>
+                <button class="export-btn" id="sysInfoExportCsv" title="Download as CSV">Download CSV</button>
               </div>
             </div>
             <div class="dash-kv" id="dashSysInfoBody">
-              <div class="no-data" id="sysInfoNoData">No system information files detected.</div>
+              <div class="no-data" id="sysInfoNoData">No system information files.</div>
             </div>
           </div>
         </div>
