@@ -93,12 +93,14 @@ function createNode(name, opts = {}) {
     isArchive: opts.isArchive || false,
     isNestedArchive: opts.isNestedArchive || false,
     encrypted: opts.encrypted || false,
-    previewable: opts.previewable || false,
     _zipEntry: opts.zipEntry || null,
     _password: opts.password || null,
     _blobContent: opts.blobContent || null,
     lastModified: opts.lastModified || null,
-    children: opts.type === 'directory' ? {} : undefined,
+    // Null-prototype: an archive entry named `__proto__` or `constructor` is
+    // a path segment, and writing it into a plain object mutates every object
+    // in the page and loses the entry.
+    children: opts.type === 'directory' ? Object.create(null) : undefined,
   };
 }
 
@@ -127,7 +129,7 @@ function insertPath(root, pathSegments, nodeData) {
       current.children[seg] = child;
     } else if (!child.children) {
       child.type = 'directory';
-      child.children = {};
+      child.children = Object.create(null);
     }
     current = child;
   }
@@ -139,7 +141,7 @@ function insertPath(root, pathSegments, nodeData) {
         current.children[leafName] = createNode(leafName, nodeData);
       } else {
         existing.type = 'directory';
-        if (!existing.children) existing.children = {};
+        if (!existing.children) existing.children = Object.create(null);
       }
     } else {
       leafName = getUniqueChildName(current, leafName);
@@ -424,7 +426,6 @@ async function walkExtractedFiles(obj, depth, root, parentPath, counts) {
         isArchive,
         isNestedArchive: isArchive,
         encrypted: false,
-        previewable: isPreviewable(key),
         // The wasm build exposes only archive_entry_mtime_nsec, the sub-second
         // fraction, so entry times are unrecoverable here. A File built without
         // one reports the moment it was extracted, which the capture-date
