@@ -456,27 +456,45 @@ export function parseWithConfig(text, config) {
   }
 
   const rows = [];
+  let raggedRows = 0;
   for (let i = startIdx; i < lines.length; i++) {
     const cells = splitFn(lines[i]);
+    if (cells.length > totalCols) {
+      raggedRows++;
+      foldOverflow(cells, totalCols, delimiter);
+    }
     rows.push(keepIndices.map(idx => (cells[idx] ?? '').trim()));
   }
 
-  return { headers, rows };
+  return { headers, rows, raggedRows };
 }
+
+// A file whose records share no fields — a combolist read as key/value pairs is
+// the usual way in — grows one column per record. The table that builds is
+// wider than anything can show and costs a cell per record per column, so stop
+// taking new fields once there are more of them than a record could sensibly
+// carry.
+const EXTRA_FIELD_LIMIT = 256;
 
 export function buildPasswordDataset(records) {
   if (!records || records.length === 0) return null;
 
   const extraHeaders = [];
+  const seen = new Set(['URL', 'Username', 'Password']);
   for (const record of records) {
     for (const key of Object.keys(record)) {
-      if (key === 'URL' || key === 'Username' || key === 'Password') continue;
-      if (!extraHeaders.includes(key)) extraHeaders.push(key);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      extraHeaders.push(key);
     }
+    if (extraHeaders.length >= EXTRA_FIELD_LIMIT) break;
   }
+  extraHeaders.length = Math.min(extraHeaders.length, EXTRA_FIELD_LIMIT);
 
   const headers = ['URL', 'Username', 'Password', ...extraHeaders];
-  const rows = records.map(record => headers.map(header => record[header] || ''));
+  const rows = records.map(record => headers.map(header => (
+    Object.prototype.hasOwnProperty.call(record, header) ? record[header] || '' : ''
+  )));
   return { headers, rows };
 }
 
