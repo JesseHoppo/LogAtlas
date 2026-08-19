@@ -404,9 +404,21 @@ function buildLogSummaryHtml(data) {
     if (pi.names.length > 0) piRows += `<tr><td>Name</td><td>${pi.names.map(e).join(', ')}</td></tr>`;
     if (pi.emails.length > 0) piRows += `<tr><td>Email</td><td>${pi.emails.map(e).join(', ')}</td></tr>`;
     if (pi.phones.length > 0) piRows += `<tr><td>Phone</td><td>${pi.phones.map(e).join(', ')}</td></tr>`;
-    if (pi.osUsername) piRows += `<tr><td>OS User</td><td>${e(pi.osUsername)}</td></tr>`;
+    if (pi.osUsername) piRows += `<tr><td>OS user</td><td>${e(pi.osUsername)}</td></tr>`;
     if (pi.computerName) piRows += `<tr><td>Computer</td><td>${e(pi.computerName)}</td></tr>`;
-    if (pi.location) piRows += `<tr><td>Location</td><td>${e(pi.location)}</td></tr>`;
+    if (pi.location) {
+      const located = pi.locationSource && pi.locationSource !== 'sysinfo'
+        ? `${pi.location} (from ${pi.locationSource})`
+        : pi.location;
+      piRows += `<tr><td>Location</td><td>${e(located)}</td></tr>`;
+    }
+    // A stored street address is a form value, not where the host sits.
+    if (pi.autofillAddress) {
+      const address = pi.autofillAddressCount > 1
+        ? `${pi.autofillAddress} (1 of ${countLabel(pi.autofillAddressCount, 'autofill address', 'autofill addresses')})`
+        : pi.autofillAddress;
+      piRows += `<tr><td>Autofill address</td><td>${e(address)}</td></tr>`;
+    }
 
     const es = id.exposureSummary;
     let acctRows = '';
@@ -416,22 +428,22 @@ function buildLogSummaryHtml(data) {
     }
 
     sections += `<section>
-      <h2>Victim Profile</h2>
+      <h2>Victim profile</h2>
       ${piRows ? `<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>${piRows}</tbody></table>` : ''}
       <div class="stat-row" style="margin-top:0.75rem;">
-        <div class="stat"><span class="stat-num">${es.totalUniqueServices}</span> services</div>
-        <div class="stat"><span class="stat-num" style="color:#d97706">${es.servicesWithLiveSessions}</span> services live at capture</div>
-        <div class="stat"><span class="stat-num" style="color:#dc2626">${es.servicesWithBothPasswordAndSession}</span> password + live session</div>
-        <div class="stat"><span class="stat-num">${es.uniqueEmails}</span> email addresses</div>
+        ${stat(es.totalUniqueServices, 'service')}
+        ${stat(es.servicesWithLiveSessions, 'service live at capture', 'services live at capture', 'review')}
+        ${stat(es.servicesWithBothPasswordAndSession, 'password + live session', 'password + live session', 'risk')}
+        ${stat(es.uniqueEmails, 'email address', 'email addresses')}
       </div>
-      ${acctRows ? `<h3>Services with a Live Session at Capture</h3><table><thead><tr><th>Domain</th><th>Linked Emails</th></tr></thead><tbody>${acctRows}</tbody></table>` : ''}
+      ${acctRows ? `<h3>Services with a live session at capture</h3><table><thead><tr><th>Domain</th><th>Linked Emails</th></tr></thead><tbody>${acctRows}</tbody></table>` : ''}
     </section>`;
   }
 
   const infraIocs = (data.sysinfoIocs || []).filter(i => i.kind === 'stealer-infra');
   if (infraIocs.length > 0) {
     sections += `<section>
-      <h2>Stealer Infrastructure</h2>
+      <h2>Stealer infrastructure</h2>
       <table><thead><tr><th>Label</th><th>Family</th><th>Value</th></tr></thead><tbody>${
         infraIocs.map(ioc =>
           `<tr><td>${e(ioc.label)}</td><td>${e(ioc.family || '')}</td><td>${e(ioc.value)}</td></tr>`
