@@ -1289,6 +1289,13 @@ function scoreCredential(entry, context) {
   const targetIdentityDomain = usernameDomain && identityDomains.byDomain.has(usernameDomain)
     ? identityDomains.byDomain.get(usernameDomain)
     : null;
+  // Credential usernames seed the identity index themselves, so a domain whose
+  // only source is 'credentials' corroborates nothing — however many rows carry
+  // it. The fit verdict reads this one, not the raw lookup.
+  const corroboratedIdentityDomain = targetIdentityDomain
+    && !(targetIdentityDomain.sources.size === 1 && targetIdentityDomain.sources.has('credentials'))
+    ? targetIdentityDomain
+    : null;
   if (targetIdentityDomain?.strong) {
     addScore(result, 10, `${usernameDomain} is supported as an active identity domain`, 'identity');
   } else if (targetIdentityDomain && targetIdentityDomain.score >= 12 && targetIdentityDomain.sources.size >= 2) {
@@ -1439,15 +1446,10 @@ function scoreCredential(entry, context) {
     addScore(result, 4, `Generic ${topProvider.label} activity seen elsewhere in the case`, 'platform');
   }
 
-  if (isCorporateEmailDomain(usernameDomain) && result.score < 12 && !result.conflictDomain) {
-    // Small nudge so thin-evidence corp credentials stay visible but ranked
-    // low.
-    addScore(result, -3, `${usernameDomain} has little corroborating evidence beyond the credential row`, 'competition');
-  }
-
   // Password reuse is a strong "this password is current" signal. Cap the bonus
-  // so a 30-site reuse doesn't drown out cookie / token evidence.
-  const reuseSites = context.passwordReuse.get(entry.password);
+  // so a 30-site reuse doesn't drown out cookie / token evidence. The map is
+  // keyed on the trimmed password, so trim here too.
+  const reuseSites = context.passwordReuse.get(String(entry.password || '').trim());
   if (reuseSites && reuseSites.size >= 2) {
     const sitesCount = reuseSites.size;
     const bonus = Math.min(10, 4 + sitesCount);
@@ -1459,9 +1461,17 @@ function scoreCredential(entry, context) {
     result.reuseSites = [];
   }
 
+  // Small nudge so thin-evidence corp credentials stay visible but ranked low.
+  // Reuse is corroboration and exempts the row, which is why it is scored above
+  // this: otherwise the evidence reads "little corroborating evidence" directly
+  // above "password reused across 8 sites".
+  if (isCorporateEmailDomain(usernameDomain) && result.score < 12 && !result.reuseCount && !result.conflictDomain) {
+    addScore(result, -3, `${usernameDomain} has little corroborating evidence beyond the credential row`, 'competition');
+  }
+
   const identityFit = buildIdentityFitMeta({
     usernameDomain,
-    targetIdentityDomain,
+    targetIdentityDomain: corroboratedIdentityDomain,
     dominant,
     conflictDomain: result.conflictDomain,
     tenantScore: result.tenantScore,
