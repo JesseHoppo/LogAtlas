@@ -151,10 +151,13 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     searchId: 'servicesSearch',
     searchPlaceholder: 'Search service artifacts...',
     searchLabel: 'Search service artifacts',
+    filters: [
+      { id: 'servicesHideSecrets', label: 'Hide secrets', checked: true },
+    ],
     exportId: 'exportServicesCsv',
     statsId: 'servicesStats',
     contentId: 'servicesContent',
-    emptyText: 'No service artifact data available.',
+    emptyText: 'No service artifacts.',
   },
   {
     name: 'wallets',

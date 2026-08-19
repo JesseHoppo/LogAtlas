@@ -52,6 +52,7 @@ let creditCardsShown = 0;
 
 let hideCardNumbers = true;
 let hideTokenValues = true;
+let hideServiceSecrets = true;
 
 const tokensSort = createTableSort({
   service: (e) => e.service, type: (e) => e.type, value: (e) => e.value, accountId: (e) => e.accountId,
@@ -101,6 +102,7 @@ const pageRegistry = createPagedCollectionRegistry({
       serviceArtifactsFiltered = [];
       servicesSort.reset();
       serviceArtifactsShown = 0;
+      hideServiceSecrets = true;
     },
   },
   wallets: {
@@ -262,25 +264,45 @@ function renderTokensPage(searchQuery = '') {
   content.innerHTML = html;
 }
 
+// A service config carries the real thing as often as it carries a setting: an
+// AnyDesk private key, a Discord token, a recovered FileZilla password. Those
+// go behind the same mask the token values use, so the key is not sitting in
+// the cell, in its title, and on the clipboard of the next stray click.
+const PRIVATE_KEY_BLOCK = /-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----/;
+// Anchored at the end of the key name: `ad.anynet.pkey` and `Discord Token`
+// name a secret, `mail.account.lastKey` and `oauth2.issuer` name where one
+// lives.
+const SECRET_KEY_NAME = /(?:^|[\s._-])(?:pass(?:word|wd)?|pwd|secret|api[\s._-]?key|private[\s._-]?key|pkey|(?:auth|access|refresh|bearer|session)[\s._-]?tokens?|token)$/i;
+
+function isSecretValue(key, value) {
+  if (!value) return false;
+  return PRIVATE_KEY_BLOCK.test(value) || SECRET_KEY_NAME.test(String(key || '').trim());
+}
+
 function serviceArtifactRowBuilder({ service, artifactType, section, key, value, source }) {
-  return `<tr><td>${escapeHtml(service || '')}</td><td>${escapeHtml(artifactType || '')}</td><td>${escapeHtml(section || '')}</td><td title="${escapeHtml(key)}">${escapeHtml(key)}</td><td title="${escapeHtml(value)}">${escapeHtml(value)}</td><td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td></tr>`;
+  const masked = hideServiceSecrets && isSecretValue(key, value);
+  const displayValue = masked ? maskValue(value) : value;
+  const maskedAttr = masked ? ' class="masked"' : '';
+  return `<tr><td>${escapeHtml(service || '')}</td><td>${escapeHtml(artifactType || '')}</td><td>${escapeHtml(section || '')}</td><td title="${escapeHtml(key)}">${escapeHtml(key)}</td><td${maskedAttr} title="${escapeHtml(displayValue)}">${escapeHtml(displayValue)}</td><td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td></tr>`;
 }
 
 function renderServicesPage(searchQuery = '') {
   const summary = document.getElementById('servicesSummary');
   const stats = document.getElementById('servicesStats');
   const content = document.getElementById('servicesContent');
-  if (serviceArtifactsData.entries.length === 0) { summary.textContent = 'No service artifacts found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No service artifact data available.</div>'; return; }
+  if (serviceArtifactsData.entries.length === 0) { serviceArtifactsFiltered = []; serviceArtifactsShown = 0; summary.textContent = ''; stats.innerHTML = ''; content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.services}</div>`; return; }
   let filtered = serviceArtifactsData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.service.toLowerCase().includes(q) || entry.artifactType.toLowerCase().includes(q) || entry.section.toLowerCase().includes(q) || entry.key.toLowerCase().includes(q) || entry.value.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
   serviceArtifactsFiltered = servicesSort.apply(filtered);
   serviceArtifactsShown = Math.min(PAGE_SIZE, filtered.length);
-  const services = new Set(serviceArtifactsData.entries.map(e => e.service).filter(Boolean));
-  const artifactTypes = new Set(serviceArtifactsData.entries.map(e => e.artifactType).filter(Boolean));
-  const sections = new Set(serviceArtifactsData.entries.map(e => e.section).filter(Boolean));
-  const withValue = serviceArtifactsData.entries.filter(e => e.value).length;
-  summary.textContent = filtered.length !== serviceArtifactsData.entries.length ? `Showing ${filtered.length.toLocaleString()} of ${serviceArtifactsData.entries.length.toLocaleString()} service rows from ${serviceArtifactsData.fileCount} file(s)` : `${serviceArtifactsData.entries.length.toLocaleString()} service rows from ${serviceArtifactsData.fileCount} file(s)`;
-  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${artifactTypes.size.toLocaleString()}</div><div class="data-page-stat-label">Artifact Types</div></div><div class="data-page-stat"><div class="data-page-stat-value">${sections.size.toLocaleString()}</div><div class="data-page-stat-label">Sections</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withValue.toLocaleString()}</div><div class="data-page-stat-label">With Value</div></div>`;
+  summary.textContent = datasetSummary({ shown: filtered.length, total: serviceArtifactsData.entries.length, singular: 'service row', fileCount: serviceArtifactsData.fileCount });
+  if (filtered.length === 0) { stats.innerHTML = ''; content.innerHTML = buildNoMatchesHtml('service rows'); return; }
+  const services = new Set(filtered.map(e => e.service).filter(Boolean));
+  const artifactTypes = new Set(filtered.map(e => e.artifactType).filter(Boolean));
+  const sections = new Set(filtered.map(e => e.section).filter(Boolean));
+  const withValue = filtered.filter(e => e.value).length;
+  const secrets = filtered.filter(e => isSecretValue(e.key, e.value)).length;
+  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${artifactTypes.size.toLocaleString()}</div><div class="data-page-stat-label">Artifact types</div></div><div class="data-page-stat"><div class="data-page-stat-value">${sections.size.toLocaleString()}</div><div class="data-page-stat-label">Sections</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withValue.toLocaleString()}</div><div class="data-page-stat-label">With value</div></div>${secrets > 0 ? `<div class="data-page-stat" title="Rows whose value is itself a credential — a private key, an account token, a saved password. Masked until the filter is cleared."><div class="data-page-stat-value">${secrets.toLocaleString()}</div><div class="data-page-stat-label">Secret values</div></div>` : ''}`;
   let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${servicesSort.th('service', 'Service')}${servicesSort.th('artifactType', 'Artifact Type')}${servicesSort.th('section', 'Section')}${servicesSort.th('key', 'Key')}${servicesSort.th('value', 'Value')}${servicesSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(serviceArtifactRowBuilder, serviceArtifactsFiltered, 0, serviceArtifactsShown);
   html += '</tbody></table></div>';
@@ -352,32 +374,36 @@ function renderCardsPage(searchQuery = '') {
   content.innerHTML = html;
 }
 
-function exportTokensCSV() {
-  if (accountTokensData.entries.length === 0) return;
-  downloadCsvRows('account_tokens.csv', ['Service', 'Type', 'Value', 'Account ID', 'Browser', 'Profile', 'Note', 'Source'], accountTokensData.entries.map(
-    ({ service, type, value, accountId, browser, profile, note, source }) => [service, type, value, accountId, browser, profile, note, source]
-  ));
-}
+// One description of each dataset's CSV shape, so the page's own export and the
+// packaged report cannot write the same table under two sets of columns.
+export const CSV_SPECS = Object.freeze({
+  tokens: Object.freeze({
+    file: 'account_tokens.csv', noun: 'account tokens',
+    headers: ['Service', 'Type', 'Value', 'Account ID', 'Browser', 'Profile', 'Note', 'Source'],
+    row: ({ service, type, value, accountId, browser, profile, note, source }) => [service, type, value, accountId, browser, profile, note, source],
+  }),
+  services: Object.freeze({
+    file: 'service_artifacts.csv', noun: 'service rows',
+    headers: ['Service', 'Artifact Type', 'Section', 'Key', 'Value', 'Source'],
+    row: ({ service, artifactType, section, key, value, source }) => [service, artifactType, section, key, value, source],
+  }),
+  wallets: Object.freeze({
+    file: 'wallet_artifacts.csv', noun: 'wallet artifacts',
+    headers: ['Service', 'Category', 'Artifact Type', 'Store Type', 'Browser', 'Profile', 'Emails', 'Addresses', 'Tokens', 'Seed Keywords', 'Highlights', 'Source'],
+    row: (entry) => [entry.service, entry.category, entry.artifactType, entry.storeType, entry.browser, entry.profile, entry.emailCount, entry.addressCount, entry.tokenCount, entry.seedHints, entry.highlights, entry.source],
+  }),
+  cards: Object.freeze({
+    file: 'credit_cards.csv', noun: 'cards',
+    headers: ['Card Number', 'Last4', 'Name On Card', 'Expiration', 'CVC', 'Browser', 'Recovered From', 'Source'],
+    // Recovered From falls back to the archive path the same way the table
+    // does; Source keeps the archive path either way, so the two columns
+    // together still say whether the card file named its own origin.
+    row: ({ cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source }) => [cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath || source, source],
+  }),
+});
 
-function exportServicesCSV() {
-  if (serviceArtifactsData.entries.length === 0) return;
-  downloadCsvRows('service_artifacts.csv', ['Service', 'Artifact Type', 'Section', 'Key', 'Value', 'Source'], serviceArtifactsData.entries.map(
-    ({ service, artifactType, section, key, value, source }) => [service, artifactType, section, key, value, source]
-  ));
-}
-
-function exportWalletsCSV() {
-  if (walletArtifactsData.entries.length === 0) return;
-  downloadCsvRows('wallet_artifacts.csv', ['Service', 'Category', 'Artifact Type', 'Store Type', 'Browser', 'Profile', 'Emails', 'Addresses', 'Tokens', 'Seeds', 'Highlights', 'Source'], walletArtifactsData.entries.map(
-    (entry) => [entry.service, entry.category, entry.artifactType, entry.storeType, entry.browser, entry.profile, entry.emailCount, entry.addressCount, entry.tokenCount, entry.seedHints, entry.highlights, entry.source]
-  ));
-}
-
-function exportCardsCSV() {
-  if (creditCardsData.entries.length === 0) return;
-  downloadCsvRows('credit_cards.csv', ['Card Number', 'Last4', 'Name On Card', 'Expiration', 'CVC', 'Browser', 'Recovered From', 'Source'], creditCardsData.entries.map(
-    ({ cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source }) => [cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source]
-  ));
+function exportCsv(spec, entries, filtered) {
+  exportRows({ ...spec, entries, filtered });
 }
 
 export function loadAll(fileTree, rootName) {
@@ -421,6 +447,7 @@ export function initAssetPages() {
     cards: renderCardsPage,
   };
   const tokensHideSensitive = document.getElementById('tokensHideSensitive');
+  const servicesHideSecrets = document.getElementById('servicesHideSecrets');
   const cardsHideSensitive = document.getElementById('cardsHideSensitive');
   for (const [pageName, input] of Object.entries(searchInputs)) {
     bindDebouncedInput(input, (value) => renderers[pageName](value));
@@ -432,16 +459,21 @@ export function initAssetPages() {
     renderTokensPage(searchInputs.tokens?.value || '');
   });
 
+  servicesHideSecrets?.addEventListener('change', () => {
+    hideServiceSecrets = servicesHideSecrets.checked;
+    renderServicesPage(searchInputs.services?.value || '');
+  });
+
   cardsHideSensitive?.addEventListener('change', () => {
     hideCardNumbers = cardsHideSensitive.checked;
     renderCardsPage(searchInputs.cards?.value || '');
   });
 
   for (const [id, handler] of Object.entries({
-    exportTokensCsv: exportTokensCSV,
-    exportServicesCsv: exportServicesCSV,
-    exportWalletsCsv: exportWalletsCSV,
-    exportCardsCsv: exportCardsCSV,
+    exportTokensCsv: () => exportCsv(CSV_SPECS.tokens, accountTokensData.entries, accountTokensFiltered),
+    exportServicesCsv: () => exportCsv(CSV_SPECS.services, serviceArtifactsData.entries, serviceArtifactsFiltered),
+    exportWalletsCsv: () => exportCsv(CSV_SPECS.wallets, walletArtifactsData.entries, walletArtifactsFiltered),
+    exportCardsCsv: () => exportCsv(CSV_SPECS.cards, creditCardsData.entries, creditCardsFiltered),
   })) {
     document.getElementById(id)?.addEventListener('click', handler);
   }
@@ -459,6 +491,7 @@ export function initAssetPages() {
       }
       if (cardsHideSensitive) cardsHideSensitive.checked = true;
       if (tokensHideSensitive) tokensHideSensitive.checked = true;
+      if (servicesHideSecrets) servicesHideSecrets.checked = true;
     },
   };
 }
