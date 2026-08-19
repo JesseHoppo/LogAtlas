@@ -126,42 +126,70 @@ function normaliseHeaderCell(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-// Detect if >80% of non-blank sample lines contain a delimiter, and compute column count
-function testDelimiter(nonBlankLines, delimiter) {
-  const splitFn = makeSplitFn(delimiter);
-  const matching = nonBlankLines.filter(l => {
-    if (delimiter === ',') return l.includes(',');
-    return l.includes(delimiter);
-  });
-  if (nonBlankLines.length === 0 || matching.length === 0) return null;
-  if (matching.length / nonBlankLines.length < 0.8) return null;
+const EDGE_WHITESPACE = /^\s|\s$/;
 
-  const colCounts = matching.map(l => splitFn(l).length);
-  const columns = mostCommon(colCounts);
-  if (columns < 2) return null;
-  return columns;
+// Physical lines in the index space a format was detected in. Only a trimmed
+// layout may shift field positions; blank lines drop out of both.
+export function splitLines(text, trimLines) {
+  const lines = text.split('\n');
+  return trimLines ? lines.map(l => l.trim()).filter(l => l) : lines.filter(l => l.trim());
 }
 
-// Detect columns that are empty in >90% of rows and should be dropped
-function findEmptyColumns(nonBlankLines, delimiter, columns) {
+// One pass per candidate: >80% of lines must carry the delimiter, the modal
+// field count is the column count, and a column populated in under 10% of
+// lines is dropped. Both are measured over every line handed in, because a
+// column the stealer only starts filling part-way down the file must not be
+// classified as empty on the strength of the opening screenful.
+function measureLayout(lines, delimiter, requireCoverage = true) {
+  if (lines.length === 0) return null;
   const splitFn = makeSplitFn(delimiter);
-  const emptyCounts = Array.from({ length: columns }, () => 0);
-  let total = 0;
+  const counts = [];
+  const populated = [];
 
-  for (const line of nonBlankLines) {
+  for (const line of lines) {
     const fields = splitFn(line);
-    total++;
-    for (let i = 0; i < columns; i++) {
-      if (!(fields[i] ?? '').trim()) emptyCounts[i]++;
+    if (line.includes(delimiter)) counts.push(fields.length);
+    for (let i = 0; i < fields.length; i++) {
+      if (fields[i].trim()) populated[i] = (populated[i] || 0) + 1;
     }
   }
 
-  if (total === 0) return [];
-  const drop = [];
+  if (counts.length === 0) return null;
+  if (requireCoverage && counts.length / lines.length < 0.8) return null;
+  const columns = mostCommon(counts);
+  if (columns < 2) return null;
+
+  // The last column absorbs the surplus of any row wider than the layout, so
+  // it is never treated as padding once such a row exists.
+  const ragged = counts.some(c => c > columns);
+  const dropColumns = [];
   for (let i = 0; i < columns; i++) {
-    if (emptyCounts[i] / total > 0.9) drop.push(i);
+    if (ragged && i === columns - 1) continue;
+    if ((populated[i] || 0) / lines.length < 0.1) dropColumns.push(i);
   }
-  return drop;
+  const agreement = counts.filter(c => c === columns).length / counts.length;
+  return { columns, dropColumns, agreement };
+}
+
+// Columns are indexed off the raw line so a leading delimiter cannot shift
+// every field one place left, and so a trailing empty field still occupies a
+// column of its own. Exports padded with delimiter runs sometimes only resolve
+// once trimmed, so both index spaces are measured and the one that keeps more
+// populated columns wins; whichever it is has to be the space the parser reads.
+function chooseLayout(lines, delimiter) {
+  // Trimming can only move a field when a line carries whitespace at an edge.
+  const candidates = lines.some(l => EDGE_WHITESPACE.test(l)) ? [false, true] : [false];
+  let best = null;
+
+  for (const trimLines of candidates) {
+    const measured = measureLayout(trimLines ? lines.map(l => l.trim()) : lines, delimiter);
+    if (!measured) continue;
+    if (!best) { best = { ...measured, trimLines }; continue; }
+    const gain = (measured.columns - measured.dropColumns.length) - (best.columns - best.dropColumns.length);
+    if (gain > 0 || (gain === 0 && measured.agreement > best.agreement)) best = { ...measured, trimLines };
+  }
+
+  return best;
 }
 
 // Check if the first row looks like a header by matching common exported column names.
@@ -283,25 +311,42 @@ export function detectFormat(text) {
     return { type: 'block', headers: [...headersSeen] };
   }
 
-  // Delimited detection: try each delimiter in priority order
-  const nonBlankLines = sample.filter(l => l.trim() !== '');
+  // Delimited detection: the sample picks the delimiter, the whole file sizes it
+  const sampleLines = sample.filter(l => l.trim() !== '');
+  const allLines = lines.filter(l => l.trim() !== '');
   const delimiters = ['\t', ',', '|', ';'];
 
   for (const delim of delimiters) {
-    const columns = testDelimiter(nonBlankLines, delim);
-    if (columns === null) continue;
+    const sampled = chooseLayout(sampleLines, delim);
+    if (!sampled) continue;
 
-    const dropColumns = findEmptyColumns(nonBlankLines, delim, columns);
-    const effectiveCols = columns - dropColumns.length;
-    if (effectiveCols < 2) continue;
+    // The sample settles the delimiter and the index space; the whole file
+    // sizes the layout, so a column only filled part-way down still counts.
+    const scoped = sampled.trimLines ? allLines.map(l => l.trim()) : allLines;
+    const layout = { ...(measureLayout(scoped, delim, false) || sampled), trimLines: sampled.trimLines };
+    if (layout.columns - layout.dropColumns.length < 2) continue;
 
-    const firstNonBlank = nonBlankLines[0] || '';
-    const hasHeaderRow = detectHeaderRow(firstNonBlank, delim);
+    const firstNonBlank = allLines[0] || '';
+    const hasHeaderRow = detectHeaderRow(layout.trimLines ? firstNonBlank.trim() : firstNonBlank, delim);
 
-    return { type: 'delimited', delimiter: delim, columns, hasHeaderRow, dropColumns };
+    return {
+      type: 'delimited',
+      delimiter: delim,
+      columns: layout.columns,
+      hasHeaderRow,
+      dropColumns: layout.dropColumns,
+      trimLines: layout.trimLines,
+    };
   }
 
   return null;
+}
+
+// A field carrying the delimiter (a password with a tab in it) makes a row
+// wider than the layout. Fold the surplus back into the last column rather
+// than cutting it off, so a truncated secret is never shown as a whole one.
+function foldOverflow(fields, columns, delimiter) {
+  fields.splice(columns - 1, fields.length, fields.slice(columns - 1).join(delimiter));
 }
 
 export function parseBlocks(text, headers) {
@@ -309,9 +354,13 @@ export function parseBlocks(text, headers) {
   const rows = [];
 
   for (const block of blocks) {
-    const record = {};
+    // Null prototype: a `constructor:` or `toString:` line in the log must not
+    // put an inherited function into every other record's cell.
+    const record = Object.create(null);
     for (const line of block.split('\n')) {
-      const match = line.trim().match(KV_PATTERN);
+      const trimmed = line.trim();
+      if (!trimmed.includes(':')) continue;
+      const match = trimmed.match(KV_PATTERN);
       if (match) {
         record[match[1].trim()] = match[2].trim();
       }
@@ -325,9 +374,9 @@ export function parseBlocks(text, headers) {
 }
 
 export function parseDelimited(text, format) {
-  const { delimiter, columns, hasHeaderRow, dropColumns } = format;
+  const { delimiter, columns, hasHeaderRow, dropColumns, trimLines } = format;
   const splitFn = makeSplitFn(delimiter);
-  const allLines = text.split('\n').map(l => l.trim()).filter(l => l);
+  const allLines = splitLines(text, trimLines !== false);
   if (allLines.length === 0) return null;
 
   // Determine which columns to keep
