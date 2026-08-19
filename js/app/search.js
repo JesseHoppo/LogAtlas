@@ -81,12 +81,24 @@ export function initSearch(navigateToPage) {
   const searchResults = document.getElementById('searchResults');
   const searchStatus = document.getElementById('searchStatus');
   const searchHints = document.getElementById('searchHints');
+  // #searchStatus rewrites itself once per batch; a live region on it would
+  // queue a dozen progress readings ahead of the answer. Only the start and
+  // the outcome are announced.
+  const searchAnnouncer = document.createElement('div');
+  searchAnnouncer.className = 'sr-only';
+  searchAnnouncer.setAttribute('role', 'status');
+  searchAnnouncer.setAttribute('aria-live', 'polite');
+  searchStatus.insertAdjacentElement('afterend', searchAnnouncer);
   let searchRunId = 0;
   let currentMatches = [];
   let currentQuery = '';
   let shownResults = 0;
 
   function resetSearchUi() {
+    // Cancels any scan still yielding between batches. Without this a slow
+    // search over the previous case finished after the next one loaded and
+    // painted its results, paths and count over the new case's page.
+    searchRunId += 1;
     currentMatches = [];
     currentQuery = '';
     shownResults = 0;
@@ -246,7 +258,19 @@ export function initSearch(navigateToPage) {
     clearTextIndex();
     resetSearchUi();
   });
-  on('extracted', clearTextIndex);
-
-  return { globalSearchInput, searchResults, searchStatus };
+  on('extracted', () => {
+    clearTextIndex();
+    searchRunId += 1;
+  });
+  // Added files and retyped files change what a query would match. The index
+  // stays — it is keyed by node, and a file's bytes never change — but the
+  // answer on screen is now about a case that no longer exists.
+  on('reanalyze', () => {
+    const hadResults = searchStatus.textContent !== '';
+    resetSearchUi();
+    if (hadResults) {
+      searchStatus.textContent = 'Case changed — run the search again';
+      searchAnnouncer.textContent = searchStatus.textContent;
+    }
+  });
 }
