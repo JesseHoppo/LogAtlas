@@ -108,6 +108,20 @@ function collectTokens(text, limit = 6) {
   return tokens;
 }
 
+// A bare word like `atomic`, `exodus`, `steam` or `keychain` reads fine as a
+// folder name but also turns up in ordinary prose and in the carve of any
+// extension store, so it must not name a service off the blob. The registry
+// keeps that line itself — only vendor-unique names carry a content pattern —
+// so the bytes go through as they are, capped because a carved LevelDB runs to
+// megabytes and the vendor names sit in its head. Validated tokens are appended
+// whole: their issuer claim names the service outright wherever it appears.
+const SERVICE_EVIDENCE_LIMIT = 262144;
+
+function serviceEvidence(text) {
+  if (!text) return '';
+  return [String(text).slice(0, SERVICE_EVIDENCE_LIMIT), ...collectTokens(text, 3)].join('\n');
+}
+
 function collectJsonFieldValues(value, results = { emails: [], urls: [], ids: [], tokenCount: 0, seedHints: 0 }, depth = 0) {
   if (value == null) return results;
   if (depth > LIMITS.flattenMaxDepth) return results;
@@ -181,10 +195,14 @@ function parseWalletArtifact(content, fileName, sourcePath) {
 
   const bytes = content instanceof Uint8Array ? content : new Uint8Array(content);
   const text = maybeDecodeText(bytes, fileName);
-  const carvedStrings = text ? [] : extractPrintableStrings(bytes);
+  const carved = !text;
+  const carvedStrings = carved ? extractPrintableStrings(bytes) : [];
   const combinedText = text || carvedStrings.join('\n');
-  const service = inferStoreService(sourcePath || fileName, combinedText);
   const normalisedPath = normalisePath(sourcePath || fileName);
+  const pathService = inferStoreService(normalisedPath);
+  const service = pathService.name === 'Unknown'
+    ? inferStoreService(normalisedPath, serviceEvidence(combinedText))
+    : pathService;
   const storeType = detectStoreType(fileName, normalisedPath, bytes);
   const artifactType = detectArtifactType(fileName, normalisedPath, storeType);
 
