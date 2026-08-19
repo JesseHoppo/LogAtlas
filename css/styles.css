@@ -4906,3 +4906,10 @@ textarea:focus-visible,
 .hidden {
   display: none !important;
 }
+
+.dash-kv-more {
+  margin-left: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
