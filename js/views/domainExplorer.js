@@ -461,7 +461,7 @@ function renderDomainsPage(searchQuery = '') {
 
   const remaining = domainFiltered.length - domainShown;
   if (remaining > 0) {
-    html += `<button class="data-show-more" data-page="domains">Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)</button>`;
+    html += `<button class="data-show-more" data-page="domains">Show ${Math.min(remaining, PAGE_SIZE).toLocaleString()} more (${remaining.toLocaleString()} remaining)</button>`;
   }
 
   content.innerHTML = html;
@@ -483,7 +483,7 @@ function handleDomainShowMore() {
   const btn = content.querySelector('.data-show-more');
   const remaining = domainFiltered.length - domainShown;
   if (remaining > 0 && btn) {
-    btn.textContent = `Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)`;
+    btn.textContent = `Show ${Math.min(remaining, PAGE_SIZE).toLocaleString()} more (${remaining.toLocaleString()} remaining)`;
   } else if (btn) {
     btn.remove();
   }

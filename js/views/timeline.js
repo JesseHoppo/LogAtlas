@@ -103,7 +103,7 @@ function extractFileEvents(fileTree, rootName) {
     events.push({
       time: earlyDate,
       category: 'file',
-      title: `${count} files modified`,
+      title: `${countLabel(count, 'file')} modified`,
       detail: formatDateLabel(earlyDate),
     });
   } else {
@@ -111,13 +111,13 @@ function extractFileEvents(fileTree, rootName) {
       time: earlyDate,
       category: 'file',
       title: `Earliest file modification`,
-      detail: `${count} files span ${formatDateLabel(earlyDate)} to ${formatDateLabel(lateDate)}`,
+      detail: `${countLabel(count, 'file')} span ${formatDateLabel(earlyDate)} to ${formatDateLabel(lateDate)}`,
     });
     events.push({
       time: lateDate,
       category: 'file',
       title: `Latest file modification`,
-      detail: `${count} files span ${formatDateLabel(earlyDate)} to ${formatDateLabel(lateDate)}`,
+      detail: `${countLabel(count, 'file')} span ${formatDateLabel(earlyDate)} to ${formatDateLabel(lateDate)}`,
     });
   }
 
@@ -165,9 +165,9 @@ function extractCookieEvents(cookiesData, captureTime) {
   const events = [];
   if (!captureTime) return events;
   for (const [domain, stats] of sorted) {
-    let detail = `${stats.valid} valid, ${stats.expired} expired`;
+    let detail = `${stats.valid.toLocaleString()} valid, ${stats.expired.toLocaleString()} expired`;
     if (stats.liveSessions > 0) {
-      detail += ` - ${stats.liveSessions} live session token${stats.liveSessions !== 1 ? 's' : ''}`;
+      detail += ` - ${stats.liveSessions.toLocaleString()} live session token${stats.liveSessions !== 1 ? 's' : ''}`;
     }
     if (stats.latestExpiry) {
       detail += ` - latest expiry: ${formatDateLabel(stats.latestExpiry)}`;
@@ -511,8 +511,8 @@ function renderTimelinePage(searchQuery = '') {
 
   const total = timelineEvents.length;
   summary.textContent = filtered.length !== total
-    ? `Showing ${filtered.length} of ${total} events`
-    : `${total} events`;
+    ? `Showing ${filtered.length.toLocaleString()} of ${countLabel(total, 'event')}`
+    : countLabel(total, 'event');
 
   renderStats(filtered);
   renderFilters();

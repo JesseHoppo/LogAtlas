@@ -487,7 +487,7 @@ function renderCredDetail(row) {
     row.isAppCredential ? '<span class="lab-tag">app-stored</span>' : '',
     row.isConsumerSite ? '<span class="lab-tag">consumer site</span>' : '',
     row.reuseCount > 1
-      ? `<span class="lab-tag lab-tone-warning">password reused × ${row.reuseCount}</span>`
+      ? `<span class="lab-tag lab-tone-warning">password reused × ${row.reuseCount.toLocaleString()}</span>`
       : '',
   ].filter(Boolean).join('');
 
@@ -736,7 +736,7 @@ function initCurrentnessLab() {
       currentnessShown = nextEnd;
       const remaining = currentnessFiltered.length - currentnessShown;
       if (remaining > 0) {
-        showMore.textContent = `Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)`;
+        showMore.textContent = `Show ${Math.min(remaining, PAGE_SIZE).toLocaleString()} more (${remaining.toLocaleString()} remaining)`;
       } else {
         showMore.remove();
       }

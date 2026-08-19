@@ -442,10 +442,10 @@ function renderIdentityPage(searchQuery = '') {
   const data = identityData;
   const es = data.exposureSummary;
 
-  const summaryText = `${es.totalUniqueServices} exposed services across ${es.uniqueEmails} email address${es.uniqueEmails !== 1 ? 'es' : ''}; ${es.servicesWithLiveSessions} with a session live at capture`;
+  const summaryText = `${es.totalUniqueServices.toLocaleString()} exposed services across ${es.uniqueEmails.toLocaleString()} email address${es.uniqueEmails !== 1 ? 'es' : ''}; ${es.servicesWithLiveSessions.toLocaleString()} with a session live at capture`;
   const osFamily = data.primaryIdentity.osFamily;
   summary.innerHTML = osFamily
-    ? `${escapeHtml(summaryText)} <span class="identity-os-chip" data-os="${escapeHtml(osFamily)}">${escapeHtml(osFamily)}</span>`
+    ? `${escapeHtml(summaryText)} &middot; <span class="identity-os-chip" data-os="${escapeHtml(osFamily)}">${escapeHtml(osFamily)}</span>`
     : escapeHtml(summaryText);
 
   // Counts are quantities, not statuses: neutral ink, weight for scanning.
@@ -534,7 +534,7 @@ function renderIdentityPage(searchQuery = '') {
   if (identityActiveEmail) {
     const entry = data.emailAccountMap.find(e => e.email === identityActiveEmail);
     emailMapEl.innerHTML = entry && entry.services.length > 0
-      ? `<div class="identity-subsection"><div class="identity-subsection-title">Domains for ${escapeHtml(identityActiveEmail)} (${entry.services.length})</div><div class="identity-domain-list">${entry.services.map(s => escapeHtml(s.domain)).join(', ')}</div></div>`
+      ? `<div class="identity-subsection"><div class="identity-subsection-title">Domains for ${escapeHtml(identityActiveEmail)} (${entry.services.length.toLocaleString()})</div><div class="identity-domain-list">${entry.services.map(s => escapeHtml(s.domain)).join(', ')}</div></div>`
       : '';
   } else {
     emailMapEl.innerHTML = '';
