@@ -92,13 +92,18 @@ function normaliseCookies() {
 
   const hostIdx = data.headers.findIndex((header) => FIELD_PATTERNS.cookieDomain.test(header));
   const nameIdx = data.headers.findIndex((header) => FIELD_PATTERNS.cookieName.test(header));
+  const valueIdx = data.headers.findIndex((header) => /^value$/i.test(header));
 
+  // `hasValue` carries whether the token would replay: bulk decryption failure
+  // empties the value column for whole cookie sets, and a row with no value is
+  // evidence the account was logged in rather than a way back into it.
   return data.rows.map((entry) => ({
     host: (hostIdx >= 0 ? (entry.row[hostIdx] || '') : '').replace(/^\./, '').trim().toLowerCase(),
     name: (nameIdx >= 0 ? (entry.row[nameIdx] || '') : '').trim(),
     validityStatus: entry.validity?.status || '',
     validityLabel: entry.validity?.label || '',
     sessionType: entry.sessionType || '',
+    hasValue: valueIdx >= 0 && String(entry.row[valueIdx] ?? '').trim() !== '',
   })).filter((entry) => entry.host);
 }
 
