@@ -80,11 +80,15 @@
   --accent-dim: rgba(37, 99, 235, 0.08);
   --accent-dim-strong: rgba(37, 99, 235, 0.2);
 
-  /* Semantic */
+  /* Semantic. The bare hue is the fill, the dot and the bar: it only has to
+     clear 3:1. The -text sibling is the same meaning at the weight small ink
+     needs to clear 4.5:1 on the surfaces it lands on, hovered rows included. */
   --success: #16a34a;
+  --success-text: #166534;
   --success-dim: rgba(22, 163, 74, 0.08);
   --success-dim-strong: rgba(22, 163, 74, 0.25);
   --warning: #d97706;
+  --warning-text: #92400e;
   --warning-dim: rgba(217, 119, 6, 0.08);
   --warning-dim-strong: rgba(217, 119, 6, 0.25);
   --warning-strong: #fbbf24;
@@ -94,8 +98,10 @@
   --error-border: rgba(220, 38, 38, 0.18);
   --neutral-dim: rgba(140, 145, 156, 0.15);
   --teal: #0d9488;
+  --teal-text: #115e59;
   --teal-dim: rgba(13, 148, 136, 0.08);
   --info: #0e7490;
+  --info-text: #155e75;
   --info-dim: rgba(14, 116, 144, 0.08);
 
   /* Category */
@@ -120,8 +126,8 @@
 
   /* JSON syntax */
   --json-key: #2563eb;
-  --json-string: #16a34a;
-  --json-number: #d97706;
+  --json-string: var(--success-text);
+  --json-number: var(--warning-text);
   --json-boolean: #7c3aed;
   --json-null: #8c919c;
 }
@@ -147,14 +153,19 @@
   --accent-dim: rgba(59, 130, 246, 0.12);
   --accent-dim-strong: rgba(59, 130, 246, 0.24);
 
+  /* The dark surfaces need the light end of each hue for the same 4.5:1. */
+  --success-text: #22c55e;
   --success-dim: rgba(22, 163, 74, 0.12);
   --success-dim-strong: rgba(22, 163, 74, 0.28);
+  --warning-text: #f59e0b;
   --warning-dim: rgba(217, 119, 6, 0.12);
   --warning-dim-strong: rgba(217, 119, 6, 0.28);
   --error-dim: rgba(220, 38, 38, 0.1);
   --error-border: rgba(220, 38, 38, 0.25);
   --neutral-dim: rgba(140, 145, 156, 0.18);
+  --teal-text: #2dd4bf;
   --teal-dim: rgba(13, 148, 136, 0.12);
+  --info-text: #22d3ee;
   --info-dim: rgba(14, 116, 144, 0.12);
   --zip-dim: rgba(124, 58, 237, 0.16);
 
@@ -934,7 +945,7 @@ body {
 }
 
 .dash-ioc-family-warn {
-  color: var(--warning);
+  color: var(--warning-text);
   border-color: var(--warning);
 }
 
@@ -1510,19 +1521,19 @@ body {
 .preview-type-autofill {
   background: var(--success-dim);
   border-color: var(--success);
-  color: var(--success);
+  color: var(--success-text);
   border-style: solid;
 }
 .preview-type-history {
   background: var(--warning-dim);
   border-color: var(--warning);
-  color: var(--warning);
+  color: var(--warning-text);
   border-style: solid;
 }
 .preview-type-bookmarks {
   background: var(--info-dim);
   border-color: var(--info);
-  color: var(--info);
+  color: var(--info-text);
   border-style: solid;
 }
 .preview-type-browsermeta,
@@ -1550,7 +1561,7 @@ body {
 .preview-type-clipboard {
   background: var(--teal-dim);
   border-color: var(--teal);
-  color: var(--teal);
+  color: var(--teal-text);
   border-style: solid;
 }
 .preview-type-software,
@@ -1877,7 +1888,7 @@ body {
 }
 
 .preview-line-cap-note {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .preview-show-all-lines {
@@ -2386,7 +2397,7 @@ body {
   border-radius: 3px;
   text-transform: uppercase;
   background: var(--success-dim);
-  color: var(--success);
+  color: var(--success-text);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -3093,7 +3104,7 @@ body {
 
 /* Cookie validity badges */
 .cookie-valid {
-  color: var(--success);
+  color: var(--success-text);
 }
 .cookie-expired {
   color: var(--text-muted);
@@ -3102,7 +3113,7 @@ body {
   color: var(--text-muted);
 }
 .cookie-unknown {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .validity-badge {
@@ -3114,7 +3125,7 @@ body {
 }
 .validity-badge-valid {
   background: var(--success-dim);
-  color: var(--success);
+  color: var(--success-text);
 }
 .validity-badge-expired {
   background: var(--bg-tertiary);
@@ -3126,7 +3137,7 @@ body {
 }
 .validity-badge-unknown {
   background: var(--warning-dim);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 /* Session cookie badges and stats. These are quantities, not statuses:
@@ -3148,7 +3159,7 @@ body {
 }
 .session-badge-auth {
   background: var(--warning-dim);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .session-badge-session {
   background: var(--accent-dim);
@@ -3310,7 +3321,7 @@ body {
 
 .timeline-event-badge-cookie {
   background: var(--warning-dim);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .timeline-event-badge-history {
@@ -4224,7 +4235,7 @@ body {
   letter-spacing: 0.05em;
   color: var(--text-secondary);
 }
-.lab-hero-tag-success { color: var(--success); }
+.lab-hero-tag-success { color: var(--success-text); }
 .lab-hero-tag-muted { color: var(--text-muted); }
 .lab-hero-meta {
   font-size: 0.78rem;
@@ -4242,7 +4253,7 @@ body {
   margin-left: auto;
 }
 .lab-hero-warn {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .lab-hero-facts {
   display: flex;
@@ -4418,7 +4429,7 @@ body {
   white-space: nowrap;
 }
 .lab-cat-tag.lab-cat-unknown {
-  color: var(--warning);
+  color: var(--warning-text);
   border-color: var(--warning-dim-strong);
   background: var(--warning-dim);
 }
@@ -4442,12 +4453,12 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .lab-cat-pill.lab-cat-unknown {
-  color: var(--warning);
+  color: var(--warning-text);
   border-color: var(--warning-dim-strong);
   background: var(--warning-dim);
 }
 .lab-cat-pill.lab-cat-unknown strong {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .lab-cred-user {
   color: var(--text-secondary);
@@ -4468,7 +4479,7 @@ body {
    risk, so it keeps red; stored falls through to the neutral base so a
    sorted column does not read as a wall of alarms. */
 .lab-cred-score-num.lab-score-live { color: var(--error); }
-.lab-cred-score-num.lab-score-recent { color: var(--warning); }
+.lab-cred-score-num.lab-score-recent { color: var(--warning-text); }
 .lab-cred-score-num.lab-score-legacy { color: var(--text-muted); }
 
 .lab-cred-action {
@@ -4485,7 +4496,7 @@ body {
   padding: 0.05rem 0.35rem;
   font-family: var(--font-mono);
   font-size: 0.66rem;
-  color: var(--warning);
+  color: var(--warning-text);
   background: var(--warning-dim);
   border-radius: var(--radius-sm);
   white-space: nowrap;
@@ -4507,8 +4518,8 @@ body {
 .lab-bar-tenant { background: var(--zip-color); }
 .lab-bar-platform { background: var(--warning); }
 
-.lab-tone-success { color: var(--success); }
-.lab-tone-warning { color: var(--warning); }
+.lab-tone-success { color: var(--success-text); }
+.lab-tone-warning { color: var(--warning-text); }
 .lab-tone-danger { color: var(--error); }
 .lab-tone-accent { color: var(--accent); }
 .lab-tone-public,
@@ -4597,14 +4608,14 @@ body {
   border: 1px solid var(--border);
   color: var(--text-secondary);
 }
-.lab-tag.lab-tone-success { color: var(--success); border-color: var(--success-dim-strong); }
-.lab-tag.lab-tone-warning { color: var(--warning); border-color: var(--warning-dim-strong); }
+.lab-tag.lab-tone-success { color: var(--success-text); border-color: var(--success-dim-strong); }
+.lab-tag.lab-tone-warning { color: var(--warning-text); border-color: var(--warning-dim-strong); }
 .lab-tag.lab-tone-danger { color: var(--error); border-color: var(--error-border); }
 .lab-tag.lab-tone-accent { color: var(--accent); border-color: var(--accent-dim-strong); }
 .lab-tag.lab-bar-identity { color: var(--text-secondary); }
-.lab-tag.lab-bar-site { color: var(--success); }
+.lab-tag.lab-bar-site { color: var(--success-text); }
 .lab-tag.lab-bar-tenant { color: var(--zip-color); }
-.lab-tag.lab-bar-platform { color: var(--warning); }
+.lab-tag.lab-bar-platform { color: var(--warning-text); }
 .lab-tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -4687,7 +4698,7 @@ textarea:focus-visible,
 }
 
 .identity-os-chip[data-os="Linux"] {
-  color: var(--warning);
+  color: var(--warning-text);
   border-color: var(--warning);
 }
 
