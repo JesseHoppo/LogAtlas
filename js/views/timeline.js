@@ -332,23 +332,23 @@ function renderStats(events) {
   const captureEvent = events.find(e => e.category === 'stealer');
   if (captureEvent) {
     const label = captureEvent.source && captureEvent.source !== 'sysinfo'
-      ? `Log Captured (${captureEvent.source})`
-      : 'Log Captured';
-    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-capture-value">${formatDateTimeLabel(captureEvent.time)}</div><div class="data-page-stat-label">${escapeHtml(label)}</div></div>`;
+      ? `Log captured (${captureEvent.source})`
+      : 'Log captured';
+    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-capture-value">${formatInstantLabel(captureEvent.time)}</div><div class="data-page-stat-label">${escapeHtml(label)}</div></div>`;
   }
 
   const cookies = getCookiesData();
   if (cookies.rows.length > 0) {
     const liveSessions = cookies.rows.filter(isLiveSessionToken).length;
     if (liveSessions > 0) {
-      html += `<div class="data-page-stat" title="Session tokens live at capture: unexpired, or browser-session cookies carrying no expiry. Confirm before relying on access."><div class="data-page-stat-value cookie-auth-valid">${liveSessions}</div><div class="data-page-stat-label">Live Sessions At Capture</div></div>`;
+      html += `<div class="data-page-stat" title="Unexpired at capture, or session cookies with no expiry. Counted over the whole case, not the filtered view."><div class="data-page-stat-value cookie-auth-valid">${liveSessions.toLocaleString()}</div><div class="data-page-stat-label">Live sessions at capture (whole case)</div></div>`;
     }
   }
 
-  html += `<div class="data-page-stat"><div class="data-page-stat-value">${events.length}</div><div class="data-page-stat-label">Events</div></div>`;
+  html += `<div class="data-page-stat"><div class="data-page-stat-value">${events.length.toLocaleString()}</div><div class="data-page-stat-label">Events</div></div>`;
 
   if (span) {
-    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-range-value">${span}</div><div class="data-page-stat-label">Date Range</div></div>`;
+    html += `<div class="data-page-stat"><div class="data-page-stat-value timeline-range-value">${span}</div><div class="data-page-stat-label">Date range</div></div>`;
   }
 
   el.innerHTML = html;
