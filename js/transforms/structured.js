@@ -181,6 +181,16 @@ function splitGenericTokenPair(line) {
     : { token: left, accountId: right };
 }
 
+// stripLeadingNoiseLines spares a noise line that carries a host, so victim data
+// further down a file survives. In the head block there is nothing to spare: a
+// seller banner advertising a Telegram channel is still banner text.
+function stripLeadingBanner(text) {
+  const lines = text.split('\n');
+  let start = 0;
+  while (start < lines.length && (!lines[start].trim() || isPromotionalNoiseLine(lines[start]))) start++;
+  return lines.slice(start).join('\n');
+}
+
 function removePromotionalNoise(text) {
   return stripLeadingNoiseLines(text)
     .split('\n')
@@ -432,8 +442,36 @@ export function parseHistoryFile(text, config) {
   return null;
 }
 
+// Every column a block dump carries is kept; only the names of the three the
+// downloads page looks for are brought to one spelling, so a dump that calls the
+// on-disk path "Path" or "Target" is not read as having none.
+const DOWNLOAD_HEADER_ALIASES = [
+  [/^(?:source\s*|download\s*)?url$|^link$/i, 'Source URL'],
+  [/^(?:file\s*)?(?:name|path)$|^file$|^target(?:\s*path)?$|^download\s*path$|^local\s*path$|^saved\s*(?:as|to)$/i, 'File Path'],
+  [/^(?:file\s*)?size$|^(?:re)?c[ei]*ved\s*bytes$|^bytes$|^total\s*bytes$/i, 'File Size'],
+];
+
+function canonicaliseDownloadHeaders(headers) {
+  const used = new Set();
+  return headers.map((header) => {
+    const trimmed = String(header || '').trim();
+    for (const [pattern, name] of DOWNLOAD_HEADER_ALIASES) {
+      if (!used.has(name) && pattern.test(trimmed)) {
+        used.add(name);
+        return name;
+      }
+    }
+    return trimmed;
+  });
+}
+
+// A downloaded file is named by a real path: drive letter, UNC share, POSIX
+// absolute, or backslash-separated segments with no spaces. Banner art carrying
+// a stray backslash is not.
+const DOWNLOAD_PATH_PATTERN = /^[A-Za-z]:\\|^\\\\[^\s\\]|^\/[^\s/]|^[^\s\\]+(?:\\[^\s\\]+)+$/;
+
 export function parseDownloadFile(text) {
-  const clean = normaliseText(text);
+  const clean = stripLeadingBanner(normaliseText(text));
   const normalised = normaliseSeparators(clean);
 
   const format = detectFormat(normalised);
@@ -443,20 +481,8 @@ export function parseDownloadFile(text) {
 
   if (format && format.type === 'block') {
     const result = parseBlocks(normalised, format.headers);
-    if (result && result.rows.length > 0) {
-      const indices = {};
-      for (let i = 0; i < result.headers.length; i++) {
-        if (/^url$/i.test(result.headers[i])) indices.url = i;
-        else if (/^filename$/i.test(result.headers[i])) indices.file = i;
-        else if (/^(?:recived|received)\s*bytes$/i.test(result.headers[i])) indices.size = i;
-      }
-      const headers = ['File Path', 'Source URL', 'File Size'];
-      const rows = result.rows.map(row => [
-        row[indices.file ?? -1] || '',
-        row[indices.url ?? -1] || '',
-        row[indices.size ?? -1] || '',
-      ]);
-      return { headers, rows };
+    if (result && result.rows.length > 0 && result.rows.some(row => row.some(cell => cell))) {
+      return { headers: canonicaliseDownloadHeaders(result.headers), rows: result.rows };
     }
   }
 
@@ -467,7 +493,7 @@ export function parseDownloadFile(text) {
     const line = lines[i].trim();
     if (!line) { i++; continue; }
 
-    if (/^[A-Z]:\\|^\/|\\/.test(line)) {
+    if (DOWNLOAD_PATH_PATTERN.test(line)) {
       const nextIdx = i + 1;
       let url = '';
       if (nextIdx < lines.length) {
