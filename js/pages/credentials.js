@@ -685,11 +685,20 @@ function autofillRowBuilder({ name, value }) {
   return `<tr><td>${escapeHtml(name)}</td><td title="${escapeHtml(value)}">${escapeHtml(value)}</td></tr>`;
 }
 
+// A note's indicator lists are samples, while the cell counts every match. Say
+// so in the tooltip rather than letting six lines pass for the whole set.
+function indicatorSample(values, total, singular) {
+  const list = values || [];
+  if (list.length === 0) return [];
+  if (!(total > list.length)) return list;
+  return [...list, `Showing ${list.length.toLocaleString()} of ${countLabel(total, singular)}`];
+}
+
 function noteRowBuilder(entry) {
   const indicatorTitle = [
-    ...(entry.urls || []),
-    ...(entry.emails || []),
-    ...(entry.phones || []),
+    ...indicatorSample(entry.urls, entry.urlTotal, 'URL'),
+    ...indicatorSample(entry.emails, entry.emailTotal, 'email'),
+    ...indicatorSample(entry.phones, entry.phoneTotal, 'phone'),
   ].join('\n');
 
   return `<tr>

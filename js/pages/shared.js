@@ -652,21 +652,32 @@ export function shapeCookiesCsv(cookiesData) {
   };
 }
 
+// The note scan keeps only the first few distinct URLs, emails and phone
+// numbers, so each list column is a sample and carries its full unique count
+// beside it — a bare list of six reads as the whole of a note that held forty.
 export function shapeNotesCsv(notesData) {
   return {
-    headers: ['Title', 'Type', 'Indicators', 'Preview', 'URLs', 'Emails', 'Phones', 'Credential Hints', 'Wallet Hints', 'Source'],
-    rows: notesData.entries.map((entry) => [
-      entry.title,
-      entry.noteType,
-      entry.indicators,
-      entry.preview,
-      (entry.urls || []).join('; '),
-      (entry.emails || []).join('; '),
-      (entry.phones || []).join('; '),
-      entry.credentialHints,
-      entry.walletHints,
-      entry.source,
-    ]),
+    headers: ['Title', 'Type', 'Indicators', 'Preview', 'URLs', 'URL Sample', 'Emails', 'Email Sample', 'Phones', 'Phone Sample', 'Credential Hints', 'Wallet Hints', 'Source'],
+    rows: notesData.entries.map((entry) => {
+      const urls = entry.urls || [];
+      const emails = entry.emails || [];
+      const phones = entry.phones || [];
+      return [
+        entry.title,
+        entry.noteType,
+        entry.indicators,
+        entry.preview,
+        entry.urlTotal ?? urls.length,
+        urls.join('; '),
+        entry.emailTotal ?? emails.length,
+        emails.join('; '),
+        entry.phoneTotal ?? phones.length,
+        phones.join('; '),
+        entry.credentialHints,
+        entry.walletHints,
+        entry.source,
+      ];
+    }),
   };
 }
 
