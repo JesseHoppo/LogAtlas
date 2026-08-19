@@ -1201,9 +1201,9 @@ function classifyBucket(score) {
 }
 
 function classifyBucketLabel(bucket) {
-  if (bucket === 'likely-current') return 'Likely Current';
-  if (bucket === 'review') return 'Needs Review';
-  return 'Weak / Historical';
+  if (bucket === 'likely-current') return 'Likely current';
+  if (bucket === 'review') return 'Needs review';
+  return 'Weak / historical';
 }
 
 function scoreCredential(entry, context) {
