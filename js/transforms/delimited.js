@@ -327,6 +327,9 @@ export function detectFormat(text) {
   for (const line of sample) {
     const trimmed = line.trim();
     if (trimmed === '') { blankLineCount++; continue; }
+    // The key run in KV_PATTERN admits spaces, so a colon-free line of padding
+    // backtracks quadratically. No colon, no match: skip it outright.
+    if (!trimmed.includes(':')) continue;
     const match = trimmed.match(KV_PATTERN);
     if (match) {
       kvLineCount++;
