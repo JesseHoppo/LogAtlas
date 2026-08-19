@@ -1173,19 +1173,13 @@ export function initDashboard() {
       overviewScreenshotUrl = url;
 
       const subtitle = data.entries && data.entries.length > 1
-        ? `<div class="dash-section-subtitle">${data.entries.length} screenshots detected</div>`
+        ? `<div class="dash-section-subtitle">${countLabel(data.entries.length, 'screenshot')}</div>`
         : '';
-      body.innerHTML = `${subtitle}<img class="dash-screenshot-img dash-screenshot-clickable" src="${url}" alt="Screenshot from log (click to enlarge)">`;
+      body.innerHTML = `${subtitle}<button type="button" class="dash-screenshot-clickable" title="Enlarge screenshot"><img class="dash-screenshot-img" src="${url}" alt="Screenshot from log"></button>`;
       section.classList.remove('hidden');
 
-      const img = body.querySelector('.dash-screenshot-img');
-      img.addEventListener('click', () => {
-        const lightbox = document.createElement('div');
-        lightbox.className = 'screenshot-lightbox';
-        lightbox.innerHTML = `<img src="${url}" alt="Screenshot enlarged">`;
-        lightbox.addEventListener('click', () => lightbox.remove());
-        document.body.appendChild(lightbox);
-      });
+      body.querySelector('.dash-screenshot-clickable')
+        .addEventListener('click', () => openScreenshotLightbox(url, 'Screenshot from log'));
     } catch {
       // skip if screenshot fails to load
     }
