@@ -273,8 +273,12 @@ function parseSystemInfoTextEntries(text, requireStructuredStart = true) {
 
     if (!collecting) continue;
 
+    // A key that opened with an empty value collects the lines under it until
+    // the next key, blank line or section. RedLine writes those unindented
+    // (`Anti-Viruses:` then `Windows Defender` hard against the margin), so the
+    // indent is a hint, not a requirement.
     if (pendingKey) {
-      if (clean && !SYSINFO_KV_PATTERN.test(clean) && !isStructuredSysinfoSection(clean) && (isIndented || /^[-*•]/.test(trimmed))) {
+      if (clean && !SYSINFO_KV_PATTERN.test(clean) && !isStructuredSysinfoSection(clean)) {
         pendingValues.push(clean);
         continue;
       }

@@ -1,26 +1,36 @@
 // Shared normalisation/utility functions and regex constants used across transform parsers.
 
+import { EMAIL_REGEX } from '../core/definitions/patterns.js';
+
 export { JWT_TOKEN_PATTERN } from '../core/definitions/patterns.js';
 
-export const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]*?)\s*:\s+(.*)/;
+// The key runs are length-bounded: they admit spaces, so an unbounded lazy run
+// against the greedy `\s*` separator backtracks quadratically over a long space
+// run. No real field name comes close to the bound.
+export const KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]{0,120}?)\s*:\s+(.*)/;
 export const AUTOFILL_KV_PATTERN = /^([A-Za-z_][A-Za-z0-9_.$\-[\]]*)\s*:\s*(.+)$/;
 export const HISTORY_URL_PATTERN = /^(?:(?:[a-z][a-z0-9+.-]*):\/\/\/?|(?:about|blob|chrome|chrome-extension|data|devtools|edge|file|javascript|moz-extension|opera|view-source|vivaldi):)/i;
 export const GOOGLE_RESTORE_TOKEN_PATTERN = /^(?!https?:\/\/)(?!file:\/\/)([^:\s]{20,}):(\d{6,})$/;
 export const CLIPBOARD_URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
-export const CREDIT_CARD_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _/-]*?)\s*:\s*(.*)$/;
+export const CREDIT_CARD_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _/-]{0,120}?)\s*:\s*(.*)$/;
 // `[^>]` runs are length-bounded so a malformed anchor with no closing `>`
 // cannot drive quadratic backtracking on multi-MB attacker-controlled bookmark HTML.
 export const BOOKMARK_HTML_PATTERN = /<a\b[^>]{0,2000}href=(?:"([^"]+)"|'([^']+)')[^>]{0,2000}>(.*?)<\/a>/ig;
 export const DISCORD_TOKEN_PATTERN = /^(?:mfa\.)?[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{10,}$/;
 export const TOKEN_VALUE_FIELD_PATTERN = /^(?:(?:access|refresh|auth|oauth|bearer|session|restore|google|discord|facebook|steam)\s+)?token(?:\s+value)?\s*[:=]\s*(\S{6,})$/i;
 export const ACCOUNT_ID_FIELD_PATTERN = /^(?:id|uid|user(?:\s*id)?|account(?:\s*id)?|profile(?:\s*id)?)\s*[:=]\s*(\d{6,})$/i;
-export const PASSWORD_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()[\]-]*?)\s*:\s*(.*)$/;
+export const PASSWORD_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()[\]-]{0,120}?)\s*:\s*(.*)$/;
 export const WINDOWS_PATH_PATTERN = /[A-Z]:\\[^"\r\n\t]+/g;
 export const URL_INDICATOR_PATTERN = /https?:\/\/[^\s"'<>]+/g;
-export const SYSINFO_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()%-]*?)\s*(?:=\s*|:\s*)(.*)$/;
+export const SYSINFO_KV_PATTERN = /^([A-Za-z][A-Za-z0-9 _./()%-]{0,120}?)\s*(?:=\s*|:\s*)(.*)$/;
 export const SYSINFO_CAPTURE_SECTION_PATTERN = /^(?:Network Info|System Summary|System Info(?:rmation)?|User Info(?:rmation)?|Hardware Info|PC Info|Environment|Computer Info|User Agents|Installed (?:Apps|Software|Programs)|Process(?: List|es)?|Browsers?)\s*:$/i;
-export const SYSINFO_STRUCTURED_KEY_PATTERN = /^(?:ip(?: address)?|country|region|city|postal code|zip|location|hwid|guid|machine guid|machine id|machine name|build(?: id)?|os(?: name)?|os version|platform|architecture|arch|username|user name|computer name|pc name|host(?:name)?|(?:log |user |local |capture )?date|user time|local time|utc|timezone|time zone|traffic|geo|seller|bot id|language|languages|keyboard(?:s)?|laptop|running path|cpu|processor|cores?|threads?|ram|memory|display(?: resolution)?|screen(?: resolution)?|gpu|video card|mac(?: address)?|bios|antivirus|defender|domain|monitor|board|motherboard|drives?)$/i;
-export const SYSINFO_MULTILINE_KEY_PATTERN = /^(?:gpu|video card|display adapters?|dns servers?|installed (?:apps|software|programs)|process(?: list|es)|user agents?)$/i;
+export const SYSINFO_STRUCTURED_KEY_PATTERN = /^(?:ip(?: address)?|country|region|city|postal code|zip|location|hwid|guid|machine guid|machine id|machine name|build(?: id)?|lummac2 ?build|lid(?: \(lumma id\))?|configuration|operation ?id|os(?: name)?|os version|platform|architecture|arch|username|user name|computer name|pc name|host(?:name)?|(?:log |user |local |capture )?date|user time|local time|utc|timezone|time zone|traffic|geo|seller|bot id|language|languages|keyboard(?:s)?|laptop|(?:running )?path|cpu|processor|cores?|threads?|ram|memory|display(?: resolution)?|screen(?: resolution)?|gpu|video card|mac(?: address)?|bios|anti[ _-]?virus(?:es)?|defender|domain|monitor|board|motherboard|drives?)$/i;
+export const SYSINFO_MULTILINE_KEY_PATTERN = /^(?:gpu|video card|display adapters?|dns servers?|anti[ _-]?virus(?:es)?|installed (?:apps|software|programs)|process(?: list|es)|user agents?)$/i;
+// Files that are a bare list of passwords with no account context. Analysis
+// rescues their contents; the credentials page has to recognise the same names
+// so it does not report a rescued file as one it could not parse.
+export const RECOVERED_PASSWORD_FILE = /(?:uniq(?:ue)?[_-]?passwords?|passwords?[_-]?uniq(?:ue)?|brute|all[_-]?passwords|passwords?[_-]?only|wordlist)/i;
+
 export const LINE_CONTAINS_HOST = /[a-z0-9-]+\.[a-z]{2,}/i;
 
 const PASSWORD_SITE_KEYS = new Set([
