@@ -186,57 +186,85 @@ function buildSearchText(row) {
   ].join(' ').toLowerCase();
 }
 
-function captureProvenance({ source, detail }) {
-  return source === 'sysinfo' && detail ? `sysinfo: ${detail}` : source || '';
+// How sure the resolver is of the address it put in the headline. Corporate is
+// the only one that carries the success tone: an employer is a finding, a
+// webmail address is a fact.
+function identityTag(id) {
+  if (id.kind === 'unknown') return { tone: 'muted', text: 'no email identity recovered' };
+  if (id.tentative) return { tone: 'muted', text: 'tentative identity' };
+  if (id.kind === 'corporate') return { tone: 'success', text: `corporate identity · ${id.domain}` };
+  return { tone: 'muted', text: 'personal identity' };
+}
+
+// The dashboard counts credentials unique by domain, username and password;
+// this table also ranks accounts whose password was never captured, so it is
+// always the larger figure. Printing the two parts is what stops them reading
+// as a contradiction. They come from separate passes over the credential files,
+// so the split is only shown when it adds up.
+function rankedRowsFact(summary) {
+  const analysed = credentialsAnalysis;
+  const split = analysed
+    && analysed.accountsWithoutPasswords > 0
+    && analysed.uniqueCredentials + analysed.accountsWithoutPasswords === summary.rankedRows;
+  const detail = split
+    ? ` \u2014 ${countLabel(analysed.uniqueCredentials, 'unique credential')} plus ${countLabel(analysed.accountsWithoutPasswords, 'account with no captured password', 'accounts with no captured password')}`
+    : '';
+  const title = detail
+    ? ''
+    : ' title="One row per site, username and password, including accounts whose password was never captured."';
+  return `<span${title}><strong>${summary.rankedRows.toLocaleString()}</strong> ranked rows${detail}</span>`;
 }
 
 function buildHeroLine(summary) {
-  const id = summary.primaryIdentity || { kind: 'unknown', label: '', domain: '' };
+  const id = summary.primaryIdentity || { kind: 'unknown', label: '', domain: '', evidence: [] };
 
-  // Headline: primary identity. Adapts to corp / personal / unknown so even a
-  // personal-only victim shows a useful "who" line.
-  let headlineHtml;
-  if (id.kind === 'corporate') {
-    headlineHtml = `<strong>${escapeHtml(id.label)}</strong> <span class="lab-hero-tag lab-hero-tag-success">corroborated employer · ${escapeHtml(id.domain)}</span>`;
-  } else if (id.kind === 'personal') {
-    headlineHtml = `<strong>${escapeHtml(id.label)}</strong> <span class="lab-hero-tag lab-hero-tag-muted">personal-only victim</span>`;
-  } else if (id.kind === 'autofill') {
-    headlineHtml = `<strong>${escapeHtml(id.label)}</strong> <span class="lab-hero-tag lab-hero-tag-muted">tentative identity</span>`;
-  } else {
-    headlineHtml = `<strong>${escapeHtml(id.osUsername || 'Unknown victim')}</strong> <span class="lab-hero-tag lab-hero-tag-muted">no usable identity signal</span>`;
-  }
+  // Headline: the primary identity, ranked the same way the Identity page ranks
+  // it, with the evidence for the pick on the line below so it can be argued
+  // with rather than taken on trust.
+  const tag = identityTag(id);
+  const headlineHtml = `<strong>${escapeHtml(id.label || id.osUsername || 'Unknown victim')}</strong> <span class="lab-hero-tag lab-hero-tag-${tag.tone}">${escapeHtml(tag.text)}</span>`;
 
+  const idEvidence = (id.evidence || []).map((item) => escapeHtml(item)).join(' · ');
+
+  // The employer is a separate claim from the primary identity — the busiest
+  // address in a case is often the victim's personal one — so it sits with the
+  // host facts rather than inside the evidence for the pick.
+  const employer = summary.dominantCorporateDomain?.domain || '';
   const idMeta = [
+    employer && employer !== id.domain ? `corroborated employer <code>${escapeHtml(employer)}</code>` : '',
     id.osUsername ? `OS user <code>${escapeHtml(id.osUsername)}</code>` : '',
     id.computerName ? `host <code>${escapeHtml(id.computerName)}</code>` : '',
     id.country ? `country ${escapeHtml(id.country)}` : '',
   ].filter(Boolean).join(' · ');
 
-  // Live evidence: the most actionable summary on the page.
+  // Live evidence: the most actionable summary on the page. App-stored rows are
+  // live by definition, so they ride inside the live figure rather than beside
+  // it — added up as siblings they double-count the same credentials.
+  const appNote = summary.appCount > 0 ? ` (${summary.appCount.toLocaleString()} app-stored)` : '';
   const liveBits = [
     summary.liveCount > 0
-      ? `<span class="lab-hero-live"><strong>${summary.liveCount}</strong> live-access evidence</span>`
+      ? `<span class="lab-hero-live" title="Valid session or app-stored"><strong>${summary.liveCount.toLocaleString()}</strong> live-access evidence${appNote}</span>`
       : '',
-    summary.recentCount > 0 ? `<span><strong>${summary.recentCount}</strong> recent</span>` : '',
-    summary.appCount > 0 ? `<span><strong>${summary.appCount}</strong> app-stored</span>` : '',
-    summary.reuseGroups > 0 ? `<span><strong>${summary.reuseGroups}</strong> reused passwords</span>` : '',
+    summary.recentCount > 0 ? `<span><strong>${summary.recentCount.toLocaleString()}</strong> recent</span>` : '',
+    summary.reuseGroups > 0 ? `<span><strong>${summary.reuseGroups.toLocaleString()}</strong> reused passwords</span>` : '',
   ].filter(Boolean);
 
   // Read the anchor off the model so the line cannot contradict the rows it
   // sits above; the model resolves it from the same published context.
   const anchor = summary.captureDate
-    ? { date: summary.captureDate, source: summary.captureSource, detail: summary.captureDetail }
+    ? { date: summary.captureDate, source: summary.captureSource, detail: summary.captureDetail, offsetMinutes: summary.captureOffsetMinutes }
     : null;
   const captureBit = anchor
-    ? `Captured ${escapeHtml(formatDateTimeLabel(anchor.date))} <span class="lab-hero-tag-muted">(${escapeHtml(captureProvenance(anchor))})</span>`
+    ? `Captured ${escapeHtml(formatInstantLabel(anchor.date))} <span class="lab-hero-tag-muted">(${escapeHtml(captureProvenance(anchor))})</span>`
     : `<span class="lab-hero-warn">No capture anchor; recency disabled</span>`;
 
   return `
     <div class="lab-hero">
       <div class="lab-hero-headline">${headlineHtml}</div>
+      ${idEvidence ? `<div class="lab-hero-meta">${idEvidence}</div>` : ''}
       ${idMeta ? `<div class="lab-hero-meta">${idMeta}</div>` : ''}
       <div class="lab-hero-facts">
-        <span title="Rows scored here: site + username + password, accounts with no captured password included. The dashboard's credential count is a different tally."><strong>${summary.rankedRows.toLocaleString()}</strong> ranked rows</span>
+        ${rankedRowsFact(summary)}
         ${liveBits.join('')}
         <span class="lab-hero-capture">${captureBit}</span>
       </div>
@@ -556,6 +584,7 @@ function initCurrentnessLab() {
   function resetInputs() {
     sysinfoEntries = null;
     capture = null;
+    credentialsAnalysis = null;
     dataReady = false;
     sysinfoReady = false;
     modelReady = false;
@@ -626,6 +655,8 @@ function initCurrentnessLab() {
     capture = data;
     if (modelReady) rebuildCurrentnessModel();
   });
+
+  on('analysis:credentials', (data) => { credentialsAnalysis = data; });
 
   on('analysis:sysinfo', (data) => {
     sysinfoEntries = data?.entries || null;
