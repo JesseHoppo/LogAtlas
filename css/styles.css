@@ -926,8 +926,15 @@ body {
 .dash-case-context .ctx-val {
   color: var(--text-primary);
 }
-.dash-case-context .ctx-sep {
+.dash-case-context .ctx-item {
+  display: inline;
+}
+/* The separator belongs to the fact before it. As a standalone element it wrapped
+   on its own and left a bare dot at the top of a line on a narrow viewport. */
+.dash-case-context .ctx-item:not(:last-child)::after {
+  content: '\00b7';
   color: var(--border-strong);
+  margin-left: 0.65rem;
 }
 
 .dash-verdict-cards {
