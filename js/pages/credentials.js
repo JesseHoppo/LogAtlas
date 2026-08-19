@@ -710,11 +710,13 @@ function noteRowBuilder(entry) {
   </tr>`;
 }
 
+const PII_NOTE_PREVIEW = 25;
+
 function buildNotesPiiGroupHtml(entries) {
   const piiNotes = (entries || []).filter(entry => entry.hasStructuredPii);
   if (piiNotes.length === 0) return '';
 
-  const rows = piiNotes.slice(0, 25).map(entry => `<tr>
+  const rows = piiNotes.slice(0, PII_NOTE_PREVIEW).map(entry => `<tr>
     <td title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</td>
     <td title="${escapeHtml(entry.indicators)}">${escapeHtml(entry.indicators)}</td>
     <td title="${escapeHtml(entry.source)}">${escapeHtml(trimRootPath(entry.source))}</td>
@@ -722,11 +724,14 @@ function buildNotesPiiGroupHtml(entries) {
 
   return `<div class="data-page-finding">
     <div class="data-page-finding-title">Notes containing structured PII</div>
-    <div class="data-page-finding-more">${piiNotes.length.toLocaleString()} note(s) hold seed phrases, card numbers, IBANs, crypto addresses, or national IDs.</div>
+    <div class="data-page-finding-more">${countLabel(piiNotes.length, 'note')} holding seed phrases, card numbers, IBANs, crypto addresses or national IDs.</div>
     <div class="data-table-container"><table class="data-table">
       <thead><tr><th>Title</th><th>Indicators</th><th>Source</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
+    ${piiNotes.length > PII_NOTE_PREVIEW
+      ? `<div class="data-page-finding-more">${countLabel(piiNotes.length - PII_NOTE_PREVIEW, 'more note')} omitted — see the full table below</div>`
+      : ''}
   </div>`;
 }
 
