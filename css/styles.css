@@ -779,6 +779,17 @@ body {
   background: var(--error-border);
   border-right: 2px solid var(--error);
 }
+/* A session cookie is live too, so it stays in the green family — just paler
+   than one with an expiry still ahead of it. An expiry we could not read is
+   uncertainty, not a verdict. */
+.dash-bar-row-stacked .dash-bar-fill-session {
+  background: var(--success-dim);
+  border-right: 2px solid var(--success);
+}
+.dash-bar-row-stacked .dash-bar-fill-unknown {
+  background: var(--warning-dim-strong);
+  border-right: 2px solid var(--warning);
+}
 
 /* Legend for stacked bars */
 .dash-bar-legend {
@@ -806,6 +817,14 @@ body {
 .dash-bar-legend-expired {
   background: var(--error-border);
   border: 1px solid var(--error);
+}
+.dash-bar-legend-session {
+  background: var(--success-dim);
+  border: 1px solid var(--success);
+}
+.dash-bar-legend-unknown {
+  background: var(--warning-dim-strong);
+  border: 1px solid var(--warning);
 }
 
 .dash-bar-label {
