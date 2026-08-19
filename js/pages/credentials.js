@@ -21,10 +21,16 @@ import {
   baseDomainFromUrl,
   decodeNodeCached,
   parseNodeCached,
+  showNotification,
 } from '../core/shared.js';
-import { classifyCookie, isLiveSessionToken } from '../analysis/sessionCookies.js';
+import { classifyCookie, hasReplayableValue, isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
+import { RECOVERED_PASSWORD_FILE } from '../transforms/shared.js';
+import { DATA_PAGE_EMPTY_TEXT } from './registry.js';
 import {
+  buildNoMatchesHtml,
+  countLabel,
+  datasetSummary,
   PAGE_SIZE,
   buildShowMoreButton,
   buildRowsHtml,
@@ -182,7 +188,12 @@ async function loadPasswordsData(fileTree, rootName) {
       const text = decodeNodeCached(node, content);
       const parsed = parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) {
-        failedFiles.push({ path: sourcePath, reason: 'No credentials parsed' });
+        // A bare password dump has no account columns to fail on; analysis
+        // reads it as recovered passwords, so listing it here as unparsed
+        // contradicted the panel directly below.
+        if (!RECOVERED_PASSWORD_FILE.test(node.name || '')) {
+          failedFiles.push({ path: sourcePath, reason: 'No credentials parsed' });
+        }
         continue;
       }
 
