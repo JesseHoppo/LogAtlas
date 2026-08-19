@@ -653,9 +653,24 @@ function attachShowAllLinesHandler() {
   }
 }
 
-function attachImageLoadHandler() {
+// Grabbed images are often truncated, and a failed decode fires no load event —
+// without this the pane sits blank and reads as an empty screenshot.
+function attachImageLoadHandler(requestId) {
   const img = elBody.querySelector('.preview-image');
-  if (img) img.addEventListener('load', () => { img.style.opacity = '1'; });
+  if (!img) return;
+
+  const settle = () => {
+    if (requestId !== previewRequestId) return;
+    if (img.naturalWidth > 0) {
+      img.style.opacity = '1';
+      return;
+    }
+    elBody.innerHTML = renderError('Image could not be decoded — the file may be truncated or corrupt. Download it to inspect the raw bytes.');
+  };
+
+  img.addEventListener('load', settle);
+  img.addEventListener('error', settle);
+  if (img.complete) settle();
 }
 
 function renderUnsupported(fileName) {
@@ -903,7 +918,7 @@ async function showPreview(name, size, pathSegments) {
 
   if (isImageFile(name)) {
     elBody.innerHTML = renderImagePreview(content, name);
-    attachImageLoadHandler();
+    attachImageLoadHandler(requestId);
   } else if (getFileExtension(name) === 'pdf') {
     elBody.innerHTML = renderPdfPreview(content, name);
   } else if (isOfficeOpenXmlFile(name)) {
