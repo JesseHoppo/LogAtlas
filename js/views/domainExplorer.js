@@ -374,54 +374,77 @@ function renderDomainDetail(data, baseDomain) {
   return html;
 }
 
+// Ad and analytics hosts out-count everything the victim actually used —
+// adnxs.com and rubiconproject.com topped the chart on real cases — so they
+// are kept in the table but never rank the bars.
+//
+// The bars name what they show, so they rank themselves rather than taking the
+// table's order: a header sort reorders the rows underneath, and the ten
+// domains above them stay the ten with the most artefacts.
+function buildDomainBarsHtml(items) {
+  const ranked = items.filter(d => !AD_TRACKER_DOMAINS.has(d.domain));
+  const top10 = [...(ranked.length > 0 ? ranked : items)]
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+  if (top10.length === 0) return '';
+
+  const maxCount = top10[0].total || 1;
+  const bars = top10.map(d => {
+    const pct = Math.round((d.total / maxCount) * 100);
+    return `<div class="domain-bar-row">
+      <span class="domain-bar-label">${escapeHtml(d.domain)}</span>
+      <div class="domain-bar-track"><div class="domain-bar-fill" style="width:${pct}%"></div></div>
+      <span class="domain-bar-count">${d.total.toLocaleString()}</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="data-page-finding">
+    <div class="data-page-finding-title">Top domains by artefact count</div>
+    <div class="data-page-finding-more">Credentials, cookies, history, bookmarks, downloads, detections and notes combined, across the domains listed below. Ad and analytics hosts are excluded from the ranking.</div>
+    <div class="domain-bars">${bars}</div>
+  </div>`;
+}
+
 function renderDomainsPage(searchQuery = '') {
   const summary = document.getElementById('domainsSummary');
   const stats = document.getElementById('domainsStats');
   const content = document.getElementById('domainsContent');
 
   if (domainList.length === 0) {
-    summary.textContent = 'No domain data found';
+    summary.textContent = 'No domain data.';
     stats.innerHTML = '';
-    content.innerHTML = '<div class="no-data">No domain data available.</div>';
+    content.innerHTML = '<div class="no-data">No domains.</div>';
     return;
   }
 
   let filtered = domainList;
   if (searchQuery) {
+    // Subdomains are folded into their base row, so a search for a host the
+    // case actually holds has to reach the row that carries it.
     const q = searchQuery.toLowerCase();
-    filtered = domainList.filter(d => d.domain.toLowerCase().includes(q));
+    filtered = domainList.filter(d => d.domain.toLowerCase().includes(q)
+      || [...d._data.subdomains].some(sub => sub.toLowerCase().includes(q)));
   }
 
-  domainFiltered = filtered;
-  domainShown = Math.min(PAGE_SIZE, filtered.length);
+  domainFiltered = domainSort.apply(filtered);
+  domainShown = Math.min(PAGE_SIZE, domainFiltered.length);
   expandedDomain = null;
+  stats.innerHTML = '';
 
-  let summaryText = filtered.length !== domainList.length
-    ? `Showing ${filtered.length.toLocaleString()} of ${domainList.length.toLocaleString()} unique domains across credentials, cookies, history, bookmarks, downloads, detections, and notes`
-    : `${domainList.length.toLocaleString()} unique domains across credentials, cookies, history, bookmarks, downloads, detections, and notes`;
-  const suspiciousCount = domainList.filter(d => d.suspicious).length;
-  if (suspiciousCount > 0) {
-    summaryText += ` — ${suspiciousCount} host${suspiciousCount !== 1 ? 's' : ''} with all-valid cookie sets (possible attacker/test infrastructure)`;
-  }
-  summary.textContent = summaryText;
+  summary.textContent = datasetSummary({ shown: filtered.length, total: domainList.length, singular: 'domain' });
 
-  const top10 = domainList.slice(0, 10);
-  if (top10.length > 0) {
-    const maxCount = top10[0].total;
-    stats.innerHTML = top10.map(d => {
-      const pct = Math.round((d.total / maxCount) * 100);
-      return `<div class="domain-bar-row">
-        <span class="domain-bar-label">${escapeHtml(d.domain)}</span>
-        <div class="domain-bar-track"><div class="domain-bar-fill" style="width:${pct}%"></div></div>
-        <span class="domain-bar-count">${d.total}</span>
-      </div>`;
-    }).join('');
-  } else {
-    stats.innerHTML = '';
+  if (filtered.length === 0) {
+    content.innerHTML = '<div class="no-data">No domains match this search.</div>';
+    return;
   }
 
-  let html = '<div class="data-table-container"><table class="data-table domain-table">';
-  html += '<thead><tr><th>Domain</th><th>Credentials</th><th>Cookies</th><th>History</th><th>Bookmarks</th><th>Downloads</th><th>Other</th><th>Subdomains</th></tr></thead><tbody>';
+  let html = buildDomainBarsHtml(domainFiltered);
+  if (domainSort.order === 'none') html += `<div class="data-table-caption">${RANK_CAPTION}</div>`;
+  html += '<div class="data-table-container"><table class="data-table domain-table">';
+  html += `<thead><tr>${domainSort.th('domain', 'Domain')}${domainSort.th('credentials', 'Credentials')}${
+    domainSort.th('cookies', 'Cookies')}${domainSort.th('history', 'History')}${
+    domainSort.th('bookmarks', 'Bookmarks')}${domainSort.th('downloads', 'Downloads')}${
+    domainSort.th('other', 'Other')}${domainSort.th('subdomains', 'Subdomains')}</tr></thead><tbody>`;
   for (let i = 0; i < domainShown; i++) {
     html += domainRowBuilder(domainFiltered[i]);
   }
@@ -595,6 +618,7 @@ function initDomainExplorer() {
     domainShown = 0;
     expandedDomain = null;
     domainIndexBuilt = false;
+    domainSort.reset();
     document.getElementById('navDomains').disabled = true;
     if (searchInput) searchInput.value = '';
   });
