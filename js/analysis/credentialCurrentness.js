@@ -493,20 +493,41 @@ function hostMatchesIdentityDomain(host, identityDomain) {
   return getDomainTokens(normalisedDomain).some((token) => tokenPattern(token).test(normalisedHost));
 }
 
+// Only the key, label and kind are ever read off a match, so the descriptors
+// are built once and handed out by reference.
+const PROVIDER_DESCRIPTORS = new Map(
+  PROVIDER_DEFINITIONS.flatMap((provider) => ['generic', 'tenant'].map((kind) => [
+    `${provider.key}:${kind}`,
+    Object.freeze({ key: provider.key, label: provider.label, kind }),
+  ]))
+);
+
+function matchProviderDescriptor(host) {
+  for (const provider of PROVIDER_DEFINITIONS) {
+    if (provider.tenantHostPatterns.some((pattern) => pattern.test(host))) {
+      return PROVIDER_DESCRIPTORS.get(`${provider.key}:tenant`);
+    }
+    if (provider.genericHostPatterns.some((pattern) => pattern.test(host))) {
+      return PROVIDER_DESCRIPTORS.get(`${provider.key}:generic`);
+    }
+  }
+  return null;
+}
+
+// The whole pattern table runs against every cookie and history host in the
+// case, and a large browser export repeats a few thousand hosts tens of
+// thousands of times. The cache stops taking entries once full rather than
+// evicting, on the same reasoning as the domain caches in core/shared.
+const PROVIDER_CACHE_LIMIT = 20000;
+const providerCache = new Map();
+
 function getProviderDescriptor(host) {
   const lowerHost = normaliseText(host);
   if (!lowerHost) return null;
-
-  for (const provider of PROVIDER_DEFINITIONS) {
-    if (provider.tenantHostPatterns.some((pattern) => pattern.test(lowerHost))) {
-      return { ...provider, kind: 'tenant' };
-    }
-    if (provider.genericHostPatterns.some((pattern) => pattern.test(lowerHost))) {
-      return { ...provider, kind: 'generic' };
-    }
-  }
-
-  return null;
+  if (providerCache.has(lowerHost)) return providerCache.get(lowerHost);
+  const descriptor = matchProviderDescriptor(lowerHost);
+  if (providerCache.size < PROVIDER_CACHE_LIMIT) providerCache.set(lowerHost, descriptor);
+  return descriptor;
 }
 
 function daysBetween(laterDate, earlierDate) {
