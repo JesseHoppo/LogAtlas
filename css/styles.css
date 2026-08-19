@@ -4945,21 +4945,6 @@ textarea:focus-visible,
 }
 
 
-.domain-suspicious-badge {
-  font-family: var(--font-mono);
-  font-size: 0.55rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 0.05rem 0.3rem;
-  border-radius: var(--radius-sm);
-  background: var(--error-dim);
-  color: var(--error);
-}
-
-.domain-row-suspicious .domain-name-cell {
-  color: var(--error);
-}
-
 .identity-os-chip {
   font-family: var(--font-mono);
   font-size: 0.6rem;
