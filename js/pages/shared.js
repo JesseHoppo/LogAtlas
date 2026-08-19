@@ -11,8 +11,10 @@ import {
   SHARED_TEXT_DECODER,
 } from '../core/shared.js';
 import { openColumnMapper } from '../files/columnMapper.js';
+import { parseStructuredFile } from '../files/structuredTransforms.js';
+import { openTransientModal, topModal } from '../core/modal.js';
 
-export { formatBytes };
+export { formatBytes, openTransientModal };
 
 export const PAGE_SIZE = 200;
 
@@ -134,9 +136,17 @@ export function bindTableSort(container, sort, rerender) {
   el.addEventListener('keydown', activate);
 }
 
-// Click a cell to copy it. Columns truncate what they show, so the title
-// attribute carries the untruncated text and wins over the visible label.
+// A click on a cell does what a click does everywhere else — it puts a caret
+// down and starts a selection. Copying is its own control: one button, moved
+// into whichever cell the pointer or the keyboard is on, so a page of two
+// hundred rows carries exactly one of them and nothing is copied by accident.
+// Columns truncate what they show, so the title attribute carries the
+// untruncated text and wins over the visible label.
 const COPYABLE_CELL = '.data-table td, .domain-detail-table td, .lab-creds-table td';
+const COPY_HINT_ID = 'cellCopyHint';
+// Drawn with its own stroke rather than left to the sheet: the control is
+// useless if it is invisible.
+const COPY_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5.9" y="5.9" width="8.2" height="8.2" rx="1.4"/><path d="M11 4V2.8A1.3 1.3 0 0 0 9.7 1.5H2.8A1.3 1.3 0 0 0 1.5 2.8v6.9A1.3 1.3 0 0 0 2.8 11H4"/></svg>';
 
 let flashTimer = null;
 
@@ -148,54 +158,296 @@ function flashCopied(cell) {
   flashTimer = setTimeout(() => cell.classList.remove('cell-copied'), 600);
 }
 
+function cellValue(cell) {
+  // A cell spanning the table is an opened detail panel, not a value: copying
+  // it would take the whole panel's text.
+  if (cell.hasAttribute('colspan')) return '';
+  // The em dash stands for a value the log never recorded; there is nothing to
+  // take, and the placeholder on the clipboard would pass for one.
+  if (cell.querySelector('.cell-empty')) return '';
+  return (cell.title || cell.textContent || '').trim();
+}
+
+function rowCells(row) {
+  return [...row.children].filter((el) => el.tagName === 'TD');
+}
+
+function tableRows(table) {
+  const body = table?.querySelector('tbody');
+  return body ? [...body.children].filter((el) => el.tagName === 'TR') : [];
+}
+
+// A masked cell belongs to its reveal control, the em dash placeholder stands
+// for a value the log never held, and a cell that is only a button holds an
+// action rather than evidence. None of the three has anything to take.
+// A table inside a dialog that is not the top of the modal stack is behind
+// something else, so it is not what a click or a keystroke is aimed at.
+function isCopyable(cell) {
+  if (!cell || !cell.isConnected || cell.classList.contains('masked')) return false;
+  if (cell.querySelector('button:not(.cell-copy-btn)')) return false;
+  const overlay = cell.closest('.modal-overlay');
+  if (overlay && overlay !== topModal()) return false;
+  return cellValue(cell) !== '';
+}
+
+// The heading the cell sits under. It names what went to the clipboard without
+// putting the value itself anywhere.
+function columnLabel(cell) {
+  const headers = cell.closest('table')?.querySelectorAll('thead th');
+  const label = headers?.[rowCells(cell.parentNode).indexOf(cell)]?.textContent.trim() || '';
+  return label.length <= 32 ? label : '';
+}
+
+let copyBtn = null;
+let hoveredCell = null;
+let focusedCell = null;
+
+async function copyCell(cell) {
+  if (!isCopyable(cell)) return;
+  const label = columnLabel(cell);
+
+  if (await copyToClipboard(cellValue(cell))) {
+    flashCopied(cell);
+    // The value itself never goes into the banner: the tables hold cookie
+    // values, autofill entries and revealed passwords, and a copy is often made
+    // while presenting. The column name and the cell's own flash say which one
+    // was taken without repeating it.
+    showNotification(label ? `Copied ${label} to clipboard` : 'Copied to clipboard');
+  } else {
+    showNotification('Could not copy to clipboard', 'error');
+  }
+}
+
+function copyButton() {
+  if (copyBtn) return copyBtn;
+  copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'cell-copy-btn';
+  copyBtn.innerHTML = COPY_ICON;
+  // Taking focus on press would collapse a selection the analyst is part-way
+  // through making and drop the caret somewhere they did not put it.
+  copyBtn.addEventListener('mousedown', (event) => event.preventDefault());
+  copyBtn.addEventListener('click', (event) => {
+    // Some of these rows open on a click anywhere in them. This is not that.
+    event.stopPropagation();
+    const cell = copyBtn.closest(COPYABLE_CELL);
+    copyCell(cell);
+    // Reached by keyboard, the button holds focus afterwards and the arrow keys
+    // can no longer walk the table; hand it back to the cell it lives in.
+    if (cell && document.activeElement === copyBtn) focusCell(cell);
+  });
+  return copyBtn;
+}
+
+// Rerenders take the cell the button was sitting in with them, so the two
+// references are checked rather than trusted.
+function liveCell(cell) {
+  return cell?.isConnected ? cell : null;
+}
+
+function syncCopyButton() {
+  const cell = liveCell(focusedCell) || liveCell(hoveredCell);
+  if (!isCopyable(cell)) {
+    copyBtn?.remove();
+    return;
+  }
+  if (copyBtn?.parentNode === cell) return;
+
+  const button = copyButton();
+  const label = columnLabel(cell);
+  button.setAttribute('aria-label', label ? `Copy ${label} to clipboard` : 'Copy this cell to clipboard');
+  cell.appendChild(button);
+}
+
+// One description node for the whole app, pointed at whichever cell currently
+// holds focus, so the copy action has a name without every cell carrying a
+// label that would be read out during ordinary table navigation.
+function copyHint() {
+  let hint = document.getElementById(COPY_HINT_ID);
+  if (!hint) {
+    hint = document.createElement('span');
+    hint.id = COPY_HINT_ID;
+    hint.className = 'sr-only';
+    hint.textContent = 'Press Tab for the copy button, or use the arrow keys to move.';
+    document.body.appendChild(hint);
+  }
+  return hint;
+}
+
+let describedCell = null;
+
+function releaseCell() {
+  describedCell?.removeAttribute('aria-describedby');
+  describedCell = null;
+  focusedCell = null;
+  syncCopyButton();
+}
+
+function focusCell(cell) {
+  if (!cell) return false;
+  releaseCell();
+  cell.tabIndex = -1;
+  if (isCopyable(cell)) {
+    copyHint();
+    cell.setAttribute('aria-describedby', COPY_HINT_ID);
+    describedCell = cell;
+  }
+  focusedCell = cell;
+  syncCopyButton();
+  cell.focus();
+  return true;
+}
+
+// The sortable headers are already in the tab order, so the body is entered
+// from one of them rather than by making every cell tabbable — a page of 200
+// rows would otherwise cost a thousand tab stops.
+function navigateCells(event) {
+  const { key } = event;
+  if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Escape') return false;
+
+  const header = event.target.closest('thead th');
+  if (header) {
+    if (key !== 'ArrowDown') return false;
+    const rows = tableRows(header.closest('table'));
+    const column = [...header.parentNode.children].indexOf(header);
+    if (rows.length === 0) return false;
+    const cells = rowCells(rows[0]);
+    return focusCell(cells[Math.min(column, cells.length - 1)]);
+  }
+
+  // The copy control sits inside the cell, so the arrow keys keep working while
+  // focus is on it.
+  const cell = event.target.closest(COPYABLE_CELL);
+  if (!cell || !cell.contains(document.activeElement)) return false;
+
+  const row = cell.parentNode;
+  const cells = rowCells(row);
+  const column = cells.indexOf(cell);
+  // Only a header that can hold focus is somewhere to go back to.
+  const headerCell = () => {
+    const headers = cell.closest('table')?.querySelectorAll('thead th[tabindex]');
+    return headers?.length ? headers[Math.min(column, headers.length - 1)] : null;
+  };
+
+  if (key === 'Escape') {
+    const back = headerCell();
+    if (!back) return false;
+    releaseCell();
+    back.focus();
+    return true;
+  }
+
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    return focusCell(cells[column + (key === 'ArrowRight' ? 1 : -1)]);
+  }
+
+  const rows = tableRows(cell.closest('table'));
+  const next = rows[rows.indexOf(row) + (key === 'ArrowDown' ? 1 : -1)];
+  if (next) {
+    const target = rowCells(next);
+    return focusCell(target[Math.min(column, target.length - 1)]);
+  }
+  if (key === 'ArrowUp') {
+    const back = headerCell();
+    if (back) { releaseCell(); back.focus(); return true; }
+  }
+  return false;
+}
+
 export function initCellCopy() {
-  document.addEventListener('click', async (event) => {
-    if (event.target.closest('button, a, input, select, textarea, label')) return;
+  document.addEventListener('mouseover', (event) => {
+    const cell = event.target.closest?.(COPYABLE_CELL) || null;
+    if (cell === hoveredCell) return;
+    hoveredCell = cell;
+    // A held button means a selection is being dragged out, and moving the
+    // control between cells would shift the DOM under it. It settles on release.
+    if (!event.buttons) syncCopyButton();
+  });
+  document.addEventListener('mouseup', syncCopyButton);
 
-    // Masked cells belong to their reveal control; copying the dots helps nobody.
-    const cell = event.target.closest(COPYABLE_CELL);
-    if (!cell || cell.classList.contains('masked')) return;
+  // Cells are focused through the navigation above, which claims the control as
+  // it goes. Focus reaching anything outside the cell — the button inside it
+  // excepted — gives it up again.
+  document.addEventListener('focusin', (event) => {
+    if (focusedCell && !focusedCell.contains(event.target)) releaseCell();
+  });
 
-    // A click that ends a drag is a text selection, not a request for the cell.
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) return;
-
-    const value = (cell.title || cell.textContent || '').trim();
-    if (!value) return;
-
-    if (await copyToClipboard(value)) {
-      flashCopied(cell);
-      showNotification(value.length > 60 ? `Copied ${value.length.toLocaleString()} characters` : `Copied "${value}"`);
-    } else {
-      showNotification('Could not copy to clipboard', 'error');
-    }
+  document.addEventListener('keydown', (event) => {
+    if (navigateCells(event)) event.preventDefault();
   });
 }
 
-export function formatOptionalDate(value) {
-  return value instanceof Date && !isNaN(value.getTime()) ? value.toLocaleString() : '';
+// `3 cookies` / `1 cookie`, with a thousands separator. Named counts read as
+// English rather than as "1 file(s)".
+export function countLabel(value, singular, plural = singular + 's') {
+  return `${value.toLocaleString()} ${value === 1 ? singular : plural}`;
+}
+
+// One shape for every dataset page's summary line: what is on screen, out of
+// what, and how many files it came from, joined by middots rather than written
+// as a sentence.
+export function datasetSummary({ shown, total, singular, plural = singular + 's', fileCount = 0, extra = [] }) {
+  const counted = shown !== total && shown != null
+    ? `${shown.toLocaleString()} of ${countLabel(total, singular, plural)}`
+    : countLabel(total, singular, plural);
+  return [counted, fileCount > 0 ? countLabel(fileCount, 'file') : '', ...extra]
+    .filter(Boolean)
+    .join(' \u00B7 ');
+}
+
+// Zero matches is a result, not a failure. A table drawn as bare column
+// headings over an empty body reads as the page having failed to render.
+export function buildNoMatchesHtml(noun) {
+  return `<div class="no-data">No ${escapeHtml(noun)} match the current search and filters.</div>`;
+}
+
+// Where the capture instant came from, and — when a sysinfo timezone let the
+// victim's wall clock be turned into a real instant — which offset was applied.
+export function captureProvenance({ source, detail, offsetMinutes } = {}) {
+  if (!source) return '';
+  const parts = [source === 'sysinfo' && detail ? `sysinfo: ${detail}` : source];
+  if (offsetMinutes != null) {
+    const sign = offsetMinutes < 0 ? '-' : '+';
+    const abs = Math.abs(offsetMinutes);
+    parts.push(`UTC${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`);
+  }
+  return parts.join(', ');
 }
 
 function isValidDate(value) {
   return value instanceof Date && !isNaN(value.getTime());
 }
 
-// Date only, e.g. "Mar 5, 2026".
-export function formatDateLabel(value) {
-  if (!isValidDate(value)) return '';
-  return value.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+// Every instant in a case is built as UTC: epoch values are absolute, and a
+// wall-clock string from a log carries no zone, so it is read as UTC and shown
+// back unchanged. Rendering in the machine's zone would move both — the same
+// evidence would read differently on two analysts' screens, and a log written
+// at 17:59 would be reported as some other hour entirely.
+function pad(value, width = 2) {
+  return String(value).padStart(width, '0');
 }
 
-// Date + time, e.g. "Mar 5, 2026, 02:30 PM".
+// Date only, e.g. "2026-03-05".
+export function formatDateLabel(value) {
+  if (!isValidDate(value)) return '';
+  return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
+}
+
+// Date + time, e.g. "2026-03-05 14:30 UTC".
 export function formatDateTimeLabel(value) {
   if (!isValidDate(value)) return '';
-  return value.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return `${formatDateLabel(value)} ${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())} UTC`;
+}
+
+// Seconds included, for the capture instant and other single-value readouts
+// where the log's own precision matters.
+export function formatInstantLabel(value) {
+  if (!isValidDate(value)) return '';
+  return `${formatDateLabel(value)} ${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())} UTC`;
+}
+
+export function formatOptionalDate(value) {
+  return formatDateTimeLabel(value);
 }
 
 export function resolveSourcePathSegments(sourcePath) {
