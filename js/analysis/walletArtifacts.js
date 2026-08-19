@@ -2,10 +2,11 @@ import { inferBrowserFromPath, inferProfileFromPath, normalisePath, collectUniqu
 import { URL_REGEX, SCAN_EMAIL_REGEX, EMAIL_REGEX, JWT_SCAN_REGEX, LIMITS } from '../core/definitions/patterns.js';
 import { inferStoreService } from '../core/serviceRegistry.js';
 import { DISCORD_TOKEN_PATTERN } from '../transforms/shared.js';
+import { BTC_ADDRESS_REGEX, ETH_ADDRESS_REGEX, isValidBitcoinAddress } from '../core/cryptoAddress.js';
+import { countSeedPhrases } from './structuredPii.js';
 
-const ETH_ADDRESS_REGEX = /\b0x[a-fA-F0-9]{40}\b/g;
-const BTC_ADDRESS_REGEX = /\b(?:bc1[a-z0-9]{25,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g;
 const UUID_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+const ADDRESS_DISPLAY_LIMIT = 4;
 const DISCORD_ID_SEGMENT = /^\d{17,20}$/;
 
 
@@ -229,6 +230,7 @@ function parseWalletArtifact(content, fileName, sourcePath) {
         addressCount: 0,
         tokenCount: withSecret,
         seedHints: 0,
+        seedPhraseCount: 0,
         source: sourcePath,
       };
     }
@@ -251,18 +253,37 @@ function parseWalletArtifact(content, fileName, sourcePath) {
     ...jsonSignals.urls,
     ...collectUniqueMatches(combinedText, URL_REGEX, 6).filter(url => !/chrome-extension:\/\//i.test(url)),
   ]);
-  const ethAddresses = collectUniqueMatches(combinedText, ETH_ADDRESS_REGEX, 4);
-  const btcAddresses = collectUniqueMatches(combinedText, BTC_ADDRESS_REGEX, 4);
+  // Every address is counted; only the highlight is trimmed, because the assets
+  // page adds the counts up as the case's exposure and a display cap would
+  // understate it.
+  // A carved store hands back the wallet's own shipped reference data — token
+  // catalogues, block-explorer sample accounts, feature-flag fixtures — and a
+  // bare 20-byte hex run carries no checksum to separate those from the
+  // victim's address, so only self-verifying identifiers are counted out of one.
+  const ethFound = carved ? [] : collectUniqueMatches(combinedText, ETH_ADDRESS_REGEX, Infinity);
+  // Binary stores yield plenty of base58-shaped noise, so the pattern only
+  // nominates a candidate; the checksum decides.
+  const btcFound = collectUniqueMatches(combinedText, BTC_ADDRESS_REGEX, Infinity)
+    .filter(isValidBitcoinAddress);
+  const ethAddresses = ethFound.slice(0, ADDRESS_DISPLAY_LIMIT);
+  const btcAddresses = btcFound.slice(0, ADDRESS_DISPLAY_LIMIT);
   const ids = uniqueLimited(jsonSignals.ids, 3);
 
   const tokenCount = jsonSignals.tokenCount + collectTokens(combinedText).length;
 
   const seedHints = jsonSignals.seedHints + ((/mnemonic|seed phrase|recovery phrase|secret recovery/i.test(combinedText)) ? 1 : 0);
-  const isPasswordManager = service.category === 'Password Manager' || service.category === 'Vault'
-    || /bitwarden|1password|keepass|lastpass|dashlane|nordpass|roboform/i.test(service.name);
+  // A keyword hint lands in every wallet extension's own UI strings. A run of
+  // seed-length BIP39 words in the bytes is the corroborated form, so it is
+  // counted apart and is never suppressed — a vault holding a written-down seed
+  // is exactly the case worth surfacing.
+  const seedPhraseCount = countSeedPhrases(combinedText);
+  // Only the folder decides this: suppressing a seed indicator is destructive, so
+  // a service read out of the file's own bytes is not enough to trigger it.
+  const isPasswordManager = pathService.category === 'Password Manager' || pathService.category === 'Vault'
+    || /bitwarden|1password|keepass|lastpass|dashlane|nordpass|roboform/i.test(pathService.name);
   const effectiveSeedHints = isPasswordManager ? 0 : seedHints;
 
-  const meaningful = emails.length || urls.length || ethAddresses.length || btcAddresses.length || tokenCount || effectiveSeedHints;
+  const meaningful = emails.length || urls.length || ethFound.length || btcFound.length || tokenCount || effectiveSeedHints || seedPhraseCount;
   const pathLooksRelevant = /(wallet|bitwarden|metamask|phantom|trust wallet|exodus|atomic|keplr|tronlink|ronin|rabby|extension|local extension settings|token\.json|seed\.txt|keychain)/i.test(normalisedPath);
   if (!meaningful && !pathLooksRelevant) return null;
 
@@ -275,9 +296,10 @@ function parseWalletArtifact(content, fileName, sourcePath) {
     profile: inferProfileFromPath(normalisedPath),
     highlights: buildHighlights({ emails, urls, ethAddresses, btcAddresses, tokenCount, seedHints: effectiveSeedHints, ids }),
     emailCount: emails.length,
-    addressCount: ethAddresses.length + btcAddresses.length,
+    addressCount: ethFound.length + btcFound.length,
     tokenCount,
     seedHints: effectiveSeedHints,
+    seedPhraseCount,
     source: sourcePath,
   };
 }
