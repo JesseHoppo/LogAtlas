@@ -636,12 +636,17 @@ function renderImagePreview(data, fileName) {
     `style="opacity:0; transition: opacity 0.3s"></div>`;
 }
 
+// No sandbox attribute: every value of it — including allow-scripts
+// allow-same-origin — stops the browser handing the frame to its built-in PDF
+// viewer, and the pane renders blank. The blob is pinned to application/pdf so
+// it can never be sniffed as a document, the viewer runs the PDF's own script
+// out of process, and frame-src in the CSP still bounds the frame.
 function renderPdfPreview(data, fileName) {
-  const blob = new Blob([data], { type: getMimeType(fileName) });
+  const blob = new Blob([data], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   trackBlobUrl(url);
   return `<div class="preview-pdf-container">` +
-    `<iframe src="${url}" class="preview-pdf-frame" sandbox="allow-scripts" title="${escapeHtml(fileName)}"></iframe></div>`;
+    `<iframe src="${url}" class="preview-pdf-frame" title="${escapeHtml(fileName)}"></iframe></div>`;
 }
 
 function attachShowAllLinesHandler() {
