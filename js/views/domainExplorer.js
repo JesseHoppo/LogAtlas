@@ -296,8 +296,8 @@ function renderDomainDetail(data, baseDomain) {
   }
 
   if (data.cookiesCount > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Cookies (' + data.cookiesCount + ')</div>';
-    html += '<table class="domain-detail-table"><thead><tr><th>Host</th><th>Name</th><th>Status</th><th>Type</th></tr></thead><tbody>';
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Cookies (' + data.cookiesCount.toLocaleString() + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th tabindex="0">Host</th><th tabindex="0">Name</th><th tabindex="0">Status</th><th tabindex="0">Type</th></tr></thead><tbody>';
     const showCookies = data.cookies.slice(0, 20);
     for (const c of showCookies) {
       const typeLabel = c.sessionType === 'auth' ? 'Auth'
@@ -332,8 +332,8 @@ function renderDomainDetail(data, baseDomain) {
   }
 
   if (data.bookmarksCount > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Bookmarks (' + data.bookmarksCount + ')</div>';
-    html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Title</th><th>Folder</th></tr></thead><tbody>';
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Bookmarks (' + data.bookmarksCount.toLocaleString() + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th tabindex="0">URL</th><th tabindex="0">Title</th><th tabindex="0">Folder</th></tr></thead><tbody>';
     const showBookmarks = data.bookmarks.slice(0, 20);
     for (const bookmark of showBookmarks) {
       html += `<tr><td title="${escapeHtml(bookmark.url)}">${escapeHtml(bookmark.url)}</td><td>${escapeHtml(bookmark.title)}</td><td>${escapeHtml(bookmark.folder)}</td></tr>`;
@@ -344,8 +344,8 @@ function renderDomainDetail(data, baseDomain) {
   }
 
   if (data.downloadsCount > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Downloads (' + data.downloadsCount + ')</div>';
-    html += '<table class="domain-detail-table"><thead><tr><th>File Path</th><th>Source URL</th></tr></thead><tbody>';
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Downloads (' + data.downloadsCount.toLocaleString() + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th tabindex="0">File Path</th><th tabindex="0">Source URL</th></tr></thead><tbody>';
     const showDownloads = data.downloads.slice(0, 20);
     for (const download of showDownloads) {
       html += `<tr><td title="${escapeHtml(download.filePath)}">${escapeHtml(download.filePath)}</td><td title="${escapeHtml(download.sourceUrl)}">${escapeHtml(download.sourceUrl)}</td></tr>`;
@@ -356,11 +356,11 @@ function renderDomainDetail(data, baseDomain) {
   }
 
   if (data.detectionsCount > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Detections (' + data.detectionsCount + ')</div>';
-    html += '<table class="domain-detail-table"><thead><tr><th>Section</th><th>Label</th><th>Count</th></tr></thead><tbody>';
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Detections (' + data.detectionsCount.toLocaleString() + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th tabindex="0">Section</th><th tabindex="0">Label</th><th tabindex="0">Count</th></tr></thead><tbody>';
     const showDetections = data.detections.slice(0, 20);
     for (const detection of showDetections) {
-      html += `<tr><td>${escapeHtml(detection.section)}</td><td>${escapeHtml(detection.label || detection.target)}</td><td>${detection.count}</td></tr>`;
+      html += `<tr><td>${escapeHtml(detection.section)}</td><td>${escapeHtml(detection.label || detection.target)}</td><td>${detection.count.toLocaleString()}</td></tr>`;
     }
     html += '</tbody></table>';
     html += buildDomainSectionFooter('detections', query('detections'), data.detectionsCount, showDetections.length, 'detections');
@@ -368,8 +368,8 @@ function renderDomainDetail(data, baseDomain) {
   }
 
   if (data.notesCount > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Notes (' + data.notesCount + ')</div>';
-    html += '<table class="domain-detail-table"><thead><tr><th>Title</th><th>Indicators</th></tr></thead><tbody>';
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Notes (' + data.notesCount.toLocaleString() + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th tabindex="0">Title</th><th tabindex="0">Indicators</th></tr></thead><tbody>';
     const showNotes = data.notes.slice(0, 20);
     for (const note of showNotes) {
       html += `<tr><td>${escapeHtml(note.title)}</td><td>${escapeHtml(note.indicators)}</td></tr>`;
