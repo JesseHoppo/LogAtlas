@@ -100,15 +100,28 @@ function mapServiceToDomain(service) {
   return '';
 }
 
+// A token whose service maps to no domain still evidences an account, and the
+// Assets page lists it. It keeps a row of its own here, named by whatever
+// provenance the entry carries, rather than disappearing from the join.
+function unresolvedTokenKey(entry) {
+  const service = String(entry.service || '').trim();
+  const named = service && !/^unknown$/i.test(service) ? service : 'Unknown service';
+  const file = String(entry.source || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+  const scope = entry.browser ? [entry.browser, entry.profile].filter(Boolean).join(' ') : file;
+  return scope ? `${named} (${scope})` : named;
+}
+
 function buildTokenLookup(accountTokensData) {
   const lookup = new Map();
   for (const entry of accountTokensData?.entries || []) {
-    const domain = mapServiceToDomain(entry.service);
-    if (!domain) continue;
-    if (!lookup.has(domain)) {
-      lookup.set(domain, { services: new Set(), accountIds: new Set() });
+    // Mappings name each service's public host; every other key on this page is
+    // a base domain, so an `outlook.live.com` would never meet its `live.com` row.
+    const domain = extractBaseDomain(mapServiceToDomain(entry.service));
+    const key = domain || unresolvedTokenKey(entry);
+    if (!lookup.has(key)) {
+      lookup.set(key, { services: new Set(), accountIds: new Set() });
     }
-    const item = lookup.get(domain);
+    const item = lookup.get(key);
     if (entry.service) item.services.add(entry.service);
     if (entry.accountId) item.accountIds.add(entry.accountId);
   }
