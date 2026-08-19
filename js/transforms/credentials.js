@@ -35,33 +35,49 @@ function mostCommonCount(counts) {
   return best;
 }
 
+// Only an absent, zero or negative expiry means "session". A value we cannot
+// read is handed on as it stands, so checkCookieValidity can call it unknown
+// rather than promising the analyst an unexpired token.
 function convertCookieTimestamp(raw) {
-  const trimmed = raw.trim();
-  if (trimmed === '0' || trimmed === '') return 'Session';
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed || /^(?:session|null)$/i.test(trimmed)) return 'Session';
 
   const num = Number(trimmed);
-  if (isNaN(num) || num <= 0) return 'Session';
+  if (!isNaN(num) && num <= 0) return 'Session';
 
   const date = parseTimestampValue(trimmed);
   if (!date) return trimmed;
   return date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
 }
 
+const URL_SCHEME_KEY = /^[a-z][a-z0-9+.-]*$/i;
+
+function nextContentLineIsIndented(lines, index) {
+  for (let i = index + 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    return /^[ \t]/.test(lines[i]);
+  }
+  return false;
+}
+
 function parsePasswordKeyValueRecords(text) {
   const records = [];
-  let current = {};
+  // Field names come from the file: on an object literal a `constructor:` line
+  // already reads as set, which splits the record it belongs to.
+  let current = Object.create(null);
   let hasCredentialField = false;
   let allowPasswordContinuation = false;
 
   const flush = () => {
     if (hasCredentialField) records.push({ ...current });
-    current = {};
+    current = Object.create(null);
     hasCredentialField = false;
     allowPasswordContinuation = false;
   };
 
-  for (const rawLine of normaliseText(text).split('\n')) {
-    const line = rawLine.trim();
+  const lines = normaliseText(text).split('\n');
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index].trim();
     if (!line) continue;
     if (isSeparatorOnlyLine(line)) {
       flush();
