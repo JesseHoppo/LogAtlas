@@ -30,7 +30,9 @@ export function createResetUI({
     document.getElementById('results').classList.remove('visible');
     document.getElementById('loading').classList.remove('visible');
     document.getElementById('fileInput').value = '';
+    document.getElementById('folderInput').value = '';
     document.getElementById('addMoreInput').value = '';
+    document.getElementById('globalSearchInput').value = '';
     document.getElementById('addMoreBtn').classList.add('hidden');
     document.getElementById('pasteMoreBtn').classList.add('hidden');
 

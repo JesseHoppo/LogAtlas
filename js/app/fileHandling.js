@@ -357,20 +357,24 @@ async function processTypeSelectionQueue(files) {
 export function initFileHandling({ resetUI }) {
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
+  const folderInput = document.getElementById('folderInput');
 
-  on('reset', () => { sources.length = 0; });
+  on('reset', () => {
+    sources.length = 0;
+    addedFolder = null;
+    generation += 1;
+  });
 
   const boundHandleFiles = (files) => handleFiles(files, { resetUI });
   const boundHandlePasteText = () => handlePasteText({ resetUI });
 
-  // Drag & drop / file input
+  // Drag & drop / file input. Anywhere in the zone opens the file picker, so
+  // only the folder button has to stop the click reaching it.
   dropZone.addEventListener('click', () => fileInput.click());
 
-  dropZone.addEventListener('keydown', (e) => {
-    if (e.target !== dropZone) return;
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    fileInput.click();
+  document.getElementById('browseFolderBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    folderInput.click();
   });
 
   dropZone.addEventListener('dragover', (e) => {
@@ -384,18 +388,54 @@ export function initFileHandling({ resetUI }) {
     }
   });
 
+  async function ingestDrop(dataTransfer) {
+    const files = await filesFromDrop(dataTransfer);
+    if (!files) return;
+    if (files.length === 0) {
+      showNotification('Nothing readable in that drop.', 'error');
+      return;
+    }
+    boundHandleFiles(files);
+  }
+
   dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) boundHandleFiles(files);
+    ingestDrop(e.dataTransfer);
   });
 
-  fileInput.addEventListener('change', (e) => {
-    const files = e.target.files;
-    if (files.length > 0) boundHandleFiles(files);
-    e.target.value = '';
+  // With a case loaded the drop zone is display:none, so every drop lands on
+  // ordinary page chrome. Left to the browser, a file dropped there navigates
+  // the tab to it and the case in memory goes with no prompt. Text dragged into
+  // a field is the field's business and is left alone.
+  function guardsDrop(e) {
+    const target = e.target instanceof Element ? e.target : null;
+    if (target && dropZone.contains(target)) return false;
+    if (dropCarriesFiles(e.dataTransfer)) return true;
+    return !target?.closest('input:not([type="file"]), textarea, [contenteditable="true"]');
+  }
+
+  window.addEventListener('dragover', (e) => {
+    if (!guardsDrop(e)) return;
+    e.preventDefault();
+    if (!e.dataTransfer) return;
+    e.dataTransfer.dropEffect = dropCarriesFiles(e.dataTransfer) ? 'copy' : 'none';
   });
+
+  window.addEventListener('drop', (e) => {
+    if (!guardsDrop(e)) return;
+    e.preventDefault();
+    if (!dropCarriesFiles(e.dataTransfer)) return;
+    ingestDrop(e.dataTransfer);
+  });
+
+  for (const input of [fileInput, folderInput]) {
+    input.addEventListener('change', (e) => {
+      const files = e.target.files;
+      if (files.length > 0) boundHandleFiles(files);
+      e.target.value = '';
+    });
+  }
 
   document.getElementById('addMoreBtn').addEventListener('click', () => {
     document.getElementById('addMoreInput').click();
