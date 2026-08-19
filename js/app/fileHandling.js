@@ -341,12 +341,25 @@ async function handlePasteText({ resetUI }) {
 }
 
 async function processTypeSelectionQueue(files) {
-  for (let i = 0; i < files.length; i++) {
-    const { name, node } = files[i];
-    const remaining = files.length - i - 1;
+  if (files.length > TYPE_PROMPT_LIMIT) {
+    showNotification(
+      `${countLabel(files.length, 'file')} could not be typed — set them from the File browser.`,
+      'info',
+    );
+  } else {
+    const gen = generation;
+    for (let i = 0; i < files.length; i++) {
+      const { name, node } = files[i];
+      const remaining = files.length - i - 1;
 
-    const selectedType = await promptForFileType(name, remaining);
-    applyManualType(node, selectedType);
+      // Dismissing the prompt answers the whole queue, not just this file:
+      // the rest stay hint-free, which is the state an unanswered prompt
+      // would leave them in anyway.
+      const selectedType = await promptForFileType(name, remaining);
+      if (gen !== generation) return;
+      if (selectedType == null) break;
+      applyManualType(node, selectedType);
+    }
   }
 
   if (files.length > 0 && state.fileTree) {
