@@ -2346,6 +2346,10 @@ body {
 }
 
 .dash-screenshot-clickable {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
   cursor: pointer;
   transition: opacity 0.15s ease;
 }
