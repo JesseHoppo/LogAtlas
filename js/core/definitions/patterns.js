@@ -128,6 +128,8 @@ export const JWT_SCAN_REGEX = new RegExp(`\\b${JWT_TOKEN_PATTERN_SOURCE}\\b`, 'g
 
 // Sysinfo keys that hold the malware-capture timestamp. Different builds
 // label it variously: `Date`, `Local Time`, `Log date`, `System time`, etc.
+// Entries stay anchored `^…$`: an unanchored key would also match OS metadata
+// like `Build Date` or `Install Date`, which is not when the stealer ran.
 export const CAPTURE_TIME_KEYS = [
   /^date$/i,
   /^log\s*date$/i,
@@ -286,11 +288,6 @@ export const CLIPBOARD_LURE_PATTERNS = [
   { category: 'certutil', rx: /\bcertutil\b/i },
   { category: 'crypto-swap', rx: /^(?:0x[a-fA-F0-9]{40}|(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39})$/ },
   { category: 'base64-blob', rx: /[A-Za-z0-9+/]{120,}={0,2}/ },
-];
-
-export const IGNORE_DATE_KEYS = [
-  /^build\s*date$/i,
-  /^install\s*date$/i,
 ];
 
 

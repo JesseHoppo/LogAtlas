@@ -1,12 +1,12 @@
 import { state, on } from '../core/state.js';
-import { bindDebouncedInput, downloadCsvRows, formatDateLabel, formatDateTimeLabel } from '../pages/shared.js';
+import { bindDebouncedInput, bindTableSort, countLabel, createTableSort, downloadCsvRows, formatDateLabel, formatDateTimeLabel, formatInstantLabel } from '../pages/shared.js';
 import { getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData } from '../pages/browser.js';
 import { getGrabbedFilesData, getScreenshotsData } from '../pages/activity.js';
 import { extractBaseDomain, baseDomainFromUrl, collectFileNodes, isPlausibleCaptureDate, normaliseTimeZone, parseTimestampValue, parseSysinfoDate, sysinfoWritesDayFirst } from '../core/shared.js';
 import { isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { escapeHtml } from '../core/utils.js';
-import { CAPTURE_TIME_KEYS, IGNORE_DATE_KEYS, FIELD_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
+import { CAPTURE_TIME_KEYS, FIELD_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
 
 let sysinfoEntries = null;
 let capture = null;
@@ -37,7 +37,7 @@ function localTimeZoneLabel(entries) {
 }
 
 // The capture instant comes from the analysis pass, so the timeline anchors on
-// the same moment the dashboard and Credential Triage show. Rival capture-time
+// the same moment the dashboard and Credential triage show. Rival capture-time
 // keys stay in the detail rather than becoming rival events.
 function extractStealerEvents(entries, captureContext) {
   if (!captureContext?.date) return [];
@@ -58,9 +58,8 @@ function extractStealerEvents(entries, captureContext) {
   for (const [key, value] of Object.entries(entries || {})) {
     if (!value || value === captureValue) continue;
     if (fromSysinfo && key === captureContext.detail) continue;
-    if (IGNORE_DATE_KEYS.some(rx => rx.test(key))) continue;
     if (!CAPTURE_TIME_KEYS.some(rx => rx.test(key))) continue;
-    const date = parseSysinfoDate(value, dayFirst) || parseTimestampValue(value);
+    const date = parseSysinfoDate(value, dayFirst);
     if (date && date.getTime() === captureMs) continue;
     others.push(`${key}: ${value}`);
   }
