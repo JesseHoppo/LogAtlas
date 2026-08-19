@@ -1,6 +1,6 @@
 // Post-extraction analysis
 
-import { emit, state } from '../core/state.js';
+import { emit, on, state } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { HINT_KEYS } from '../files/fileTypeRegistry.js';
 import {
@@ -43,6 +43,12 @@ import {
   isValidCountryCode,
   isLikelyCountryName,
   userNameAppearsInPath,
+  normaliseTimeZone,
+  UNKNOWN_BROWSER_CLOCK,
+  collectBrowserClockSamples,
+  resolveBrowserClock,
+  applyBrowserClock,
+  browserClockLabel,
   parseTimestampValue,
   newestNodeModified,
   isPlausibleCaptureDate,
@@ -443,15 +449,18 @@ async function analyseCookies(nodes, captureDate = null) {
 
 // History
 
-// Returns the newest plausible visit date, the last-resort capture evidence.
+// Returns the newest plausible visit date — the last-resort capture evidence —
+// and the frame the visit times were written in, which the pages need before
+// they can place their own copies of these rows against anything.
 async function analyseHistory(nodes) {
   if (nodes.length === 0) {
     emit('analysis:history', null);
-    return null;
+    return { latestVisit: null, clock: UNKNOWN_BROWSER_CLOCK };
   }
 
   const entries = [];
   const domains = [];
+  const clockSamples = [];
   let fileCount = 0;
 
   for (const { node, path } of nodes) {
@@ -465,7 +474,6 @@ async function analyseHistory(nodes) {
 
       const urlIdx = parsed.headers.findIndex(h => FIELD_PATTERNS.url.test(h));
       const titleIdx = parsed.headers.findIndex(h => /^(title|page.?title)$/i.test(h));
-      const visitsIdx = parsed.headers.findIndex(h => /^(visit.?count|visits?|count)$/i.test(h));
       const lastIdx = parsed.headers.findIndex(h => /^(last.?visit|date|time|timestamp)$/i.test(h));
 
       let rowIndex = 0;
@@ -474,12 +482,12 @@ async function analyseHistory(nodes) {
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
         if (!url) continue;
         const title = titleIdx >= 0 ? (row[titleIdx] || '').trim() : '';
-        const visitCount = visitsIdx >= 0 ? (parseInt(row[visitsIdx], 10) || 1) : 1;
         const lastVisit = lastIdx >= 0 ? (row[lastIdx] || '').trim() : '';
         const lastVisitDate = parseTimestampValue(lastVisit);
+        collectBrowserClockSamples(url, lastVisitDate, clockSamples);
         const domain = baseDomainFromUrl(url);
         if (domain && isRankableDomain(domain)) domains.push(domain);
-        entries.push({ url, title, visitCount, lastVisit, lastVisitDate });
+        entries.push({ url, title, lastVisit, lastVisitDate });
       }
     } catch {
       // skip
@@ -488,7 +496,12 @@ async function analyseHistory(nodes) {
 
   if (entries.length === 0) {
     emit('analysis:history', null);
-    return null;
+    return { latestVisit: null, clock: UNKNOWN_BROWSER_CLOCK };
+  }
+
+  const clock = resolveBrowserClock(clockSamples);
+  for (const entry of entries) {
+    entry.lastVisitDate = applyBrowserClock(entry.lastVisitDate, clock);
   }
 
   const datedEntries = entries
@@ -513,9 +526,13 @@ async function analyseHistory(nodes) {
     topDomains: topN(domains, LIMITS.topDomains),
     mostRecent,
     latestVisitDate: latestVisit ? latestVisit.toISOString() : null,
+    clockOffsetMinutes: clock.offsetMinutes,
+    clockSource: clock.source,
+    clockLabel: browserClockLabel(clock),
+    clockSampleCount: clock.sampleCount,
   });
 
-  return latestPlausibleVisit;
+  return { latestVisit: latestPlausibleVisit, clock };
 }
 
 // System info
@@ -1550,22 +1567,143 @@ async function analyseProcessList(nodes) {
   emit('analysis:processList', { fileCount: parsedCount, entries, totalCount: entries.length, uniqueCount });
 }
 
+// The victim's UTC offset, resolved from sysinfo and published before any
+// dataset is parsed, so the pages read the same one instead of each deriving
+// its own. It is the frame the machine's own clock was in — the sysinfo
+// capture time is written in it. It is not automatically the frame of a
+// history, bookmark or download wall clock: several families write those in
+// the panel's clock instead, so a caller has to establish which clock a file
+// uses before shifting anything by this. Epochs are already absolute.
+const UNKNOWN_TIME_ZONE = { offsetMinutes: null, label: '', source: 'absent' };
+const SYSINFO_TIMEZONE_KEY = /^(?:time\s*zone|timezone|utc)$/i;
+
+let caseTimeZone = UNKNOWN_TIME_ZONE;
+let caseTimeZoneKnown = false;
+let caseTimeZoneWaiters = [];
+
+function resolveCaseTimeZone(entries) {
+  for (const [key, value] of Object.entries(entries || {})) {
+    if (!value || !SYSINFO_TIMEZONE_KEY.test(key)) continue;
+    const zone = normaliseTimeZone(value, entries.Country || entries.country);
+    // A bare `TimeZone: 13` on a US machine is as likely a Windows zone index
+    // as an offset. Shifting every wall clock in the case by an offset the
+    // country contradicts would be worse than leaving them alone.
+    if (zone.offset == null || zone.countryMismatch) {
+      return { offsetMinutes: null, label: zone.label, source: zone.countryMismatch ? 'country-mismatch' : zone.source };
+    }
+    return { offsetMinutes: zone.offset, label: zone.label, source: zone.source };
+  }
+  return UNKNOWN_TIME_ZONE;
+}
+
+function publishCaseTimeZone(zone) {
+  caseTimeZone = zone;
+  caseTimeZoneKnown = true;
+  const waiters = caseTimeZoneWaiters;
+  caseTimeZoneWaiters = [];
+  for (const resolve of waiters) resolve(zone);
+  emit('analysis:timezone', zone);
+  return zone;
+}
+
+function getCaseTimeZone() {
+  return caseTimeZone;
+}
+
+// Page loaders parse the same wall clocks from their own copies of the files,
+// so they await this before reading a timestamp. It settles once per case; a
+// caller that arrives before the zone is resolved waits for it rather than
+// reading the previous case's.
+function caseTimeZoneReady() {
+  if (caseTimeZoneKnown) return Promise.resolve(caseTimeZone);
+  return new Promise(resolve => { caseTimeZoneWaiters.push(resolve); });
+}
+
+on('reset', () => {
+  caseTimeZone = UNKNOWN_TIME_ZONE;
+  caseTimeZoneKnown = false;
+  // A loader still waiting when the case is dropped must not be handed the next
+  // case's offset, so it is released with the unknown zone instead.
+  const waiters = caseTimeZoneWaiters;
+  caseTimeZoneWaiters = [];
+  for (const resolve of waiters) resolve(UNKNOWN_TIME_ZONE);
+});
+
+// The frame the browser artifacts were written in, resolved once from the
+// history rows and published on the same terms as the victim's zone: the pages
+// parse their own copies of these files and must not each infer a rival frame.
+let browserClock = UNKNOWN_BROWSER_CLOCK;
+let browserClockKnown = false;
+let browserClockWaiters = [];
+
+function publishBrowserClock(clock) {
+  browserClock = clock || UNKNOWN_BROWSER_CLOCK;
+  browserClockKnown = true;
+  const waiters = browserClockWaiters;
+  browserClockWaiters = [];
+  for (const resolve of waiters) resolve(browserClock);
+  emit('analysis:browserclock', browserClock);
+  return browserClock;
+}
+
+function getBrowserClock() {
+  return browserClock;
+}
+
+function browserClockReady() {
+  if (browserClockKnown) return Promise.resolve(browserClock);
+  return new Promise(resolve => { browserClockWaiters.push(resolve); });
+}
+
+on('reset', () => {
+  browserClock = UNKNOWN_BROWSER_CLOCK;
+  browserClockKnown = false;
+  const waiters = browserClockWaiters;
+  browserClockWaiters = [];
+  for (const resolve of waiters) resolve(UNKNOWN_BROWSER_CLOCK);
+});
+
+// Browsing that postdates the capture stamp is evidence about the log: either
+// the stamp is not when it was taken, or something was added to the archive
+// afterwards. Only worth saying when both instants are in a frame we resolved —
+// two clocks in unknown frames disagreeing says nothing about either. The hour
+// of slack is a daylight step, the one error the frame can still carry.
+const HISTORY_AHEAD_TOLERANCE_MS = 60 * 60 * 1000;
+
+function historyAheadOfCapture(captureDate, latestVisit, clock) {
+  if (!captureDate || !latestVisit || clock?.offsetMinutes == null) return null;
+  const ms = latestVisit.getTime() - captureDate.getTime();
+  if (ms <= HISTORY_AHEAD_TOLERANCE_MS) return null;
+  return { minutes: Math.round(ms / 60000), latestVisit };
+}
+
 // Resolve the case's capture instant once, here, where the collapsed root name
 // is known, and publish it so cookie validity, the dashboard and the pages all
 // judge expiry against the same moment with the same provenance.
-function publishCaptureContext({ sysinfoEntries, historyMaxDate, archiveNames, nodes }) {
+function publishCaptureContext({ sysinfoEntries, historyMaxDate, archiveNames, nodes, browserClock: clock }) {
+  // Only the archive's own entry times count as a modification date. The
+  // dropped file's `lastModified` is when the analyst downloaded it, which is
+  // not evidence of anything about the victim.
   const context = resolveCaptureContext({
     sysinfoEntries,
     archiveNames,
-    sourceLastModified: [newestNodeModified(nodes), state.sourceFile?.lastModified || null],
+    sourceLastModified: newestNodeModified(nodes),
     historyMaxDate,
   });
   setCaptureContext(context);
+  const ahead = historyAheadOfCapture(context.date, historyMaxDate, clock);
   emit('analysis:capture', {
     date: context.date,
     iso: context.date ? context.date.toISOString() : null,
     source: context.source,
     detail: context.detail,
+    offsetMinutes: context.offsetMinutes ?? null,
+    timeZone: caseTimeZone.label,
+    timeZoneSource: caseTimeZone.source,
+    browserClockOffsetMinutes: clock?.offsetMinutes ?? null,
+    browserClockLabel: browserClockLabel(clock),
+    historyAheadMinutes: ahead ? ahead.minutes : null,
+    historyLatestIso: ahead ? ahead.latestVisit.toISOString() : null,
   });
   return context;
 }
@@ -1595,17 +1733,30 @@ async function runAnalysis(fileTree, rootName) {
 
   // Sysinfo and history hold the capture evidence, so they run before the
   // analysers whose numbers depend on the capture instant. Their parses are
-  // cached on the nodes, so nothing is read or parsed twice.
-  const [sysinfoEntries, historyMaxDate] = reportRejections(await Promise.allSettled([
+  // cached on the nodes, so nothing is read or parsed twice. Sysinfo goes
+  // first on its own because it names the victim's UTC offset, which is
+  // published before any other dataset is read.
+  const [sysinfoEntries] = reportRejections(await Promise.allSettled([
     analyseSystemInfo(buckets._sysInfoHint, treeRootName),
+  ]));
+
+  publishCaseTimeZone(resolveCaseTimeZone(sysinfoEntries));
+
+  const [history] = reportRejections(await Promise.allSettled([
     analyseHistory(buckets._historyHint),
   ]));
 
+  // The visit times are naive wall clocks and the frame they were written in
+  // comes out of the rows themselves, so it is published here — before the
+  // capture instant is judged against them, and before any page reads them.
+  const clock = publishBrowserClock(history?.clock);
+
   const capture = publishCaptureContext({
     sysinfoEntries,
-    historyMaxDate,
+    historyMaxDate: history?.latestVisit || null,
     archiveNames: [treeRootName, rootName, state.rootZipName, state.sourceFile?.name],
     nodes: Object.values(buckets).flat(),
+    browserClock: clock,
   });
 
   const tasks = [
@@ -1637,4 +1788,4 @@ async function runAnalysis(fileTree, rootName) {
   emit('analysis:complete');
 }
 
-export { runAnalysis };
+export { runAnalysis, getCaseTimeZone, caseTimeZoneReady, getBrowserClock, browserClockReady };
