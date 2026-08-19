@@ -4,6 +4,7 @@ const state = {
   fileTree: null,
   flatFiles: [],
   errors: [],
+  errorsDropped: 0,
   rememberedPassword: null,
   currentPath: [],
   viewMode: 'list',
@@ -43,6 +44,8 @@ const MAX_ERRORS = 200;
 function addError(msg) {
   if (state.errors.length < MAX_ERRORS) {
     state.errors.push(msg);
+  } else {
+    state.errorsDropped += 1;
   }
 }
 
@@ -58,6 +61,7 @@ function resetState() {
   state.fileTree = null;
   state.flatFiles = [];
   state.errors = [];
+  state.errorsDropped = 0;
   state.rememberedPassword = null;
   state.currentPath = [];
   state.rootZipName = '';
@@ -70,4 +74,4 @@ function resetState() {
   emit('reset');
 }
 
-export { state, on, emit, resetState, setLoading, addError, setRememberedPassword, setMultiFileMode };
+export { state, on, emit, resetState, setLoading, addError, setRememberedPassword, setMultiFileMode, MAX_ERRORS };
