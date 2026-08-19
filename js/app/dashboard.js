@@ -651,11 +651,14 @@ const COUNTED_HINTS = [
   '_historyHint',
   '_bookmarkHint',
   '_browserMetadataHint',
+  '_stealerDebugHint',
   '_sysInfoHint',
   '_creditCardHint',
   '_cryptoWalletHint',
   '_accountTokenHint',
   '_serviceArtifactHint',
+  '_ftpCredentialHint',
+  '_keylogHint',
   '_messengerHint',
   '_downloadHint',
   '_domainDetectHint',
@@ -668,24 +671,27 @@ const COUNTED_HINTS = [
 ];
 
 // Extension/plugin files on their own aren't a recognised dataset; they are
-// only listed under Other Artifacts.
+// only listed under Other artifacts.
 const RECOGNISED_HINTS = COUNTED_HINTS.filter((key) => key !== '_browserPluginHint');
 
 const EXTRA_ARTIFACTS = [
-  { hint: '_creditCardHint', icon: 'CC', label: 'credit card file(s) detected', warning: true },
-  { hint: '_cryptoWalletHint', icon: 'W', label: 'crypto wallet file(s) detected' },
-  { hint: '_accountTokenHint', icon: 'TK', label: 'account token file(s) detected', warning: true },
-  { hint: '_serviceArtifactHint', icon: 'SV', label: 'service artifact file(s) detected' },
-  { hint: '_messengerHint', icon: 'M', label: 'unclassified service file(s) detected' },
-  { hint: '_downloadHint', icon: 'DL', label: 'download history file(s) detected' },
-  { hint: '_clipboardHint', icon: 'CL', label: 'clipboard file(s) detected' },
-  { hint: '_notesHint', icon: 'NT', label: 'note file(s) detected' },
-  { hint: '_grabbedFileHint', icon: 'GF', label: 'grabbed file(s) detected', warning: true },
-  { hint: '_bookmarkHint', icon: 'BM', label: 'bookmark file(s) detected' },
-  { hint: '_browserMetadataHint', icon: 'MD', label: 'browser metadata file(s) detected' },
-  { hint: '_browserPluginHint', icon: 'EXT', label: 'browser extension/plugin file(s) detected' },
-  { hint: '_softwareFileHint', icon: 'SW', label: 'installed software file(s) detected' },
-  { hint: '_processListHint', icon: 'PS', label: 'process list file(s) detected' },
+  { hint: '_creditCardHint', icon: 'CC', noun: 'credit card file', warning: true },
+  { hint: '_cryptoWalletHint', icon: 'W', noun: 'crypto wallet file' },
+  { hint: '_accountTokenHint', icon: 'TK', noun: 'account token file', warning: true },
+  { hint: '_serviceArtifactHint', icon: 'SV', noun: 'service artifact file' },
+  { hint: '_ftpCredentialHint', icon: 'FTP', noun: 'FTP client credential file', warning: true },
+  { hint: '_keylogHint', icon: 'KL', noun: 'keylog file', warning: true },
+  { hint: '_messengerHint', icon: 'M', noun: 'unclassified service file' },
+  { hint: '_downloadHint', icon: 'DL', noun: 'download history file' },
+  { hint: '_clipboardHint', icon: 'CL', noun: 'clipboard file' },
+  { hint: '_notesHint', icon: 'NT', noun: 'note file' },
+  { hint: '_grabbedFileHint', icon: 'GF', noun: 'grabbed file', warning: true },
+  { hint: '_bookmarkHint', icon: 'BM', noun: 'bookmark file' },
+  { hint: '_browserMetadataHint', icon: 'MD', noun: 'browser metadata file' },
+  { hint: '_stealerDebugHint', icon: 'DBG', noun: 'stealer debug trace file' },
+  { hint: '_browserPluginHint', icon: 'EXT', noun: 'browser extension file' },
+  { hint: '_softwareFileHint', icon: 'SW', noun: 'installed software file' },
+  { hint: '_processListHint', icon: 'PS', noun: 'process list file' },
 ];
 
 function countHintedFiles() {
@@ -721,8 +727,8 @@ function updateDashboardVisibility() {
   }
 
   extraEl.classList.remove('hidden');
-  extraBody.innerHTML = `<div class="dash-extra-items">${extras.map(({ hint, icon, label, warning }) =>
-    `<div class="dash-extra-item${warning ? ' dash-extra-warning' : ''}"><span class="dash-extra-icon">${icon}</span><span>${counts[hint]} ${label}</span></div>`
+  extraBody.innerHTML = `<div class="dash-extra-items">${extras.map(({ hint, icon, noun, warning }) =>
+    `<div class="dash-extra-item${warning ? ' dash-extra-warning' : ''}"><span class="dash-extra-icon">${icon}</span><span>${countLabel(counts[hint], noun)}</span></div>`
   ).join('')}</div>`;
 }
 
