@@ -667,14 +667,37 @@ function renderCurrentView(items) {
   renderList(items);
 }
 
+// Replacing innerHTML destroys whatever the keyboard was on, which drops focus
+// to <body> and strands the user outside the list. Only a caret that was already
+// in the list is moved: the same row if it survived the render, otherwise the
+// first one, which is the back tile when there is somewhere to go back to.
+function focusedRowKey() {
+  const active = document.activeElement;
+  if (!active) return null;
+  if (!elFileGrid.contains(active) && !elFileList.contains(active)) return null;
+  const row = active.closest('[data-path], [data-action="back"]');
+  if (!row) return null;
+  return row.dataset.path ?? 'back';
+}
+
+function restoreRowFocus(container, key) {
+  if (!key) return;
+  const selector = key === 'back' ? '[data-action="back"]' : `[data-path="${CSS.escape(key)}"]`;
+  const row = container.querySelector(selector) || container.querySelector('[role="option"]');
+  row?.focus();
+}
+
 function render() {
   const items = getItems();
+  const focusKey = focusedRowKey();
   renderBreadcrumb();
   updateViewModeButtons();
 
   elFileGrid.classList.toggle('active', state.viewMode === 'grid');
   elFileList.classList.toggle('active', state.viewMode === 'list');
   renderCurrentView(items);
+  updateSelectionToolbar(items);
+  restoreRowFocus(currentContainer(), focusKey);
 }
 
 // View mode toggle
