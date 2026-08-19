@@ -1406,12 +1406,20 @@ function scoreCredential(entry, context) {
     addScore(result, 6, `${usernameDomain} aligns with corroborated identity and service activity`, 'identity');
   }
 
-  const tenantSignal = collectTenantSignal({
-    usernameEmail,
-    usernameDomain,
-    providerArtifacts,
-    captureDate,
-  });
+  // Every provider artifact is rescanned per credential, but the scan only
+  // depends on the identity, and a case has orders of magnitude fewer distinct
+  // identities than credential rows.
+  const tenantCacheKey = `${usernameEmail} ${usernameDomain}`;
+  let tenantSignal = context.tenantSignalCache.get(tenantCacheKey);
+  if (!tenantSignal) {
+    tenantSignal = collectTenantSignal({
+      usernameEmail,
+      usernameDomain,
+      providerArtifacts,
+      captureDate,
+    });
+    context.tenantSignalCache.set(tenantCacheKey, tenantSignal);
+  }
   for (const { amount, label } of tenantSignal.evidence) {
     addScore(result, amount, label, 'tenant');
   }
@@ -1553,11 +1561,112 @@ function sortScoredRows(rows) {
   });
 }
 
-// Primary identity = the most useful one-line "who are we looking at".
-// Prefers the corroborated corporate identity, then the most-frequent
-// personal email, then the OS username from sysinfo. Always returns
-// something so the analyst sees a name/email even on personal-only logs.
-function buildPrimaryIdentity({ rows, identityDomains, identitySets, sysinfoEntries }) {
+// Artifact kinds that name an email outright, weighted by how much work it took
+// the victim to put the address there. A token is the account the browser was
+// signed in as; autofill is a string typed into a form once.
+const IDENTITY_SOURCE_WEIGHT = {
+  tokens: 22,
+  autofill: 16,
+  notes: 12,
+  clipboard: 12,
+};
+
+const IDENTITY_SOURCE_LABEL = {
+  tokens: 'account tokens',
+  autofill: 'autofill',
+  notes: 'notes',
+  clipboard: 'clipboard',
+};
+
+// Rank the case's email identities so the Lab and the Identity page can name
+// the same person. Breadth carries the ranking — an address signed in to fifty
+// services is who the case is about — with corroboration from artifacts other
+// than the credential dump separating addresses of similar reach. Breadth is
+// scored on a log curve: the difference between one service and ten decides an
+// identity, the difference between eighty and ninety decides nothing.
+function rankIdentityCandidates({ credentials, identitySets, identityDomains }) {
+  const candidates = new Map();
+
+  const ensure = (value) => {
+    const email = normaliseText(value);
+    if (!email || !EMAIL_REGEX.test(email)) return null;
+    if (!candidates.has(email)) {
+      candidates.set(email, {
+        email,
+        domain: getEmailDomain(email),
+        services: new Set(),
+        sources: new Set(),
+        accounts: 0,
+      });
+    }
+    return candidates.get(email);
+  };
+
+  for (const entry of credentials || []) {
+    const candidate = ensure(entry.username);
+    if (!candidate) continue;
+    candidate.sources.add('credentials');
+    candidate.accounts += 1;
+    const host = normaliseText(extractDomain(entry.url));
+    const base = normaliseText(extractBaseDomain(host) || host);
+    if (base) candidate.services.add(base);
+  }
+
+  for (const [kind, emails] of [
+    ['autofill', identitySets.autofillEmails],
+    ['tokens', identitySets.tokenEmails],
+    ['notes', identitySets.noteEmails],
+    ['clipboard', identitySets.clipboardEmails],
+  ]) {
+    for (const email of emails || []) ensure(email)?.sources.add(kind);
+  }
+
+  return [...candidates.values()].map((candidate) => {
+    const serviceCount = candidate.services.size;
+    const corroborating = [...candidate.sources].filter((kind) => kind !== 'credentials');
+    // Web artifacts recovered for the address's own domain — a mailbox, portal
+    // or intranet the victim actually browsed.
+    const webSignals = identityDomains.byDomain.get(candidate.domain)?.webSignals || 0;
+
+    const breadthScore = Math.round(10 * Math.log2(serviceCount + 1));
+    const sourceScore = corroborating.reduce((total, kind) => total + (IDENTITY_SOURCE_WEIGHT[kind] || 0), 0);
+    const webScore = webSignals * 4;
+
+    const evidence = [];
+    if (serviceCount > 0) evidence.push(`Signs in to ${serviceCount === 1 ? '1 service' : `${serviceCount.toLocaleString()} services`}`);
+    for (const kind of corroborating) evidence.push(`Named in ${IDENTITY_SOURCE_LABEL[kind] || kind}`);
+    if (webSignals > 0) evidence.push(`Web activity recovered for ${candidate.domain}`);
+
+    return {
+      email: candidate.email,
+      domain: candidate.domain,
+      kind: isPublicEmailDomain(candidate.domain) ? 'personal' : 'corporate',
+      // A throwaway mailbox is not the victim's day-to-day address: it is a
+      // burner account, or the address of whoever assembled the dump.
+      disposable: isDisposableEmailDomain(candidate.domain),
+      services: serviceCount,
+      accounts: candidate.accounts,
+      sources: [...candidate.sources],
+      corroborated: corroborating.length > 0 || webSignals > 0,
+      // Named in one artifact and signed in to nothing: still the best address
+      // in the case, but not a finding.
+      tentative: serviceCount === 0 && webSignals === 0,
+      score: breadthScore + sourceScore + webScore,
+      evidence,
+    };
+  }).sort((a, b) => (
+    b.score - a.score
+    || b.services - a.services
+    || b.accounts - a.accounts
+    || a.email.localeCompare(b.email)
+  ));
+}
+
+// Primary identity = the most useful one-line "who are we looking at". Always
+// returns something, so the analyst sees a name even on a log with no email in
+// it at all; `candidates` carries the rest of the ranking so the pick can be
+// argued with rather than taken on trust.
+function buildPrimaryIdentity({ credentials, identityDomains, identitySets, sysinfoEntries }) {
   const sysinfo = sysinfoEntries || {};
   const sysGet = (patterns) => {
     for (const [key, value] of Object.entries(sysinfo)) {
@@ -1570,72 +1679,82 @@ function buildPrimaryIdentity({ rows, identityDomains, identitySets, sysinfoEntr
   const computerName = sysGet([/^computer\s*name$/i, /^pc$/i, /^hostname$/i, /^netbios/i]);
   const country = sysGet([/^country$/i, /^region$/i]);
 
-  const dominant = identityDomains.dominantCorporateDomain;
+  const candidates = rankIdentityCandidates({ credentials, identitySets, identityDomains });
+  const pick = candidates[0];
 
-  if (dominant) {
-    const counts = new Map();
-    for (const row of rows) {
-      if (row.usernameDomain !== dominant.domain) continue;
-      const norm = normaliseText(row.username);
-      if (!norm) continue;
-      counts.set(norm, (counts.get(norm) || 0) + 1);
-    }
-    const topEmail = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
-      || [...dominant.emails][0] || '';
+  if (!pick) {
     return {
-      kind: 'corporate',
-      label: topEmail || dominant.domain,
-      domain: dominant.domain,
+      kind: 'unknown',
+      label: osUsername || '',
+      email: '',
+      domain: '',
+      score: 0,
+      services: 0,
+      sources: [],
+      corroborated: false,
+      tentative: true,
+      evidence: [],
+      candidates,
       osUsername,
       computerName,
       country,
     };
   }
 
-  // No corp identity: fall back to most-frequent personal email
-  const personalCounts = new Map();
-  for (const row of rows) {
-    if (!row.usernameDomain) continue;
-    if (!isPublicEmailDomain(row.usernameDomain)) continue;
-    const norm = normaliseText(row.username);
-    if (!norm) continue;
-    personalCounts.set(norm, (personalCounts.get(norm) || 0) + 1);
-  }
-  const topPersonal = [...personalCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  if (topPersonal) {
-    return {
-      kind: 'personal',
-      label: topPersonal,
-      domain: getEmailDomain(topPersonal),
-      osUsername,
-      computerName,
-      country,
-    };
-  }
-
-  // Last resort: any autofill email, or just OS username.
-  const autofillEmail = [...identitySets.autofillEmails][0] || '';
-  if (autofillEmail) {
-    return {
-      kind: 'autofill',
-      label: autofillEmail,
-      domain: getEmailDomain(autofillEmail),
-      osUsername,
-      computerName,
-      country,
-    };
-  }
   return {
-    kind: 'unknown',
-    label: osUsername || '',
-    domain: '',
+    kind: pick.kind,
+    label: pick.email,
+    email: pick.email,
+    domain: pick.domain,
+    score: pick.score,
+    services: pick.services,
+    sources: pick.sources,
+    corroborated: pick.corroborated,
+    tentative: pick.tentative,
+    evidence: pick.evidence,
+    candidates,
     osUsername,
     computerName,
     country,
   };
 }
 
-function summariseResults(rows, identityDomains, captureContext, identitySets, sysinfoEntries) {
+// The Identity page resolves the same pick from the same datasets. It holds no
+// scored rows, so it enters here and the ranking is rebuilt from the case's
+// artifacts alone.
+function resolvePrimaryIdentity(input) {
+  const credentials = dedupeCredentials(input.credentials || []);
+  const identitySets = buildExactIdentitySets({
+    autofillEntries: input.autofillEntries || [],
+    notes: input.notes || [],
+    accountTokens: input.accountTokens || [],
+    clipboardEntries: input.clipboardEntries || [],
+    credentials,
+  });
+  const siteIndexes = buildSiteIndexes({
+    cookies: input.cookies || [],
+    history: input.history || [],
+    notes: input.notes || [],
+    downloads: input.downloads || [],
+    bookmarks: input.bookmarks || [],
+  });
+  const providerArtifacts = buildProviderArtifacts({
+    cookies: input.cookies || [],
+    history: input.history || [],
+    downloads: input.downloads || [],
+    notes: input.notes || [],
+  });
+  const identityDomains = buildIdentityDomainScores(identitySets, siteIndexes, providerArtifacts);
+
+  return buildPrimaryIdentity({
+    credentials,
+    identityDomains,
+    identitySets,
+    sysinfoEntries: input.sysinfoEntries || null,
+  });
+}
+
+function summariseResults(rows, credentials, identityDomains, captureContext, identitySets, sysinfoEntries, reuseGroups) {
   const identityDomainRows = summariseIdentityDomainRows(identityDomains, rows);
   const summary = {
     // Rows scored here, not the case's credential count: these collapse by base
@@ -1651,7 +1770,7 @@ function summariseResults(rows, identityDomains, captureContext, identitySets, s
     storedCount: rows.filter((row) => row.actionability === 'stored').length,
     legacyCount: rows.filter((row) => row.actionability === 'legacy').length,
     appCount: rows.filter((row) => row.isAppCredential).length,
-    reuseGroups: countReuseGroups(rows),
+    reuseGroups,
     conflicts: rows.filter((row) => row.conflictDomain).length,
     legacyEmployerSuspects: rows.filter((row) => row.dispositionKey === 'legacy-employer').length,
     orphanedCorporate: rows.filter((row) => row.identityFitKey === 'orphaned').length,
@@ -1661,25 +1780,14 @@ function summariseResults(rows, identityDomains, captureContext, identitySets, s
     dominantCorporateDomain: identityDomains.dominantCorporateDomain || null,
     leadingCorporateCandidate: identityDomains.leadingCorporateCandidate || null,
     identityDomains: identityDomainRows,
-    primaryIdentity: buildPrimaryIdentity({ rows, identityDomains, identitySets, sysinfoEntries }),
+    primaryIdentity: buildPrimaryIdentity({ credentials, identityDomains, identitySets, sysinfoEntries }),
     captureDate: captureContext.date,
     captureSource: captureContext.source,
     captureDetail: captureContext.detail,
+    captureOffsetMinutes: captureContext.offsetMinutes ?? null,
   };
 
   return summary;
-}
-
-function countReuseGroups(rows) {
-  const groups = new Set();
-  for (const r of rows) {
-    if (r.reuseCount && r.reuseCount >= 2) {
-      // Count distinct reuse-site sets as a proxy for the shared password.
-      const sig = (r.reuseSites || []).slice().sort().join('|');
-      groups.add(sig);
-    }
-  }
-  return groups.size;
 }
 
 function dedupeCredentials(credentials) {
@@ -1775,13 +1883,14 @@ function buildCredentialCurrentnessModel(input) {
       captureDate: captureContext.date,
     }),
     passwordReuse,
+    tenantSignalCache: new Map(),
   };
 
   const rows = sortScoredRows(credentials.map((entry) => scoreCredential(entry, context)));
   return {
-    summary: summariseResults(rows, identityDomains, captureContext, identitySets, input.sysinfoEntries || null),
+    summary: summariseResults(rows, credentials, identityDomains, captureContext, identitySets, input.sysinfoEntries || null, passwordReuse.size),
     rows,
   };
 }
 
-export { buildCredentialCurrentnessModel };
+export { buildCredentialCurrentnessModel, resolvePrimaryIdentity };
