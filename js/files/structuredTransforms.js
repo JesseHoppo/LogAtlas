@@ -24,7 +24,7 @@ import { detectFormat } from '../transforms/delimited.js';
 function walletArtifactToTable(entry) {
   if (!entry) return null;
   return {
-    headers: ['Service', 'Category', 'Artifact Type', 'Store Type', 'Browser', 'Profile', 'Highlights', 'Email Count', 'Address Count', 'Token Count', 'Seed Hints', 'Source'],
+    headers: ['Service', 'Category', 'Artifact Type', 'Store Type', 'Browser', 'Profile', 'Highlights', 'Email Count', 'Address Count', 'Token Count', 'Seed Keywords', 'Source'],
     rows: [[
       entry.service || '',
       entry.category || '',
