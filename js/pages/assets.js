@@ -245,17 +245,18 @@ function renderTokensPage(searchQuery = '') {
   const summary = document.getElementById('tokensSummary');
   const stats = document.getElementById('tokensStats');
   const content = document.getElementById('tokensContent');
-  if (accountTokensData.entries.length === 0) { summary.textContent = 'No account tokens found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No account-token data available.</div>'; return; }
+  if (accountTokensData.entries.length === 0) { accountTokensFiltered = []; accountTokensShown = 0; summary.textContent = ''; stats.innerHTML = ''; content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.tokens}</div>`; return; }
   let filtered = accountTokensData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.service.toLowerCase().includes(q) || entry.type.toLowerCase().includes(q) || entry.value.toLowerCase().includes(q) || entry.accountId.toLowerCase().includes(q) || entry.browser.toLowerCase().includes(q) || entry.profile.toLowerCase().includes(q) || entry.note.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
   accountTokensFiltered = tokensSort.apply(filtered);
   accountTokensShown = Math.min(PAGE_SIZE, filtered.length);
-  const services = new Set(accountTokensData.entries.map(e => e.service).filter(Boolean));
-  const withValue = accountTokensData.entries.filter(e => e.value).length;
-  const withAccountId = accountTokensData.entries.filter(e => e.accountId).length;
-  const tokenTypes = new Set(accountTokensData.entries.map(e => e.type).filter(Boolean));
-  summary.textContent = filtered.length !== accountTokensData.entries.length ? `Showing ${filtered.length.toLocaleString()} of ${accountTokensData.entries.length.toLocaleString()} token rows from ${accountTokensData.fileCount} file(s)` : `${accountTokensData.entries.length.toLocaleString()} token rows from ${accountTokensData.fileCount} file(s)`;
-  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withValue.toLocaleString()}</div><div class="data-page-stat-label">With Token</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withAccountId.toLocaleString()}</div><div class="data-page-stat-label">With Account ID</div></div><div class="data-page-stat"><div class="data-page-stat-value">${tokenTypes.size.toLocaleString()}</div><div class="data-page-stat-label">Token Types</div></div>`;
+  summary.textContent = datasetSummary({ shown: filtered.length, total: accountTokensData.entries.length, singular: 'token', fileCount: accountTokensData.fileCount });
+  if (filtered.length === 0) { stats.innerHTML = ''; content.innerHTML = buildNoMatchesHtml('account tokens'); return; }
+  const services = new Set(filtered.map(e => e.service).filter(Boolean));
+  const withValue = filtered.filter(e => e.value).length;
+  const withAccountId = filtered.filter(e => e.accountId).length;
+  const tokenTypes = new Set(filtered.map(e => e.type).filter(Boolean));
+  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withValue.toLocaleString()}</div><div class="data-page-stat-label">With token</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withAccountId.toLocaleString()}</div><div class="data-page-stat-label">With account ID</div></div><div class="data-page-stat"><div class="data-page-stat-value">${tokenTypes.size.toLocaleString()}</div><div class="data-page-stat-label">Token types</div></div>`;
   let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${tokensSort.th('service', 'Service')}${tokensSort.th('type', 'Type')}${tokensSort.th('value', 'Value')}${tokensSort.th('accountId', 'Account ID')}${tokensSort.th('browser', 'Browser')}${tokensSort.th('profile', 'Profile')}${tokensSort.th('note', 'Note')}${tokensSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(accountTokenRowBuilder, accountTokensFiltered, 0, accountTokensShown);
   html += '</tbody></table></div>';
@@ -355,17 +356,18 @@ function renderCardsPage(searchQuery = '') {
   const summary = document.getElementById('cardsSummary');
   const stats = document.getElementById('cardsStats');
   const content = document.getElementById('cardsContent');
-  if (creditCardsData.entries.length === 0) { summary.textContent = 'No credit cards found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No credit-card data available.</div>'; return; }
+  if (creditCardsData.entries.length === 0) { creditCardsFiltered = []; creditCardsShown = 0; summary.textContent = ''; stats.innerHTML = ''; content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.cards}</div>`; return; }
   let filtered = creditCardsData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.cardNumber.toLowerCase().includes(q) || entry.last4.toLowerCase().includes(q) || entry.nameOnCard.toLowerCase().includes(q) || entry.expiration.toLowerCase().includes(q) || entry.cvc.toLowerCase().includes(q) || entry.browser.toLowerCase().includes(q) || entry.filePath.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
   creditCardsFiltered = cardsSort.apply(filtered);
   creditCardsShown = Math.min(PAGE_SIZE, filtered.length);
-  const withHolder = creditCardsData.entries.filter(e => e.nameOnCard).length;
-  const withCvc = creditCardsData.entries.filter(e => e.cvc).length;
-  const withExpiry = creditCardsData.entries.filter(e => e.expiration && e.expiration !== '/').length;
-  const uniqueLast4 = new Set(creditCardsData.entries.map(e => e.last4).filter(Boolean));
-  summary.textContent = filtered.length !== creditCardsData.entries.length ? `Showing ${filtered.length.toLocaleString()} of ${creditCardsData.entries.length.toLocaleString()} cards from ${creditCardsData.fileCount} file(s)` : `${creditCardsData.entries.length.toLocaleString()} cards from ${creditCardsData.fileCount} file(s)`;
-  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${uniqueLast4.size.toLocaleString()}</div><div class="data-page-stat-label">Unique Last4</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withHolder.toLocaleString()}</div><div class="data-page-stat-label">With Cardholder</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withCvc.toLocaleString()}</div><div class="data-page-stat-label">With CVC</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withExpiry.toLocaleString()}</div><div class="data-page-stat-label">With Expiry</div></div>`;
+  summary.textContent = datasetSummary({ shown: filtered.length, total: creditCardsData.entries.length, singular: 'card', fileCount: creditCardsData.fileCount });
+  if (filtered.length === 0) { stats.innerHTML = ''; content.innerHTML = buildNoMatchesHtml('cards'); return; }
+  const withHolder = filtered.filter(e => e.nameOnCard).length;
+  const withCvc = filtered.filter(e => e.cvc).length;
+  const withExpiry = filtered.filter(e => e.expiration && e.expiration !== '/').length;
+  const uniqueLast4 = new Set(filtered.map(e => e.last4).filter(Boolean));
+  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${uniqueLast4.size.toLocaleString()}</div><div class="data-page-stat-label">Unique last4</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withHolder.toLocaleString()}</div><div class="data-page-stat-label">With cardholder</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withCvc.toLocaleString()}</div><div class="data-page-stat-label">With CVC</div></div><div class="data-page-stat"><div class="data-page-stat-value">${withExpiry.toLocaleString()}</div><div class="data-page-stat-label">With expiry</div></div>`;
   let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${cardsSort.th('cardNumber', 'Card Number')}${cardsSort.th('last4', 'Last4')}${cardsSort.th('nameOnCard', 'Name On Card')}${cardsSort.th('expiration', 'Expiration')}${cardsSort.th('cvc', 'CVC')}${cardsSort.th('browser', 'Browser')}${cardsSort.th('source', 'Recovered From')}</tr></thead><tbody>`;
   html += buildRowsHtml(creditCardRowBuilder, creditCardsFiltered, 0, creditCardsShown);
   html += '</tbody></table></div>';
