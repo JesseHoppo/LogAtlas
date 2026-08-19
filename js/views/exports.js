@@ -897,34 +897,43 @@ function initExports() {
       passwords, cookies, autofills, notes, history, bookmarks,
       browserMetadata, accountTokens, serviceArtifacts, wallets,
       downloads, detections, clipboard, grabbedFiles, cards, screenshots,
+      software, processes,
     } = collectAllDatasets();
 
-    const parts = [];
-    if (passwords.rows.length > 0) parts.push(`${passwords.rows.length} credential rows`);
-    if (cookies.rows.length > 0) parts.push(`${cookies.rows.length} cookies`);
-    if (autofills.entries.length > 0) parts.push(`${autofills.entries.length} autofills`);
-    if (notes.entries.length > 0) parts.push(`${notes.entries.length} notes`);
-    if (history.entries.length > 0) parts.push(`${history.entries.length} history entries`);
-    if (bookmarks.entries.length > 0) parts.push(`${bookmarks.entries.length} bookmarks`);
-    if (browserMetadata.entries.length > 0) parts.push(`${browserMetadata.entries.length} browser metadata`);
-    if (accountTokens.entries.length > 0) parts.push(`${accountTokens.entries.length} tokens`);
-    if (serviceArtifacts.entries.length > 0) parts.push(`${serviceArtifacts.entries.length} services`);
-    if (wallets.entries.length > 0) parts.push(`${wallets.entries.length} wallets`);
-    if (downloads.entries.length > 0) parts.push(`${downloads.entries.length} downloads`);
-    if (cards.entries.length > 0) parts.push(`${cards.entries.length} cards`);
-    if (clipboard.entries.length > 0) parts.push(`${clipboard.entries.length} clipboard`);
-    if (grabbedFiles.entries.length > 0) parts.push(`${grabbedFiles.entries.length} grabbed files`);
-    if (detections.entries.length > 0) parts.push(`${detections.entries.length} detections`);
-    if (screenshots.entries.length > 0) parts.push(`${screenshots.entries.length} screenshots`);
-    const countsText = parts.length > 0 ? parts.join(' \u00B7 ') : '';
+    const counted = [
+      [passwords.rows.length, 'credential row'],
+      [cookies.rows.length, 'cookie'],
+      [autofills.entries.length, 'autofill'],
+      [notes.entries.length, 'note'],
+      [history.entries.length, 'history entry', 'history entries'],
+      [bookmarks.entries.length, 'bookmark'],
+      [browserMetadata.entries.length, 'browser metadata row'],
+      [accountTokens.entries.length, 'token'],
+      [serviceArtifacts.entries.length, 'service row'],
+      [wallets.entries.length, 'wallet artifact'],
+      [downloads.entries.length, 'download'],
+      [cards.entries.length, 'card'],
+      [clipboard.entries.length, 'clipboard entry', 'clipboard entries'],
+      [grabbedFiles.entries.length, 'grabbed file'],
+      [detections.entries.length, 'detection'],
+      [screenshots.entries.length, 'screenshot'],
+      [software.entries.length, 'installed program'],
+      [processes.entries.length, 'running process', 'running processes'],
+    ];
+    const countsText = counted
+      .filter(([n]) => n > 0)
+      .map(([n, singular, plural]) => countLabel(n, singular, plural))
+      .join(' \u00B7 ');
 
     const summaryCounts = document.getElementById('exportSummaryCounts');
     const credsCounts = document.getElementById('exportCredsCounts');
     const zipCounts = document.getElementById('exportZipCounts');
 
     if (summaryCounts) summaryCounts.textContent = countsText;
-    if (credsCounts) credsCounts.textContent = passwords.rows.length > 0 ? `${passwords.rows.length} credential rows from ${passwords.fileCount} file(s)` : 'No credentials available';
-    if (zipCounts) zipCounts.textContent = countsText || 'No data available';
+    if (credsCounts) credsCounts.textContent = passwords.rows.length > 0
+      ? `${countLabel(passwords.rows.length, 'credential row')} from ${countLabel(passwords.fileCount, 'distinct source file')}`
+      : 'No credentials';
+    if (zipCounts) zipCounts.textContent = countsText || 'No data';
   });
 
   on('reset', () => {
