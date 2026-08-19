@@ -138,6 +138,44 @@ function pickHeadline(candidates) {
   return { value: 0, target: null };
 }
 
+// Rows with no captured password are reported wherever credentials are
+// summarised, so the Overview and the generated report never disagree about
+// the same case.
+function noPasswordBits(credentials) {
+  const bits = [];
+  if (credentials?.accountsWithoutPasswords > 0) {
+    bits.push(countLabel(credentials.accountsWithoutPasswords, 'account with a username only', 'accounts with a username only'));
+  }
+  if (credentials?.urlsWithoutCredentials > 0) {
+    bits.push(countLabel(credentials.urlsWithoutCredentials, 'saved site'));
+  }
+  return bits;
+}
+
+function gapLabel(minutes) {
+  if (minutes < 120) return countLabel(minutes, 'minute');
+  const hours = minutes / 60;
+  if (hours < 48) return countLabel(Math.round(hours), 'hour');
+  return countLabel(Math.round(hours / 24), 'day');
+}
+
+// A log cannot predate its own newest browsing event. Where it appears to, either
+// the capture stamp is wrong or the log was edited after collection, and every
+// currentness judgement in the case rests on that stamp. Analysis only reports
+// the gap once it has resolved the frame the visit times were written in — two
+// clocks in unknown frames disagreeing says nothing about either.
+function captureBeforeHistory(capture) {
+  const minutes = capture?.historyAheadMinutes;
+  if (!minutes || !capture.date || !capture.historyLatestIso) return null;
+  const latest = new Date(capture.historyLatestIso);
+  if (isNaN(latest.getTime())) return null;
+  return {
+    text: `Newest browsing event is ${gapLabel(minutes)} after the capture stamp `
+      + `(${formatInstantLabel(latest)} against ${formatInstantLabel(capture.date)}) — the capture date is wrong, or the log was altered after collection.`,
+    variant: 'warn',
+  };
+}
+
 // The four questions an IR responder asks first: what is still live, how wide
 // is the credential blast radius, what money/identity is exposed, what did the
 // operator capture. Each card links straight to the detail.
@@ -147,57 +185,93 @@ function renderVerdictCards({ credentials, cookies, cards, history, grabbed, scr
   const out = [];
 
   if (cookies?.totalCookies > 0) {
+    const tokens = cookies.sessionTokens || 0;
     const live = cookies.validSessionTokens || 0;
+    // Zero live tokens out of zero recognised tokens is not a clean negative;
+    // it means nothing in the cookie set was identified as a session token.
+    let note = 'No cookie was recognised as a session token; check the cookie set manually.';
+    if (live > 0) note = 'Unexpired or no-expiry session tokens.';
+    else if (tokens > 0) note = `${countLabel(tokens, 'session token')} recognised, none live at capture.`;
     out.push(buildVerdictCard({
       label: 'Live sessions',
       value: live.toLocaleString(),
-      note: live > 0
-        ? 'Session tokens live at capture: unexpired, or browser-session cookies carrying no expiry. May grant account access without a password; verify before relying.'
-        : 'No session tokens were live at capture.',
+      note,
       targets: ['cookies'],
     }));
   }
 
   const accountsOnly = credentials?.accountsWithoutPasswords || 0;
-  if (credentials?.uniqueCredentials > 0 || accountsOnly > 0) {
-    const withPasswords = credentials.uniqueCredentials > 0;
-    const topDomain = credentials.topDomains?.[0]?.value;
-    const heaviest = topDomain ? `, heaviest on ${topDomain}` : '';
+  const savedSites = credentials?.urlsWithoutCredentials || 0;
+  const topDomain = credentials?.topDomains?.[0]?.value;
+  const heaviest = topDomain ? `, heaviest on ${topDomain}` : '';
+  if (credentials?.uniqueCredentials > 0) {
+    const alsoWithout = noPasswordBits(credentials);
+    const plus = alsoWithout.length > 0 ? `; plus ${joinNaturalList(alsoWithout)}` : '';
     out.push(buildVerdictCard({
-      label: withPasswords ? 'Credentials' : 'Accounts',
-      value: (withPasswords ? credentials.uniqueCredentials : accountsOnly).toLocaleString(),
-      note: withPasswords
-        ? `Recovered logins${heaviest}. Rank live and reused ones in Credential Triage.`
-        : `Accounts, no captured passwords${heaviest}. Sites and usernames are exposed; there is nothing to rank in Credential Triage.`,
-      targets: withPasswords ? ['currentnesslab', 'passwords'] : ['passwords'],
+      label: 'Credentials',
+      value: credentials.uniqueCredentials.toLocaleString(),
+      note: `Unique by domain, username and password${heaviest}${plus}.`,
+      targets: ['currentnesslab', 'passwords'],
+    }));
+  } else if (accountsOnly > 0) {
+    const plus = savedSites > 0 ? `; plus ${countLabel(savedSites, 'saved site')}` : '';
+    out.push(buildVerdictCard({
+      label: 'Accounts',
+      value: accountsOnly.toLocaleString(),
+      note: `Site and username only, no passwords${heaviest}${plus}.`,
+      targets: ['passwords'],
+    }));
+  } else if (savedSites > 0) {
+    // A URL-only row carries no username, so nothing feeds the domain ranking
+    // and there is no heaviest domain to name.
+    out.push(buildVerdictCard({
+      label: 'Saved sites',
+      value: savedSites.toLocaleString(),
+      note: 'Sites only, no username or password stored.',
+      targets: ['passwords'],
     }));
   }
 
   const finBits = [];
-  if (cards?.totalCards > 0) finBits.push(pluralise(cards.totalCards, 'stored card') + (cards.withCvc > 0 ? ' with CVC' : ''));
+  if (cards?.totalCards > 0) {
+    const cvc = cards.withCvc > 0
+      ? (cards.withCvc === cards.totalCards ? ' with CVC' : ` (${cards.withCvc.toLocaleString()} with CVC)`)
+      : '';
+    finBits.push(countLabel(cards.totalCards, 'stored card') + cvc);
+  }
   const idTotal = (nationalIds || []).reduce((sum, n) => sum + n.count, 0);
-  if (idTotal > 0) finBits.push('government IDs');
-  if (autofill?.totalEntries > 0) finBits.push(pluralise(autofill.totalEntries, 'autofill PII record'));
+  if (idTotal > 0) finBits.push(countLabel(idTotal, 'government ID field'));
+  // Distinct field/value pairs, so this sits in the same unit as the deduped
+  // credential and session-token counts on the cards either side of it.
+  const autofillRecords = autofill?.uniqueEntries ?? autofill?.totalEntries ?? 0;
+  if (autofillRecords > 0) finBits.push(countLabel(autofillRecords, 'distinct autofill entry', 'distinct autofill entries'));
   if (finBits.length > 0) {
-    // Government IDs are matched in credential usernames, so that count is
-    // read on the Passwords page.
+    // Cards, identifiers and autofill PII do not add up to anything, so each is
+    // shown on its own. The link still follows what is most actionable, and
+    // government IDs are matched in credential usernames, so that count is read
+    // on the Passwords page.
     const headline = pickHeadline([
       [cards?.totalCards, 'cards'],
       [idTotal, 'passwords'],
-      [autofill?.totalEntries, 'autofills'],
+      [autofillRecords, 'autofills'],
     ]);
+    const NOTE_BY_TARGET = {
+      cards: 'Card details on the Cards page.',
+      passwords: 'Identifiers matched in credential usernames.',
+      autofills: 'PII captured from saved browser form data.',
+    };
     out.push(buildVerdictCard({
       label: 'Financial & identity',
-      value: headline.value.toLocaleString(),
-      note: `${joinNaturalList(finBits)}.`,
+      chips: finBits,
+      note: NOTE_BY_TARGET[headline.target] || '',
       targets: [headline.target],
     }));
   }
 
   const capBits = [];
-  if (screenshot?.entries?.length > 0) capBits.push(pluralise(screenshot.entries.length, 'desktop screenshot'));
-  if (grabbed?.fileCount > 0) capBits.push(pluralise(grabbed.fileCount, 'grabbed file'));
-  if (history?.totalEntries > 0) capBits.push(pluralise(history.totalEntries, 'history entry', 'history entries'));
+  if (screenshot?.entries?.length > 0) capBits.push(countLabel(screenshot.entries.length, 'desktop screenshot'));
+  if (grabbed?.fileCount > 0) capBits.push(countLabel(grabbed.fileCount, 'grabbed file'));
+  if (history?.totalEntries > 0) capBits.push(countLabel(history.totalEntries, 'history entry', 'history entries'));
   if (capBits.length > 0) {
     const headline = pickHeadline([
       [history?.totalEntries, 'history'],
@@ -754,28 +828,27 @@ export function initDashboard() {
     const summaryEl = document.getElementById('dashCredSummary');
     summaryEl.classList.remove('dash-loading');
     const skipped = data.failedFiles?.length || 0;
-    const skippedNote = skipped > 0 ? `; ${skipped.toLocaleString()} file(s) skipped` : '';
+    const skippedNote = skipped > 0 ? `; ${countLabel(skipped, 'file')} skipped` : '';
     const parsedRows = parsedCredentialRows(data);
 
     if (data.totalCredentials > 0) {
-      let summary = `${data.uniqueCredentials.toLocaleString()} unique credentials from ${data.fileCount} file(s)`;
-      if (data.totalCredentials !== data.uniqueCredentials) {
-        summary += ` (${data.totalCredentials.toLocaleString()} total, ${(data.totalCredentials - data.uniqueCredentials).toLocaleString()} duplicates removed)`;
+      // The dedupe key is the base domain, not the URL as saved, which is why
+      // this count sits below the Passwords page's row count. Naming the key is
+      // what keeps the two numbers from reading as a contradiction.
+      let summary = `${countLabel(data.uniqueCredentials, 'credential')} from ${countLabel(data.fileCount, 'file')}, unique by domain, username and password`;
+      const duplicates = data.totalCredentials - data.uniqueCredentials;
+      if (duplicates > 0) {
+        summary += `; ${countLabel(duplicates, 'duplicate row')} collapsed`;
       }
+      const alsoWithout = noPasswordBits(data);
+      if (alsoWithout.length > 0) summary += `; plus ${joinNaturalList(alsoWithout)}`;
       summaryEl.textContent = summary + skippedNote;
     } else if (parsedRows > 0) {
-      const bits = [];
-      if (data.accountsWithoutPasswords > 0) {
-        bits.push(pluralise(data.accountsWithoutPasswords, 'account with a username only', 'accounts with a username only'));
-      }
-      if (data.urlsWithoutCredentials > 0) {
-        bits.push(pluralise(data.urlsWithoutCredentials, 'saved site'));
-      }
-      summaryEl.textContent = `No passwords captured; ${joinNaturalList(bits)} from ${data.fileCount} file(s)${skippedNote}`;
+      summaryEl.textContent = `No passwords captured; ${joinNaturalList(noPasswordBits(data))} from ${countLabel(data.fileCount, 'file')}${skippedNote}`;
     } else {
       summaryEl.textContent = skipped > 0
-        ? `No structured credential data could be parsed; ${skipped.toLocaleString()} file(s) were skipped.`
-        : 'No structured credential data could be parsed.';
+        ? `No credentials parsed; ${countLabel(skipped, 'file')} skipped.`
+        : 'No credentials parsed.';
     }
 
     if (parsedRows > 0) {
@@ -910,16 +983,21 @@ export function initDashboard() {
     }
 
     section.classList.remove('hidden');
-    summaryEl.textContent = `${data.totalEntries} entries from ${data.fileCount} file(s)`;
+    // Browsers repeat a field across profiles and sites, so the row count and the
+    // distinct count are both worth stating — the verdict card carries the latter.
+    const distinct = data.uniqueEntries ?? data.totalEntries;
+    const distinctNote = distinct < data.totalEntries ? `, ${distinct.toLocaleString()} distinct` : '';
+    summaryEl.textContent = `${countLabel(data.totalEntries, 'entry', 'entries')} from ${countLabel(data.fileCount, 'file')}${distinctNote}`;
 
     // Overview shows a counted summary and a few sample emails, not the whole
-    // PII wall. The full parsed data lives on the Autofills page.
+    // PII wall. The full parsed data lives on the Autofills page. `other` is a
+    // display sample capped by the analysis; the chip has to carry the tally.
     const counts = [
       ['email', data.emails.length],
       ['phone', data.phones.length],
       ['name', data.names.length],
       ['address', data.addresses.length],
-      ['other field', data.other.length],
+      ['other field', data.otherTotal ?? data.other.length],
     ].filter(([, n]) => n > 0);
     const plural = (label, n) => label === 'address' ? (n === 1 ? 'address' : 'addresses') : (n === 1 ? label : label + 's');
     const chips = counts.map(([label, n]) => `<span class="dash-chip">${n.toLocaleString()} ${plural(label, n)}</span>`).join('');
