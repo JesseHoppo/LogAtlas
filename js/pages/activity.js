@@ -527,6 +527,9 @@ async function loadClipboardData(fileTree, rootName) {
           lineCount,
           length,
           lure: detectClipboardLure(entryText),
+          // The word count behind a seed-phrase verdict. The classifier vouches
+          // for nothing else, so every other row leaves this empty.
+          evidence: (row[5] || '').trim(),
           source: path,
         });
       }
