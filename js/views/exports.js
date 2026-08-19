@@ -702,37 +702,33 @@ function showPasswordModal(password) {
       setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
     });
 
-    overlay.querySelector('#exportPwCancel').addEventListener('click', () => {
-      overlay.remove(); resolve(false);
-    });
-
-    overlay.querySelector('#exportPwProceed').addEventListener('click', () => {
-      overlay.remove(); resolve(true);
-    });
-
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) { overlay.remove(); resolve(false); }
-    });
+    overlay.querySelector('#exportPwCancel').addEventListener('click', () => { close(); resolve(false); });
+    overlay.querySelector('#exportPwProceed').addEventListener('click', () => { close(); resolve(true); });
   });
 }
 
+// Names inside the archive are the sample's own text. A leaf carrying a
+// separator or a leading dot writes itself outside the folder the analyst
+// extracts into, so it never reaches the entry name intact.
+function sanitiseZipLeaf(name) {
+  return String(name || '')
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+    .replace(/^\.+/, '')
+    .replace(/[. ]+$/, '')
+    .slice(0, 120);
+}
+
 async function exportParsedDataZip() {
+  const datasets = collectAllDatasets();
   const {
     passwords, cookies, autofills, notes, history, bookmarks,
     browserMetadata, accountTokens, serviceArtifacts, wallets,
     downloads, detections, clipboard, grabbedFiles, cards, screenshots,
-  } = collectAllDatasets();
+    software, processes,
+  } = datasets;
 
-  const hasData = passwords.rows.length > 0 || cookies.rows.length > 0 ||
-                  autofills.entries.length > 0 || notes.entries.length > 0 || history.entries.length > 0 ||
-                  bookmarks.entries.length > 0 || browserMetadata.entries.length > 0 ||
-                  accountTokens.entries.length > 0 || serviceArtifacts.entries.length > 0 ||
-                  wallets.entries.length > 0 ||
-                  downloads.entries.length > 0 || detections.entries.length > 0 ||
-                  clipboard.entries.length > 0 || grabbedFiles.entries.length > 0 || cards.entries.length > 0 ||
-                  screenshots.entries.length > 0;
-  if (!hasData) {
-    notify('No parsed data available to package.', 'error');
+  if (!hasAnyDataset(datasets)) {
+    notify('No parsed data to package.', 'error');
     return;
   }
 
@@ -817,76 +813,48 @@ async function exportParsedDataZip() {
     }
 
     if (wallets.entries.length > 0) {
-      await addCsvFile('wallet_artifacts.csv', ['Service', 'Category', 'Artifact Type', 'Store Type', 'Browser', 'Profile', 'Highlights', 'Email Count', 'Address Count', 'Token Count', 'Seed Hints', 'Source'], wallets.entries.map((entry) => [
+      await addCsvFile('wallet_artifacts.csv', ['Service', 'Category', 'Artifact Type', 'Store Type', 'Browser', 'Profile', 'Emails', 'Addresses', 'Tokens', 'Seed Keywords', 'Highlights', 'Source'], wallets.entries.map((entry) => [
           entry.service,
           entry.category,
           entry.artifactType,
           entry.storeType,
           entry.browser,
           entry.profile,
-          entry.highlights,
           entry.emailCount,
           entry.addressCount,
           entry.tokenCount,
           entry.seedHints,
+          entry.highlights,
           entry.source,
         ]
       ));
     }
 
-    if (downloads.entries.length > 0) {
-      await addCsvFile('downloads.csv', ['File Path', 'Source URL', 'File Size', 'Extension', 'Domain'], downloads.entries.map(
-        ({ filePath, sourceUrl, fileSizeRaw, fileSizeDisplay, extension, domain }) => [filePath, sourceUrl, fileSizeRaw || fileSizeDisplay, extension, domain]
-      ));
-    }
-
-    if (detections.entries.length > 0) {
-      await addCsvFile('domain_detections.csv', ['Section', 'Label', 'Target', 'Count', 'Source'], detections.entries.map(
-        ({ section, label, target, count, source }) => [section, label, target, count, source]
-      ));
-    }
-
-    if (clipboard.entries.length > 0) {
-      await addCsvFile('clipboard.csv', ['Type', 'Text', 'URLs', 'Line Count', 'Length', 'Source'], clipboard.entries.map(
-        ({ type, text, urls, lineCount, length, source }) => [type, text, urls, lineCount, length, source]
-      ));
-    }
-
-    if (grabbedFiles.entries.length > 0) {
-      await addCsvFile('grabbed_files.csv', ['Collection', 'Name', 'Path', 'Extension', 'Size Bytes', 'Modified', 'Source'], grabbedFiles.entries.map((entry) => [
-          entry.collection,
-          entry.name,
-          entry.relativePath,
-          entry.extension,
-          entry.sizeBytes,
-          entry.modifiedDate instanceof Date && !isNaN(entry.modifiedDate.getTime()) ? entry.modifiedDate.toLocaleString() : '',
-          entry.source,
-        ]
-      ));
-    }
+    if (downloads.entries.length > 0) await addPageCsv('downloads', downloads.entries);
+    if (detections.entries.length > 0) await addPageCsv('detections', detections.entries);
+    if (clipboard.entries.length > 0) await addPageCsv('clipboard', clipboard.entries);
+    if (grabbedFiles.entries.length > 0) await addPageCsv('grabbed', grabbedFiles.entries);
 
     if (cards.entries.length > 0) {
+      // Recovered From falls back to the archive path the same way the table
+      // does; Source keeps the archive path either way.
       await addCsvFile('credit_cards.csv', ['Card Number', 'Last4', 'Name On Card', 'Expiration', 'CVC', 'Browser', 'Recovered From', 'Source'], cards.entries.map(
-        ({ cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source }) => [cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source]
+        ({ cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath, source }) => [cardNumber, last4, nameOnCard, expiration, cvc, browser, filePath || source, source]
       ));
     }
 
-    if (screenshots.entries.length > 0) {
-      await addCsvFile('screenshots.csv', ['Name', 'Path', 'Width', 'Height', 'Size Bytes'], screenshots.entries.map(
-        ({ name, path, width, height, sizeBytes }) => [name, path, width || '', height || '', sizeBytes]
-      ));
-    }
+    if (screenshots.entries.length > 0) await addPageCsv('screenshots', screenshots.entries);
+    if (software.entries.length > 0) await addPageCsv('software', software.entries);
+    if (processes.entries.length > 0) await addPageCsv('processes', processes.entries);
 
+    const indexWidth = String(screenshots.entries.length).length;
     for (let i = 0; i < screenshots.entries.length; i++) {
       try {
         const entry = screenshots.entries[i];
         const content = await loadFileContent(entry.node);
         if (content) {
-          const ext = entry.node.name.split('.').pop().toLowerCase();
-          const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', bmp: 'image/bmp', gif: 'image/gif', webp: 'image/webp' };
-          const mime = mimeMap[ext] || 'image/png';
-          const blob = new Blob([content], { type: mime });
-          const safeName = `${String(i + 1).padStart(2, '0')}_${entry.node.name}`;
+          const blob = new Blob([content], { type: getImageMimeFromName(entry.node.name) });
+          const safeName = `${String(i + 1).padStart(indexWidth, '0')}_${sanitiseZipLeaf(entry.node.name) || 'screenshot.png'}`;
           await writer.add('screenshots/' + safeName, new zip.BlobReader(blob));
         }
       } catch {
