@@ -49,14 +49,23 @@ import {
   getCreditCardsData,
 } from '../pages/assets.js';
 import {
+  CSV_SPECS,
   getDownloadsData,
   getDomainDetectionsData,
   getClipboardData,
   getGrabbedFilesData,
   getScreenshotsData,
+  getSoftwareData,
+  getProcessesData,
 } from '../pages/activity.js';
 import { isLiveSessionToken } from '../analysis/sessionCookies.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
+
+// Stamped into every export so a handed-over report can be tied back to the
+// build that wrote it. Calendar-versioned: the tool ships straight from the
+// branch and has no release train to carry a semantic number.
+const TOOL_NAME = 'Log Atlas';
+const TOOL_VERSION = '2026.08';
 
 let sysinfoEntries = null;
 let sysinfoIocs = null;
@@ -192,12 +201,86 @@ function buildCookStats(cookies) {
   };
 }
 
+// A single autofill store can hold tens of thousands of values. The report is
+// written to be printed, so it states every total and prints only the head of
+// each list.
+const REPORT_LIST_SAMPLE = 20;
+
+function sampleList(values) {
+  return { total: values.length, sample: values.slice(0, REPORT_LIST_SAMPLE) };
+}
+
+// The classifier labels every host it recognises, but most of those labels only
+// say what kind of site it is. These six change what the responder does next:
+// government and military identity, money, and the remote-access or dynamic-DNS
+// infrastructure an operator pivots through. This order is the printed order.
+const INTEREST_CATEGORIES = ['gov', 'military', 'bank', 'finance', 'rmm', 'ddns'];
+
+// Every domain in these categories, not a ranked head: an evidence handoff that
+// truncates the government and banking list is worse than no list.
+function buildDomainsOfInterest(passwords, cookies) {
+  // The reference lists are requested at startup and awaited by the analysis
+  // pass, so this only bites if a report is somehow written before either.
+  if (!areCategoriesLoaded()) return { unavailable: true, rows: [] };
+
+  const rank = new Map(INTEREST_CATEGORIES.map((key, index) => [key, index]));
+  const hits = new Map();
+  const credDomains = new Set();
+  const cookieDomains = new Set();
+
+  const record = (host, field, seen) => {
+    if (!host) return;
+    const { base, primaryKey } = classifySiteDomain(host);
+    if (!base) return;
+    seen.add(base);
+    if (!rank.has(primaryKey)) return;
+    let hit = hits.get(base);
+    if (!hit) {
+      hit = { domain: base, key: primaryKey, accounts: 0, cookies: 0 };
+      hits.set(base, hit);
+    }
+    hit[field]++;
+  };
+
+  const { urlIdx } = credentialColumnIndices(passwords.headers);
+  if (urlIdx >= 0) {
+    for (const { row } of passwords.rows) record(extractDomain(row[urlIdx] || ''), 'accounts', credDomains);
+  }
+
+  const domainIdx = cookies.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+  if (domainIdx >= 0) {
+    for (const { row } of cookies.rows) record((row[domainIdx] || '').replace(/^\./, ''), 'cookies', cookieDomains);
+  }
+
+  if (hits.size === 0) return null;
+  return {
+    rows: [...hits.values()].sort((a, b) =>
+      (rank.get(a.key) - rank.get(b.key)) || a.domain.localeCompare(b.domain)),
+    credDomains: credDomains.size,
+    cookieDomains: cookieDomains.size,
+  };
+}
+
+// What the case was built from, for the provenance block. A dropped folder has
+// no archive of its own, so the extracted tally stands in for the source size.
+function describeSource() {
+  const members = state.flatFiles.filter(file => file.type === 'file');
+  const bytes = members.reduce((sum, file) => sum + (file.size || 0), 0);
+  const extracted = `${countLabel(members.length, 'file')}, ${formatBytes(bytes)} extracted`;
+  const archive = state.sourceFile;
+  if (archive && !state.isMultiFileMode) {
+    return { name: archive.name, detail: `${formatBytes(archive.size)} archive; ${extracted}` };
+  }
+  return { name: state.rootZipName || 'Unknown', detail: extracted };
+}
+
 function gatherReportData() {
   const ds = collectAllDatasets();
   const {
     passwords, cookies, autofills, notes, history, bookmarks,
     browserMetadata, accountTokens, serviceArtifacts, wallets,
     downloads, detections, clipboard, grabbedFiles, cards, screenshots,
+    software, processes,
   } = ds;
 
   const credStats = buildCredStats(passwords);
@@ -209,29 +292,31 @@ function gatherReportData() {
     autoStats = {
       total: autofills.entries.length,
       fileCount: autofills.fileCount,
-      emails: highlights.emails,
-      phones: highlights.phones,
-      names: highlights.names,
+      emails: sampleList(highlights.emails),
+      phones: sampleList(highlights.phones),
+      names: sampleList(highlights.names),
+      addresses: sampleList(highlights.addresses),
     };
   }
 
   let histStats = null;
   if (history.entries.length > 0) {
-    const domainCounts = {};
-    for (const { url } of history.entries) {
-      const domain = baseDomainFromUrl(url);
-      if (domain) domainCounts[domain] = (domainCounts[domain] || 0) + 1;
-    }
+    // The history page already ranks the domains, and it drops local-file,
+    // loopback and RFC1918 hosts; the report quotes that same tally.
+    const { topDomains, uniqueDomains } = history.stats;
     histStats = {
       total: history.entries.length,
       fileCount: history.fileCount,
-      uniqueDomains: Object.keys(domainCounts).length,
-      topDomains: Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
+      uniqueDomains,
+      topDomains,
     };
   }
 
   return {
     archiveName: state.rootZipName || 'Unknown',
+    source: describeSource(),
+    generatedAt: new Date(),
+    domainsOfInterest: buildDomainsOfInterest(passwords, cookies),
     capture,
     sysinfoEntries,
     sysinfoIocs,
@@ -256,28 +341,56 @@ function gatherReportData() {
 function buildLogSummaryHtml(data) {
   const e = escapeHtml;
 
-  function domainTable(domains) {
+  // countLabel, split into a weighted number and its noun so the stat rows keep
+  // their typographic hierarchy and still read as English rather than "1 file(s)".
+  function stat(value, singular, plural = singular + 's', className = '') {
+    const cls = className ? ` ${className}` : '';
+    return `<div class="stat"><span class="stat-num${cls}">${value.toLocaleString()}</span> ${value === 1 ? singular : plural}</div>`;
+  }
+
+  // Each of these tables counts something different, and a column headed
+  // "Count" leaves the reader to guess whether it is accounts, cookies or visits.
+  function domainTable(domains, countHeader) {
     if (!domains || domains.length === 0) return '';
-    return `<table><thead><tr><th>Domain</th><th>Count</th></tr></thead><tbody>${
-      domains.map(([d, c]) => `<tr><td>${e(d)}</td><td>${c}</td></tr>`).join('')
+    return `<table><thead><tr><th>Domain</th><th>${e(countHeader)}</th></tr></thead><tbody>${
+      domains.map(([d, c]) => `<tr><td>${e(d)}</td><td>${c.toLocaleString()}</td></tr>`).join('')
     }</tbody></table>`;
   }
+
+  const provenance = `<section>
+    <h2>Report provenance</h2>
+    <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+      <tr><td>Tool</td><td>${e(TOOL_NAME)} ${e(TOOL_VERSION)}</td></tr>
+      <tr><td>Report generated</td><td>${e(formatInstantLabel(data.generatedAt))}</td></tr>
+      <tr><td>Source</td><td>${e(data.source.name)}</td></tr>
+      <tr><td>Source size</td><td>${e(data.source.detail)}</td></tr>
+      <tr><td>Capture time</td><td>${data.capture?.date
+        ? `${e(formatInstantLabel(data.capture.date))} (${e(captureProvenance(data.capture))})`
+        : 'Not established from this log'}</td></tr>
+      <tr><td>Timestamps</td><td>Every time in this report is UTC. Wall-clock values read from the log carry no zone of their own and are shown as written.</td></tr>
+    </tbody></table>
+  </section>`;
 
   let sections = '';
 
   if (data.fingerprintResult) {
     const fp = data.fingerprintResult;
-    const confColor = fp.confidence === 'high' ? '#16a34a' : fp.confidence === 'medium' ? '#d97706' : '#8c919c';
-    const structureNote = fp.source === 'structure-only'
-      ? `<div class="stat" style="font-size:0.8rem;color:#8c919c;">Inferred from folder/file layout; no sysinfo present.</div>`
-      : '';
+    const confColor = fp.confidence === 'high' ? '#16a34a' : fp.confidence === 'medium' ? '#d97706' : '#5f6672';
+    const signals = fp.matchedSignals || [];
+    const caveats = [];
+    if (fp.source === 'structure-only') caveats.push('Inferred from folder and file layout; no sysinfo present.');
+    if (fp.distributor) caveats.push(`Sold under the ${fp.distributor} brand; the shop that resold the log is not the stealer that took it.`);
     sections += `<section>
-      <h2>Stealer Identification</h2>
+      <h2>Stealer identification</h2>
       <div class="stat-row">
         <div class="stat" style="font-size:0.95rem;"><strong style="color:${confColor}">${e(fp.family)}</strong></div>
-        <div class="stat">${e(capitalise(fp.confidence))} confidence (${Math.round(fp.score * 100)}%)</div>
-        ${structureNote}
+        <div class="stat">${e(capitalise(fp.confidence))} confidence</div>
       </div>
+      ${caveats.map(caveat => `<p class="note">${e(caveat)}</p>`).join('')}
+      ${signals.length > 0 ? `<h3>Matched signals</h3>
+      <table><thead><tr><th>Signal</th></tr></thead><tbody>${
+        signals.map(signal => `<tr><td>${e(signal)}</td></tr>`).join('')
+      }</tbody></table>` : ''}
     </section>`;
   }
 
@@ -461,27 +574,29 @@ function buildLogSummaryHtml(data) {
   section { margin-bottom: 2rem; }
   h2 { font-size: 1.05rem; font-weight: 600; color: #1a1d23; margin-bottom: 0.75rem; padding-bottom: 0.35rem; border-bottom: 1px solid #ebedf0; }
   h3 { font-size: 0.85rem; font-weight: 600; color: #5f6672; margin: 1rem 0 0.5rem; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 0.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 0.5rem; font-variant-numeric: tabular-nums; }
   th { text-align: left; padding: 0.4rem 0.75rem; background: #f5f6f8; border: 1px solid #ebedf0; font-weight: 600; color: #5f6672; }
   td { padding: 0.4rem 0.75rem; border: 1px solid #ebedf0; }
   .stat-row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
   .stat { font-size: 0.8rem; color: #5f6672; }
   .stat-num { font-weight: 600; color: #1a1d23; font-size: 1rem; margin-right: 0.25rem; }
   .stat-num.valid { color: #16a34a; }
-  .stat-num.expired { color: #dc2626; }
-  .note { font-size: 0.75rem; color: #8c919c; font-style: italic; margin-bottom: 0.5rem; }
+  .stat-num.expired, .risk { color: #dc2626; }
+  .review { color: #d97706; }
+  .session-note { font-size: 0.8rem; margin-top: 0.5rem; }
+  .note { font-size: 0.75rem; color: #5f6672; font-style: italic; margin-bottom: 0.5rem; max-width: 68ch; }
   @media print { body { background: #fff; padding: 0; } .container { border: none; padding: 1rem; box-shadow: none; } }
 </style>
 </head>
 <body>
 <div class="container">
   <header>
-    <h1>Log Summary</h1>
+    <h1>Log summary</h1>
     <div class="meta">
-      <span>Archive: ${e(data.archiveName)}</span>
-      ${data.capture?.date ? `<span>Captured: ${e(formatDateTimeLabel(data.capture.date))} (${e(data.capture.source)}) &mdash; ${e(data.capture.iso)}</span>` : ''}
+      <span>${e(data.source.name)}</span>
     </div>
   </header>
+  ${provenance}
   ${sections}
 </div>
 </body>
@@ -795,4 +910,4 @@ function initExports() {
   });
 }
 
-export { initExports };
+export { initExports, TOOL_NAME, TOOL_VERSION };
