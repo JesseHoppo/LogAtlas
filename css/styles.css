@@ -380,6 +380,26 @@ body {
   opacity: 0.5;
 }
 
+/* Row count for the item's dataset. It is written as an attribute rather than
+   a child so the label stays the whole of the button's text, and it is taken
+   out of flow so the labels keep one left edge and the figures one right one. */
+.sidebar-nav-item[data-count] {
+  padding-right: 4.25rem;
+}
+.sidebar-nav-item[data-count]::after {
+  content: attr(data-count);
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 1.25rem;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
 .sidebar-section.sidebar-section-hidden,
 .sidebar-nav-item.sidebar-nav-item-hidden {
   display: none;
@@ -3473,6 +3493,19 @@ body {
   :root { --sidebar-width: 180px; }
   .main-content {
     padding: 1.5rem;
+  }
+  /* The narrow rail has to hold the longest label and its figure at once, so
+     the gutters give up what the two of them need. */
+  .sidebar-nav-item,
+  .sidebar-section-label {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+  }
+  .sidebar-nav-item[data-count] {
+    padding-right: 3.4rem;
+  }
+  .sidebar-nav-item[data-count]::after {
+    right: 0.9rem;
   }
 }
 
