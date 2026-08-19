@@ -86,11 +86,14 @@ export function createTableSort(columns) {
       else { key = 'none'; order = 'none'; }
       return true;
     },
-    th(columnKey, label) {
+    // `columnClass` is for a column that carries its width or its small-screen
+    // behaviour as a class; without it a table with sized columns has to
+    // assemble the whole header cell itself and keep the sort state in step.
+    th(columnKey, label, columnClass = '') {
       const active = key === columnKey && order !== 'none';
-      const classes = active ? `sortable sort-${order}` : 'sortable';
+      const classes = ['sortable', columnClass, active ? `sort-${order}` : ''].filter(Boolean).join(' ');
       const aria = active ? (order === 'asc' ? 'ascending' : 'descending') : 'none';
-      return `<th class="${classes}" data-sort-key="${escapeHtml(columnKey)}" tabindex="0" aria-sort="${aria}">${escapeHtml(label)}</th>`;
+      return `<th class="${escapeHtml(classes)}" data-sort-key="${escapeHtml(columnKey)}" tabindex="0" aria-sort="${aria}">${escapeHtml(label)}</th>`;
     },
     apply(rows) {
       const accessor = key === 'none' ? null : resolve(key);
