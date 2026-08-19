@@ -18,8 +18,10 @@ export const CONFIDENCE_THRESHOLDS = {
 };
 
 // selfId patterns are matched across sysinfo, credits, clipboard and the
-// password/cookie headers. Mark one `scope: 'sysinfo'` when the id doubles as
-// ordinary text, so captured victim data can't raise it.
+// password/cookie headers. Mark one `scope: 'sysinfo'` where a single token in
+// captured victim data — a bookmark title, a cookie domain, a clipboard line —
+// would otherwise be enough to name the family. Multi-word brands and banner
+// art stay global: those only ever appear in the stealer's own output.
 export const SIGNATURES = {
   Vidar: {
     selfId: [
@@ -155,7 +157,7 @@ export const SIGNATURES = {
 
   Rhadamanthys: {
     selfId: [
-      { pattern: /rhadamanthys/i, label: 'Self-ID: Rhadamanthys' },
+      { pattern: /rhadamanthys/i, label: 'Self-ID: Rhadamanthys', scope: 'sysinfo' },
     ],
     sysinfoFile: { pattern: /^(?:UserInformation|system)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -317,7 +319,7 @@ export const SIGNATURES = {
   StealC: {
     selfId: [
       { pattern: /stealc\s+stealer/i, label: 'Self-ID: Stealc stealer' },
-      { pattern: /STEALC/i, label: 'Self-ID: STEALC branding' },
+      { pattern: /STEALC/i, label: 'Self-ID: STEALC branding', scope: 'sysinfo' },
     ],
     sysinfoFile: { pattern: /^(?:Info|system_info)\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -492,7 +494,7 @@ export const SIGNATURES = {
 
   RisePro: {
     selfId: [
-      { pattern: /risepro/i, label: 'Self-ID: RisePro' },
+      { pattern: /risepro/i, label: 'Self-ID: RisePro', scope: 'sysinfo' },
     ],
     sysinfoFile: { pattern: /^information\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -671,7 +673,7 @@ export const SIGNATURES = {
   'DarkCrystal RAT': {
     selfId: [
       { pattern: /darkcrystal/i, label: 'Self-ID: DarkCrystal' },
-      { pattern: /\bDCRAT\b/i, label: 'Self-ID: DCRAT' },
+      { pattern: /\bDCRAT\b/i, label: 'Self-ID: DCRAT', scope: 'sysinfo' },
     ],
     sysinfoFile: { pattern: /^Information(?:\s*\[[^\]]+\])?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
