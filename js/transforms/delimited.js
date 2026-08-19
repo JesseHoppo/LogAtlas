@@ -207,6 +207,38 @@ function detectHeaderRow(firstLine, delimiter) {
   return matches >= Math.max(2, Math.ceil(filled.length / 2));
 }
 
+// A row number or a stored profile path, neither of which anyone signs in
+// with. The path arms need two segments so `DOMAIN\user` stays an account.
+const NON_ACCOUNT_VALUE = /^\d+$|^[A-Za-z]:[\\/]|(?:[\\/][^\\/]+){2,}$/;
+
+// Account names vary down a column; a browser, profile or application column
+// repeats a handful of values. Variety alone is not enough — a row counter and
+// a profile path are unique down the column too — so the values also have to
+// look like something a person signs in with.
+function looksLikeAccountColumn(entry) {
+  if (entry.total === 0) return false;
+  if (entry.distinct.size / entry.total <= 0.5) return false;
+  return entry.accountLike / entry.total >= 0.5;
+}
+
+// Exports write the site before the account, so a populated column ahead of
+// the URL is only the account if it is account-shaped — otherwise it is the
+// browser, profile or counter some stealers put in front of every record.
+// Preferring the preceding column holds the Username | URL | Password layout
+// together, where the column after the site is the password.
+function pickAccountColumn(stats, urlCol) {
+  const before = [];
+  const after = [];
+  for (let i = 0; i < stats.length; i++) {
+    if (i === urlCol || stats[i].total === 0) continue;
+    (i < urlCol ? before : after).push(i);
+  }
+
+  if (before.length && looksLikeAccountColumn(stats[before[0]])) return before[0];
+  if (after.length) return after[0];
+  return -1;
+}
+
 // Content-based column role inference: scans sample data to guess URL/Username/Password columns
 export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
   const splitFn = makeSplitFn(delimiter);
@@ -215,7 +247,7 @@ export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
   if (sample.length === 0) return { columnMap: {}, confidence: 'low' };
 
   const colCount = mostCommon(sample.map(l => splitFn(l).length));
-  const stats = Array.from({ length: colCount }, () => ({ urlLike: 0, emailLike: 0, total: 0 }));
+  const stats = Array.from({ length: colCount }, () => ({ urlLike: 0, emailLike: 0, accountLike: 0, total: 0, distinct: new Set() }));
 
   for (const line of sample) {
     const cells = splitFn(line);
@@ -223,8 +255,10 @@ export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
       const val = cells[i].trim();
       if (!val) continue;
       stats[i].total++;
+      stats[i].distinct.add(val);
       if (!val.includes('@') && (/^https?:\/\//i.test(val) || /^www\./i.test(val) || /^[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(val))) stats[i].urlLike++;
       if (val.includes('@') && val.includes('.')) stats[i].emailLike++;
+      if (!NON_ACCOUNT_VALUE.test(val)) stats[i].accountLike++;
     }
   }
 
@@ -246,12 +280,11 @@ export function inferColumnRoles(lines, delimiter, hasHeaderRow) {
     }
   }
 
-  // If we found URL but not username via email heuristic, pick the first non-empty, non-URL column
+  // If we found URL but not username via email heuristic, take the best-shaped
+  // populated column, preferring the side of the URL the account sits on
   if (urlCol >= 0 && userCol < 0) {
-    for (let i = 0; i < stats.length; i++) {
-      if (i === urlCol) continue;
-      if (stats[i].total > 0) { columnMap[i] = 'username'; userCol = i; break; }
-    }
+    const accountCol = pickAccountColumn(stats, urlCol);
+    if (accountCol >= 0) { columnMap[accountCol] = 'username'; userCol = accountCol; }
   }
 
   // Two-column fallback: common username/password exports without a header row
