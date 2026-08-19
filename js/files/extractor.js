@@ -757,12 +757,26 @@ function applyManualType(node, fileType) {
   if (hint) node[hint] = true;
 }
 
-async function addFilesToTree(files) {
-  // Reset the budget only when starting a fresh container; it must accumulate
-  // across repeated drops so the decompressed-size cap is per-session, not per-call.
-  resetBudgetReport();
+// A directory pick sets webkitRelativePath, and the drop traversal shadows it
+// with the same value for a dragged folder. Rebuilding that path in the tree is
+// what lets a file be classified at all: `Cookies/`, `Autofill/`, `History/` and
+// the rest name the folder, not the file, so a folder flattened into the root
+// arrives with nothing to go on.
+function droppedSegments(file) {
+  const relative = typeof file.webkitRelativePath === 'string' ? file.webkitRelativePath : '';
+  return relative.split('/').filter(Boolean).slice(0, -1).concat(file.name);
+}
+
+// `trustMtime` is false for text the analyst pasted: that File is built here and
+// now, so its lastModified is the paste moment, and publishing it as the capture
+// instant would be worse than having none.
+//
+// Returns the per-file tally alongside the sniff queue: one unreadable member of
+// a dropped folder must not cost the caller the other nine hundred, so each file
+// stands or falls on its own and the caller reports what actually landed.
+async function addFilesToTree(files, { trustMtime = true } = {}) {
   if (!state.fileTree) {
-    resetExtractionBudget();
+    _caseBudget = createBudget();
     state.fileTree = createNode(state.virtualContainerName || 'Uploaded Files', {
       type: 'directory',
       depth: 0,
@@ -770,39 +784,68 @@ async function addFilesToTree(files) {
     state.rootZipName = state.fileTree.name;
   }
 
+  const budget = _caseBudget;
+  budget.reported = false;
   const root = state.fileTree;
   const needsTypeSelection = [];
+  let added = 0;
+  let failed = 0;
 
   for (const file of files) {
+    if (abandoned(budget)) return { needsTypeSelection: [], added, failed };
     setLoading(`Processing: ${file.name}`);
-    const storedName = getUniqueChildName(root, file.name);
 
-    if (isArchiveFile(file.name)) {
-      const archiveRoot = createNode(storedName, { type: 'directory', depth: 1 });
-      root.children[storedName] = archiveRoot;
+    try {
+      const segments = droppedSegments(file);
+      const parentSegments = segments.slice(0, -1);
+      const parentDir = parentSegments.length ? parentSegments[parentSegments.length - 1] : '';
 
-      if (isZipFile(file.name)) {
-        const arrayBuffer = await file.arrayBuffer();
-        await extractIntoTree(archiveRoot, arrayBuffer, storedName, 1);
+      if (isArchiveFile(file.name)) {
+        // A dropped archive is capture evidence in its own right, the same as it
+        // is in extractFile; the first one to arrive names the case.
+        if (trustMtime && !state.sourceFile) state.sourceFile = file;
+
+        const parent = parentSegments.length
+          ? insertPath(root, parentSegments, { type: 'directory', depth: 1 })
+          : root;
+        if (!parent) { failed += 1; continue; }
+
+        const storedName = getUniqueChildName(parent, file.name);
+        const archiveRoot = createNode(storedName, { type: 'directory', depth: 1 });
+        parent.children[storedName] = archiveRoot;
+        const archivePath = parentSegments.concat(storedName).join('/');
+
+        if (isZipFile(file.name)) {
+          const arrayBuffer = await file.arrayBuffer();
+          await extractIntoTree(archiveRoot, arrayBuffer, archivePath, 1, budget);
+        } else {
+          await extractArchiveIntoTree(archiveRoot, file, archivePath, 1, budget);
+        }
       } else {
-        await extractArchiveIntoTree(archiveRoot, file, storedName, 1);
-      }
-    } else {
-      const fileNode = createNode(storedName, {
-        type: 'file',
-        size: file.size,
-        depth: 1,
-        previewable: isPreviewable(file.name),
-        blobContent: file,
-      });
-      root.children[storedName] = fileNode;
+        const fileNode = insertPath(root, segments, {
+          type: 'file',
+          size: file.size,
+          depth: 1,
+          lastModified: trustMtime ? (file.lastModified || null) : null,
+          blobContent: file,
+        });
+        if (!fileNode) { failed += 1; continue; }
 
-      const detected = applyDetectionHints(fileNode, file.name, '', storedName);
-      if (!detected && !await sniffBlobContent(fileNode, file)) {
-        needsTypeSelection.push({ name: storedName, node: fileNode });
+        // insertPath renames a leaf that collides with a sibling.
+        const fullPath = parentSegments.concat(fileNode.name).join('/');
+        const detected = applyDetectionHints(fileNode, file.name, parentDir, fullPath);
+        if (wantsContentSniff(detected, file.name) && !await sniffBlobContent(fileNode, file)) {
+          needsTypeSelection.push({ name: fileNode.name, node: fileNode });
+        }
       }
+      added += 1;
+    } catch (err) {
+      failed += 1;
+      addError(`Failed to add file: ${file.name} - ${err.message}`);
     }
   }
+
+  if (abandoned(budget)) return { needsTypeSelection: [], added, failed };
 
   reconcileAggregatePasswordFiles(root);
   const childNames = Object.keys(root.children);
@@ -816,7 +859,7 @@ async function addFilesToTree(files) {
   }
   setLoading(null);
 
-  return needsTypeSelection;
+  return { needsTypeSelection, added, failed };
 }
 
 export { extractFile, getNodeAtPath, getChildrenList, countChildren, loadFileContent, flattenTree, applyManualType, addFilesToTree };
