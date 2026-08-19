@@ -804,7 +804,7 @@ const OVERVIEW_SUMMARIES = [
   { id: 'dashDownloadSummary', text: 'Analysing download files...' },
 ];
 
-const SYSINFO_EMPTY_STATE = '<div class="no-data" id="sysInfoNoData">No system information files detected.</div>';
+const SYSINFO_EMPTY_STATE = '<div class="no-data" id="sysInfoNoData">No system information files.</div>';
 
 // Every element the overview writes into. A case with no parsed credentials or
 // cookies takes branches that never repaint, so the previous victim's data has
@@ -832,11 +832,7 @@ function clearOverview() {
   if (sysInfoBody) sysInfoBody.innerHTML = SYSINFO_EMPTY_STATE;
   document.getElementById('sysInfoActions')?.classList.add('hidden');
 
-  const openBtn = document.getElementById('sysInfoOpenBtn');
-  if (openBtn) {
-    openBtn.classList.add('hidden');
-    openBtn.textContent = 'View Source';
-  }
+  document.getElementById('sysInfoOpenBtn')?.classList.add('hidden');
 
   const navSysInfo = document.getElementById('navSysInfo');
   if (navSysInfo) navSysInfo.disabled = true;
@@ -977,10 +973,9 @@ export function initDashboard() {
 
     if (!data || !data.entries) {
       navBtn.disabled = true;
-      body.innerHTML = '<div class="no-data" id="sysInfoNoData">No system information files detected.</div>';
+      body.innerHTML = '<div class="no-data" id="sysInfoNoData">No system information files.</div>';
       actions.classList.add('hidden');
       openBtn.classList.add('hidden');
-      openBtn.textContent = 'View Source';
       renderDashboardIocs();
       return;
     }
@@ -999,10 +994,9 @@ export function initDashboard() {
     if (resolvedSourcePath) {
       sysInfoSourcePath = resolvedSourcePath;
       openBtn.classList.remove('hidden');
-      openBtn.textContent = `View Source: ${sysInfoSourcePath}`;
+      openBtn.textContent = `View source: ${sysInfoSourcePath}`;
     } else {
       openBtn.classList.add('hidden');
-      openBtn.textContent = 'View Source';
     }
 
     sysinfoIocs = data.iocs || [];
