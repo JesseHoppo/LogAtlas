@@ -31,6 +31,7 @@ import {
 } from './delimited.js';
 import { LIMITS, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
 import { BIP39_WORDS } from '../core/definitions/bip39.js';
+import { isValidBitcoinAddress, isValidBase58Check } from '../core/cryptoAddress.js';
 
 // Victim identity keys the downstream graph looks for; whitelisted so a bare
 // "User:"/"PC:"/"NetBIOS:" before any structured section is retained, not dropped.
@@ -625,45 +626,87 @@ const PROSE_WORDS = new Set([
   'to', 'was', 'we', 'were', 'with', 'would', 'your',
 ].filter(word => !BIP39_WORDS.has(word)));
 
-// Only the English list ships, so a non-English or mistyped seed scores low against
-// it; wallet context elsewhere in the file carries a valid-length run instead.
-function looksLikeSeedPhrase(compact, walletContext) {
-  if (!WORD_RUN_PATTERN.test(compact)) return false;
+// Every BIP39 wordlist is lowercase and short, and a transcribed seed is one
+// uniform run. An ordinary sentence trips at least one of these.
+const SEED_TOKEN_MAX_LENGTH = 8;
+// An alphabetic wordlist spells every word with a vowel, so a run of consonant
+// blocks is a placeholder or an identifier rather than a mnemonic. The
+// syllabic and logographic scripts carry no such mark.
+const SEED_SCRIPTS = [
+  { script: /^\p{Script=Latin}+$/u, vowels: /[aeiouy]/ },
+  { script: /^\p{Script=Cyrillic}+$/u, vowels: /[аеёиоуыэюя]/ },
+  { script: /^\p{Script=Hiragana}+$/u, vowels: null },
+  { script: /^\p{Script=Han}+$/u, vowels: null },
+  { script: /^\p{Script=Hangul}+$/u, vowels: null },
+];
+
+function looksLikeSeedTokens(compact, words) {
+  if (compact !== compact.toLowerCase()) return false;
+  if (words.some(word => word.length > SEED_TOKEN_MAX_LENGTH)) return false;
+  if (new Set(words).size < words.length - 1) return false;
+  return SEED_SCRIPTS.some(({ script, vowels }) => words.every(word => (
+    script.test(word) && (!vowels || vowels.test(word))
+  )));
+}
+
+// Only the English list ships, so a non-English seed scores low against it. A
+// valid-length run in wallet context is still worth surfacing, but it carries no
+// corroboration, so it is labelled and evidenced apart from a BIP39 match.
+function seedPhraseEvidence(compact, walletContext) {
+  if (!WORD_RUN_PATTERN.test(compact)) return null;
 
   const words = compact.toLowerCase().split(/\s+/);
   const standardLength = SEED_PHRASE_LENGTHS.has(words.length);
   const known = words.filter(word => BIP39_WORDS.has(word)).length;
   const prose = words.some(word => PROSE_WORDS.has(word));
-  if (standardLength && !prose && known / words.length >= 0.75) return true;
+  const note = `${words.length} words, ${known} in BIP39`;
 
-  if (!walletContext) return false;
-  if (!standardLength && !ALT_SEED_LENGTHS.has(words.length)) return false;
-  return !words.some(word => PROSE_WORDS.has(word));
+  if (standardLength && !prose && known / words.length >= 0.75) {
+    return { type: 'Seed Phrase', note };
+  }
+
+  if (!walletContext || prose) return null;
+  if (!standardLength && !ALT_SEED_LENGTHS.has(words.length)) return null;
+  if (!looksLikeSeedTokens(compact, words)) return null;
+  return { type: 'Possible Seed Phrase', note };
+}
+
+// TRON is base58check over a 0x41 version byte, so the leading T and the
+// 25-byte checksum together settle it. Ethereum has no checksum in the address
+// itself, so the hex shape is all there is.
+const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+const ETHEREUM_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
+
+function isWalletAddress(value) {
+  if (ETHEREUM_ADDRESS_PATTERN.test(value)) return true;
+  if (TRON_ADDRESS_PATTERN.test(value)) return isValidBase58Check(value);
+  return isValidBitcoinAddress(value);
 }
 
 function classifyClipboardEntry(text, urls, walletContext) {
   const compact = text.trim();
   const lower = compact.toLowerCase();
 
-  if (looksLikeSeedPhrase(compact, walletContext)) {
-    return 'Seed Phrase';
+  const seed = seedPhraseEvidence(compact, walletContext);
+  if (seed) {
+    return seed;
   }
-  if (/^(?:0x[a-f0-9]{40}|bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|T[1-9A-HJ-NP-Za-km-z]{33})$/i.test(compact)) {
-    return 'Wallet';
+  if (isWalletAddress(compact)) {
+    return { type: 'Wallet', note: '' };
   }
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(compact)) {
-    return 'Email';
+    return { type: 'Email', note: '' };
   }
   if (/^(?:[A-Z]:\\|\\\\|\/)/i.test(compact)) {
-    return 'Path';
+    return { type: 'Path', note: '' };
   }
   if (/\b(?:powershell|pwsh|cmd(?:\.exe)?|mshta|rundll32|regsvr32|wscript|cscript|bitsadmin|curl|start|certutil)\b/i.test(lower)) {
-    return 'Command';
+    return { type: 'Command', note: '' };
   }
   if (urls.length > 0) {
-    return 'URL';
+    return { type: 'URL', note: '' };
   }
-  return 'Text';
+  return { type: 'Text', note: '' };
 }
 
 function splitClipboardEntries(clean) {
@@ -681,50 +724,63 @@ function splitClipboardEntries(clean) {
 }
 
 export function parseClipboardFile(text) {
-  const clean = normaliseText(text).trim();
+  const clean = stripLeadingBanner(normaliseText(text)).trim();
   if (!clean) return null;
 
-  const walletContext = WALLET_CONTEXT_PATTERN.test(clean);
+  const entries = splitClipboardEntries(clean);
   const rows = [];
-  for (const entryText of splitClipboardEntries(clean)) {
-    const trimmed = entryText.trim();
+  for (let i = 0; i < entries.length; i++) {
+    const trimmed = entries[i].trim();
     if (!trimmed) continue;
     const urls = trimmed.match(CLIPBOARD_URL_PATTERN) || [];
     const lines = trimmed.split('\n').map(line => line.trim()).filter(Boolean);
+    // Wallet context has to sit beside the entry it vouches for; one mention at
+    // the top of a capture does not arm every entry below it.
+    const walletContext = WALLET_CONTEXT_PATTERN.test(`${entries[i - 1] || ''}\n${trimmed}`);
+    const { type, note } = classifyClipboardEntry(trimmed, urls, walletContext);
     rows.push([
-      classifyClipboardEntry(trimmed, urls, walletContext),
+      type,
       trimmed,
       urls.join(' '),
       String(lines.length),
       String(trimmed.length),
+      note,
     ]);
   }
 
   return rows.length > 0 ? {
-    headers: ['Type', 'Text', 'URLs', 'Line Count', 'Length'],
+    headers: ['Type', 'Text', 'URLs', 'Line Count', 'Length', 'Evidence'],
     rows,
   } : null;
 }
 
-function parseBookmarkJson(value, folder = '', rows = []) {
+function bookmarkString(value) {
+  return typeof value === 'string' ? value : '';
+}
+
+// Chrome nests the real bookmarks under roots.bookmark_bar/other/synced and
+// Firefox names its link field `uri`, so the walk follows every nested object
+// rather than a fixed key list. The caps bound an arbitrary JSON payload.
+function parseBookmarkJson(value, folder = '', rows = [], depth = 0) {
   if (!value || typeof value !== 'object') return rows;
+  if (depth > LIMITS.flattenMaxDepth || rows.length >= LIMITS.flattenMaxEntries) return rows;
 
   if (Array.isArray(value)) {
-    value.forEach((item) => parseBookmarkJson(item, folder, rows));
+    for (const item of value) parseBookmarkJson(item, folder, rows, depth + 1);
     return rows;
   }
 
-  const url = value.url || value.href || '';
-  const title = value.title || value.name || value.label || '';
-  const bookmarkFolder = value.folder || folder;
-  const nextFolder = value.folder || (url ? folder : title || folder);
+  const url = bookmarkString(value.url) || bookmarkString(value.href) || bookmarkString(value.uri);
+  const title = bookmarkString(value.title) || bookmarkString(value.name) || bookmarkString(value.label);
+  const ownFolder = bookmarkString(value.folder);
+  const bookmarkFolder = ownFolder || folder;
+  const nextFolder = ownFolder || (url ? folder : title || folder);
   if (url) {
-    rows.push([url, title, bookmarkFolder || '']);
+    rows.push([url, title, bookmarkFolder]);
   }
 
-  const childKeys = ['children', 'roots', 'bookmarks', 'items'];
-  for (const key of childKeys) {
-    if (value[key]) parseBookmarkJson(value[key], nextFolder || folder, rows);
+  for (const child of Object.values(value)) {
+    if (child && typeof child === 'object') parseBookmarkJson(child, nextFolder || folder, rows, depth + 1);
   }
 
   return rows;
