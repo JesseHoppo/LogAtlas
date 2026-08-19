@@ -515,26 +515,26 @@ export function extractCardLast4(cardNumber) {
   return String(cardNumber || '').replace(/\D/g, '').slice(-4);
 }
 
-export function maskValue(val) {
-  if (!val || val.length === 0) return '';
-  if (val.length <= 2) return '\u2022\u2022\u2022\u2022';
-  return val[0] + '\u2022'.repeat(Math.min(val.length - 2, 8)) + val[val.length - 1];
+// One mask for every secret, the same width whatever it covers. A mask that
+// followed the value's length and kept its first and last character handed over
+// most of a short password and cut the search space for a long one; this one
+// says a value is present and nothing else. An empty cell stays empty — masking
+// it would invent a password the log never captured.
+const SECRET_MASK = '\u2022'.repeat(8);
+
+export function maskValue(value) {
+  return value == null || String(value) === '' ? '' : SECRET_MASK;
 }
 
+// A card's last four is a standard identifier, printed on the receipt the
+// cardholder already has, and it is how an analyst matches a row to a real
+// card. Anything with no digits in it is not a card number, so it is covered
+// whole rather than trimmed to its ends.
 export function maskCardNumber(cardNumber) {
   const raw = String(cardNumber || '').trim();
   if (!raw) return '';
   const last4 = extractCardLast4(raw);
-  if (last4) return `\u2022\u2022\u2022\u2022 ${last4}`;
-  if (raw.length <= 4) return raw;
-  return `${raw[0]}\u2022\u2022\u2022${raw[raw.length - 1]}`;
-}
-
-export function maskTokenValue(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  if (raw.length <= 10) return '\u2022'.repeat(raw.length);
-  return `${raw.slice(0, 4)}\u2022\u2022\u2022\u2022${raw.slice(-4)}`;
+  return last4 ? `\u2022\u2022\u2022\u2022 ${last4}` : maskValue(raw);
 }
 
 export function inferMetadataCategory(pathText) {

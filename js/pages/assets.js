@@ -16,21 +16,25 @@ import {
 } from '../core/shared.js';
 import { inferServiceFromPath, serviceFromTokenType } from '../core/serviceRegistry.js';
 import {
+  countLabel,
+  datasetSummary,
   PAGE_SIZE,
   buildShowMoreButton,
   buildRowsHtml,
+  buildNoMatchesHtml,
   bindDebouncedInput,
   trimRootPath,
   inferServiceArtifactType,
-  maskTokenValue,
+  maskValue,
   maskCardNumber,
   extractCardLast4,
-  downloadCsvRows,
+  exportRows,
   createPagedCollectionRegistry,
   createTableSort,
   bindTableSort,
   collectAndParse,
 } from './shared.js';
+import { DATA_PAGE_EMPTY_TEXT } from './registry.js';
 
 let accountTokensData = { entries: [], fileCount: 0 };
 let serviceArtifactsData = { entries: [], fileCount: 0 };
@@ -230,7 +234,7 @@ async function loadCreditCardsData(fileTree, rootName) {
 }
 
 function accountTokenRowBuilder({ service, type, value, accountId, browser, profile, note, source }) {
-  const displayValue = hideTokenValues ? maskTokenValue(value) : value;
+  const displayValue = hideTokenValues ? maskValue(value) : value;
   const maskedAttr = hideTokenValues ? ' class="masked"' : '';
   return `<tr><td>${escapeHtml(service || '')}</td><td>${escapeHtml(type || '')}</td><td${maskedAttr} title="${escapeHtml(displayValue)}">${escapeHtml(displayValue)}</td><td>${escapeHtml(accountId || '')}</td><td>${escapeHtml(browser || '')}</td><td>${escapeHtml(profile || '')}</td><td title="${escapeHtml(note || '')}">${escapeHtml(note || '')}</td><td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td></tr>`;
 }
