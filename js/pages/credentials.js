@@ -337,7 +337,14 @@ function computePasswordDisplay() {
       if (seen === null) seen = v;
       else if (v !== seen) { constant = false; break; }
     }
-    if (constant && seen && nonEmpty >= rows.length * 0.7) {
+    // An extra column empty on every row is a header the export declared and
+    // never filled. The three canonical columns stay: an empty Username column
+    // is the finding that none of these credentials named an account.
+    if (nonEmpty === 0) {
+      if (c >= CANONICAL_PASSWORD_HEADERS.length) passwordHiddenCols.add(c);
+      continue;
+    }
+    if (rows.length > 1 && constant && nonEmpty >= rows.length * 0.7) {
       passwordHiddenCols.add(c);
       passwordConstantNotes.push(`${headers[c]}: ${seen}`);
     }
