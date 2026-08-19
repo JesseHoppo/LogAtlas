@@ -15,6 +15,40 @@ function isPanLength(value) {
   return d.length >= 12 && d.length <= 19;
 }
 
+function isLuhnValid(digits) {
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let n = Number(digits[i]);
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+function isLuhnPan(value) {
+  const d = String(value || '').replace(/\D/g, '');
+  return isPanLength(d) && isLuhnValid(d);
+}
+
+// Unlabelled columns hold epoch milliseconds and record ids in the same shape as
+// a PAN, so where more than one cell qualifies on length the Luhn-valid one
+// wins. Length alone still decides when nothing checks out, since a labelled or
+// lone candidate is evidence even when the capture is partial.
+function pickPanIndex(cells) {
+  let fallback = -1;
+  for (let i = 0; i < cells.length; i++) {
+    if (!isPanLength(cells[i])) continue;
+    if (isLuhnPan(cells[i])) return i;
+    if (fallback === -1) fallback = i;
+  }
+  return fallback;
+}
+
 function buildCreditCardRowsFromBlocks(clean) {
   const blocks = clean.split(/\n\s*\n/).filter(block => block.trim());
   const rows = [];
@@ -93,18 +127,18 @@ function mapCreditCardRowsByContent(parsed) {
     const cells = row.map(cell => (cell || '').trim());
     if (cells.every(cell => !cell)) continue;
 
-    let cardNumber = '';
+    const panIndex = pickPanIndex(cells);
+    const cardNumber = panIndex >= 0 ? cells[panIndex] : '';
     let nameOnCard = '';
     let cvc = '';
     let expiration = '';
     let filePath = '';
+    // Position, not value: a month, a year and a CVC can all read "11".
     const numericCandidates = [];
 
-    for (const cell of cells) {
-      if (!cardNumber && isPanLength(cell)) {
-        cardNumber = cell;
-        continue;
-      }
+    for (let i = 0; i < cells.length; i++) {
+      if (i === panIndex) continue;
+      const cell = cells[i];
       if (!expiration && /^\d{1,2}[/-]\d{2,4}$/.test(cell)) {
         expiration = cell;
         continue;
@@ -146,22 +180,23 @@ function parsePipeDelimitedCardLine(line) {
   const parts = line.split('|').map(part => part.trim()).filter(Boolean);
   if (parts.length < 4) return null;
 
-  let cardNumber = '';
+  // A short numeric field only reads as a CVC once the PAN is accounted for,
+  // so a line with no card number is not this shape at all.
+  const panIndex = pickPanIndex(parts);
+  if (panIndex < 0) return null;
+
   let nameOnCard = '';
   let cvc = '';
   let expiration = '';
 
-  for (const part of parts) {
-    if (!cardNumber && isPanLength(part)) {
-      cardNumber = part;
-      continue;
-    }
+  for (let i = 0; i < parts.length; i++) {
+    if (i === panIndex) continue;
+    const part = parts[i];
     if (!expiration && /^\d{1,2}[/-]\d{2,4}$/.test(part)) {
       expiration = part;
       continue;
     }
-    // only a captured PAN disambiguates a short numeric field as CVC, else it may be the card number
-    if (cardNumber && !cvc && /^\d{3,4}$/.test(part)) {
+    if (!cvc && /^\d{3,4}$/.test(part)) {
       cvc = part;
       continue;
     }
@@ -170,8 +205,7 @@ function parsePipeDelimitedCardLine(line) {
     }
   }
 
-  if (!cardNumber) return null;
-  return [cardNumber, nameOnCard, cvc, expiration, ''];
+  return [parts[panIndex], nameOnCard, cvc, expiration, ''];
 }
 
 export function parseCreditCardFile(text) {
