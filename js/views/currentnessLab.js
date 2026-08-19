@@ -491,19 +491,25 @@ function currentnessRowBuilder(row) {
   const priorityClass = row.isPriority ? ' lab-cred-priority' : '';
 
   const reuseMarker = row.reuseCount > 1
-    ? ` <span class="lab-reuse-tag" title="${escapeHtml('Password reused across ' + row.reuseCount + ' sites')}">reused × ${row.reuseCount}</span>`
+    ? ` <span class="lab-reuse-tag" title="${escapeHtml('Password reused across ' + row.reuseCount.toLocaleString() + ' sites')}">reused × ${row.reuseCount.toLocaleString()}</span>`
     : '';
 
   const actionDotTitle = `Actionability: ${action}`;
   const display = row.displayLabel || row.dispositionLabel || row.bucketLabel || '';
 
+  // Four rows in five are uncategorised or land in one of the broad lists that
+  // say only "people use this site". A badge on those is noise beside the
+  // breakdown strip and the filter chips, which count the same rows.
   const catKey = row.categoryKey || 'unknown';
-  const catBadge = catKey === 'unknown'
-    ? '<span class="lab-cat-tag lab-cat-unknown" title="Not in any reference list">Uncategorised</span>'
-    : `<span class="lab-cat-tag" title="Matched data/site-domains/${escapeHtml(catKey)}.txt">${escapeHtml(getCategoryLabel(catKey))}</span>`;
+  const isSensitive = !!row.categories?.includes('sensitive');
+  const catSource = getCategorySource(catKey) || CATEGORY_SOURCE_NOTE;
+  const catTitle = isSensitive ? `${SENSITIVE_CATEGORY_NOTE}. ${catSource}` : catSource;
+  const catBadge = catKey === 'unknown' || isGenericCategory(catKey)
+    ? ''
+    : `<span class="lab-cat-tag${isSensitive ? ' lab-tone-danger' : ''}" title="${escapeHtml(catTitle)}">${escapeHtml(categoryPillLabel(catKey))}</span>`;
 
   return `<tr class="lab-cred${priorityClass}" tabindex="0" aria-expanded="false">
-    <td class="lab-cred-site" title="${escapeHtml(row.url)}"><span class="lab-cred-site-host">${escapeHtml(row.siteHost || row.siteDomain || '—')}</span> ${catBadge}</td>
+    <td class="lab-cred-site" title="${escapeHtml(row.url)}"><span class="lab-cred-site-host">${escapeHtml(row.siteHost || row.siteDomain || '—')}</span>${catBadge}</td>
     <td class="lab-cred-user" title="${escapeHtml(row.username)}">${escapeHtml(row.username || '—')}${reuseMarker}</td>
     <td class="lab-cred-action" title="${escapeHtml(actionDotTitle)}"><span class="lab-cred-score-num lab-score-${escapeHtml(action)}">${row.score}</span></td>
     <td class="lab-cred-disp lab-tone-${dispositionTone}">${escapeHtml(display)}</td>
