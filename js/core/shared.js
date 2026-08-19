@@ -1605,7 +1605,7 @@ function summariseList(values, limit = 2) {
   const items = uniqueLimited(values, limit + 1);
   if (items.length === 0) return '';
   if (items.length <= limit) return items.join(', ');
-  return `${items.slice(0, limit).join(', ')} +${items.length - limit} more`;
+  return `${items.slice(0, limit).join(', ')} +${(items.length - limit).toLocaleString()} more`;
 }
 
 const COUNTRY_OFFSET_RANGES = {
