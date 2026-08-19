@@ -1280,6 +1280,86 @@ function getCaptureContext() {
 // so it dies with the case that produced it.
 on('reset', () => { captureContext = EMPTY_CAPTURE_CONTEXT; });
 
+// The frame a browser artifact's wall clock is written in.
+//
+// Nothing in a history, bookmark or download file names its zone, and it is not
+// safe to assume the machine's: Lumma stamps browser artifacts in the panel's
+// clock, so the same case carries a sysinfo time in the victim's offset and a
+// visit time in another. Reading both as UTC puts browsing after the capture it
+// preceded, and shifting the visit times by the victim's offset is wrong by the
+// same amount in the other direction.
+//
+// The rows state the frame themselves. Google mints a search URL with its own
+// millisecond stamp inside it, so a row whose URL carries one names an absolute
+// instant the recorded visit cannot precede; the gap to the wall clock beside it
+// is the frame's offset. A revisit widens that gap but can never narrow it, so
+// the low edge of the sample is the offset and the spread above it is noise.
+const URL_INSTANT_PATTERN = /(?<!\d)(1[5-9]\d{11}|2[0-4]\d{11})(?!\d)/g;
+const CLOCK_BUCKET_MS = 15 * 60 * 1000;
+const MAX_CLOCK_OFFSET_MS = 14 * 60 * 60 * 1000;
+const MIN_CLOCK_SAMPLES = 6;
+// Zones step by an hour at a daylight boundary, so a file spanning one carries
+// two frames. Only the rows near the capture are being placed against it, so the
+// offset is read off the newest slice of the sample rather than all of it.
+const CLOCK_WINDOW_SHARE = 0.25;
+const CLOCK_WINDOW_MIN = 8;
+const CLOCK_AGREEMENT_SHARE = 0.2;
+const CLOCK_AGREEMENT_MIN = 3;
+
+const UNKNOWN_BROWSER_CLOCK = { offsetMinutes: null, source: 'absent', sampleCount: 0, agreement: 0 };
+
+function collectBrowserClockSamples(url, wallDate, samples) {
+  if (!url || !(wallDate instanceof Date) || isNaN(wallDate.getTime())) return;
+  const wall = wallDate.getTime();
+  URL_INSTANT_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = URL_INSTANT_PATTERN.exec(url))) {
+    const delta = wall - Number(match[1]);
+    if (Math.abs(delta) <= MAX_CLOCK_OFFSET_MS) samples.push({ wall, delta });
+  }
+}
+
+function resolveBrowserClock(samples) {
+  if (!samples || samples.length < MIN_CLOCK_SAMPLES) return UNKNOWN_BROWSER_CLOCK;
+  const recent = [...samples].sort((a, b) => b.wall - a.wall)
+    .slice(0, Math.max(CLOCK_WINDOW_MIN, Math.ceil(samples.length * CLOCK_WINDOW_SHARE)));
+
+  const buckets = new Map();
+  for (const { delta } of recent) {
+    const bucket = Math.round(delta / CLOCK_BUCKET_MS);
+    buckets.set(bucket, (buckets.get(bucket) || 0) + 1);
+  }
+
+  // A lone row can carry a number that only looks like an instant, so a bucket
+  // has to be corroborated before it is read as the frame.
+  const floor = Math.max(CLOCK_AGREEMENT_MIN, Math.ceil(recent.length * CLOCK_AGREEMENT_SHARE));
+  const corroborated = [...buckets].filter(([, count]) => count >= floor).sort((a, b) => a[0] - b[0]);
+  if (corroborated.length === 0) return UNKNOWN_BROWSER_CLOCK;
+
+  const [bucket, agreement] = corroborated[0];
+  return {
+    offsetMinutes: bucket * 15,
+    source: 'url-instant',
+    sampleCount: recent.length,
+    agreement,
+  };
+}
+
+// A naive wall clock in a known frame is an absolute instant once the frame is
+// taken off it. An unknown frame leaves it where it was: an hour placed in the
+// wrong zone reads as evidence, where an hour left unplaced reads as a gap.
+function applyBrowserClock(date, clock) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return date;
+  const offset = clock?.offsetMinutes;
+  if (offset == null || offset === 0) return date;
+  return new Date(date.getTime() - offset * 60000);
+}
+
+function browserClockLabel(clock) {
+  if (clock?.offsetMinutes == null) return '';
+  return formatTimeZoneLabel(clock.offsetMinutes);
+}
+
 // Cookie column positions. Headers win; a file whose headers name nothing we
 // recognise falls back to the fixed Netscape order, 7 columns with the
 // include-subdomains flag and 6 without.
@@ -1791,6 +1871,12 @@ export {
   isLikelyCountryName,
   userNameAppearsInPath,
   normaliseTimeZone,
+  formatTimeZoneLabel,
+  UNKNOWN_BROWSER_CLOCK,
+  collectBrowserClockSamples,
+  resolveBrowserClock,
+  applyBrowserClock,
+  browserClockLabel,
   parseSoftwareLine,
   parseTimestampValue,
   parseArchiveTimestamp,
