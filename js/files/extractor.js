@@ -288,6 +288,14 @@ function sniffContentType(node, bytes) {
   return applyContentDetectionHints(node, _sniffDecoder.decode(bytes.subarray(0, CONTENT_SNIFF_BYTES)));
 }
 
+// No extension test gates the sniff. It would pass over the very entries the
+// sniff exists for — extensionless pools, and the `name.txt [Part N of M]`
+// splits whose extension parses as `txt [part 1 of 2]` — and it decides nothing
+// that the byte check inside sniffContentType does not already decide.
+function wantsContentSniff(detected, name) {
+  return !detected && !isArchiveFile(name);
+}
+
 async function sniffBlobContent(node, blob) {
   try {
     const head = blob.size > CONTENT_SNIFF_BYTES ? blob.slice(0, CONTENT_SNIFF_BYTES) : blob;
@@ -364,7 +372,11 @@ async function extractIntoTree(root, zipData, basePath, depth, budget) {
       // is the only one that leads back to this node.
       const fullPath = basePath + '/' + segments.slice(0, -1).concat(fileNode.name).join('/');
 
-      if (!detected && !isArchive && isTextFile(leafName) && entryBytes <= SNIFF_MAX_ENTRY_BYTES) {
+      // The size cap is this path's alone: sampling an entry costs a whole
+      // inflate here, where the libarchive and loose paths already hold their
+      // bytes. It sits well above the largest pool a log carries, so it stops
+      // grabbed media and nothing that the sniff would have claimed.
+      if (wantsContentSniff(detected, leafName) && entryBytes <= SNIFF_MAX_ENTRY_BYTES) {
         const head = await readZipEntryHead(entry, fileNode._password || state.rememberedPassword, CONTENT_SNIFF_BYTES);
         sniffContentType(fileNode, head);
       }
