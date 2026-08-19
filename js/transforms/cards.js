@@ -243,14 +243,17 @@ export function parseCreditCardFile(text) {
       continue;
     }
 
+    // A bare number beside an expiry carries no holder, CVC or path, so a row
+    // whose number is too short to be a PAN would hold nothing worth showing.
     let match = line.match(/^(\d{1,2}[/-]\d{2,4})\s+([0-9][0-9 -]{8,})$/);
     if (!match) {
       match = line.match(/^([0-9][0-9 -]{8,})\s+(\d{1,2}[/-]\d{2,4})$/);
-      if (match) {
+      if (match && isPanLength(match[1])) {
         rows.push([match[1].trim(), '', '', match[2].trim(), '']);
       }
       continue;
     }
+    if (!isPanLength(match[2])) continue;
 
     rows.push([match[2].trim(), '', '', match[1].trim(), '']);
   }
