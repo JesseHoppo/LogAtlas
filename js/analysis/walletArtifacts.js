@@ -160,7 +160,7 @@ function buildHighlights({ emails, urls, ethAddresses, btcAddresses, tokenCount,
   if (ethAddresses.length > 0) parts.push(`ETH: ${summariseList(ethAddresses, 1)}`);
   if (btcAddresses.length > 0) parts.push(`BTC: ${summariseList(btcAddresses, 1)}`);
   if (ids.length > 0) parts.push(`id: ${summariseList(ids, 1)}`);
-  if (tokenCount > 0) parts.push(`${tokenCount} token${tokenCount === 1 ? '' : 's'}`);
+  if (tokenCount > 0) parts.push(`${tokenCount.toLocaleString()} token${tokenCount === 1 ? '' : 's'}`);
   if (seedHints > 0) parts.push('seed indicators');
   return parts.join(' | ') || 'Raw store present';
 }

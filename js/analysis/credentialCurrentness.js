@@ -1328,16 +1328,16 @@ function scoreCredential(entry, context) {
     const cookieSummary = cookieMap.get(cookieKey);
     const cookieLabel = useFullHost ? siteHost : siteBase;
     if (cookieSummary?.liveSessions) {
-      addScore(result, 28, `${cookieSummary.liveSessions} live session cookie${cookieSummary.liveSessions === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
+      addScore(result, 28, `${cookieSummary.liveSessions.toLocaleString()} live session cookie${cookieSummary.liveSessions === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
       result.hasLiveSession = true;
       siteSignalCount += 1;
     } else if (cookieSummary?.validCookies) {
-      addScore(result, 16, `${cookieSummary.validCookies} valid cookie${cookieSummary.validCookies === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
+      addScore(result, 16, `${cookieSummary.validCookies.toLocaleString()} valid cookie${cookieSummary.validCookies === 1 ? '' : 's'} for ${cookieLabel}`, 'site');
       siteSignalCount += 1;
     } else if (cookieSummary?.sessionCookies) {
       // Presence at capture, not usability after it: scored below a dated valid
       // cookie, and never enough to mark the row as having a live session.
-      addScore(result, 8, `${cookieSummary.sessionCookies} cookie${cookieSummary.sessionCookies === 1 ? '' : 's'} with no expiry for ${cookieLabel}`, 'site');
+      addScore(result, 8, `${cookieSummary.sessionCookies.toLocaleString()} cookie${cookieSummary.sessionCookies === 1 ? '' : 's'} with no expiry for ${cookieLabel}`, 'site');
       siteSignalCount += 1;
     } else if (cookieSummary?.expiredCookies && !isGenericProviderSite) {
       // Shared generic hosts (accounts.google.com, github.com...) accumulate
