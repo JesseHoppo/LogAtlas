@@ -191,7 +191,7 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
   return identity;
 }
 
-function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) {
+function buildAccountList(domainUsernames, passwordDomains, cookieLookup, emailMap, tokenLookup) {
   const accounts = new Map();
 
   const allDomains = new Set([
@@ -207,6 +207,7 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
         usernames: [],
         hasLiveSession: false,
         hasCredentials: false,
+        hasPassword: false,
         emails: [],
         tokenServices: [],
         accountIds: [],
@@ -217,6 +218,7 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
       entry.usernames = [...domainUsernames.get(domain)];
       entry.hasCredentials = true;
     }
+    if (passwordDomains.has(domain)) entry.hasPassword = true;
     const cookieInfo = cookieLookup.get(domain);
     if (cookieInfo && cookieInfo.hasLiveSession) entry.hasLiveSession = true;
     const tokenInfo = tokenLookup.get(domain);
@@ -240,12 +242,13 @@ function buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup) 
 
   return [...accounts.values()].sort((a, b) => {
     if (a.hasLiveSession !== b.hasLiveSession) return a.hasLiveSession ? -1 : 1;
+    if (a.hasPassword !== b.hasPassword) return a.hasPassword ? -1 : 1;
     if (a.hasCredentials !== b.hasCredentials) return a.hasCredentials ? -1 : 1;
     return a.domain.localeCompare(b.domain);
   });
 }
 
-function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sysinfoData, autofillData) {
+function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sysinfoData, autofillData, primaryEmail) {
   const hasCredentials = passwordsData.rows.length > 0;
   const hasCookies = cookiesData.rows.length > 0;
   const hasTokens = accountTokensData && accountTokensData.entries && accountTokensData.entries.length > 0;
@@ -291,20 +294,20 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
     });
     emailAccountMap.push({ email, services });
   }
-  emailAccountMap.sort((a, b) => b.services.length - a.services.length);
+  // The index leads with whoever the shared resolver ranked first, so the
+  // address at the top of this list is the one the Triage page names.
+  const rank = new Map((primaryEmail?.candidates || []).map((entry, index) => [entry.email, index]));
+  const rankOf = (email) => rank.get(email) ?? Number.MAX_SAFE_INTEGER;
+  emailAccountMap.sort((a, b) => rankOf(a.email) - rankOf(b.email) || b.services.length - a.services.length);
 
-  const accounts = buildAccountList(domainUsernames, cookieLookup, emailMap, tokenLookup);
+  const accounts = buildAccountList(domainUsernames, passwordDomains, cookieLookup, emailMap, tokenLookup);
 
-  const servicesWithLiveSessions = new Set();
   const servicesWithBoth = new Set();
-  for (const domain of allCredDomains) {
-    const cookieInfo = cookieLookup.get(domain);
-    if (cookieInfo && cookieInfo.hasLiveSession) servicesWithLiveSessions.add(domain);
-  }
   for (const domain of passwordDomains) {
     const cookieInfo = cookieLookup.get(domain);
     if (cookieInfo && cookieInfo.hasLiveSession) servicesWithBoth.add(domain);
   }
+  const servicesWithLiveSessions = new Set();
   for (const [domain, info] of cookieLookup) {
     if (info.hasLiveSession) servicesWithLiveSessions.add(domain);
   }
@@ -519,9 +522,10 @@ function renderIdentityPage(searchQuery = '') {
 
 function exportIdentityCSV() {
   if (!identityData || identityData.accounts.length === 0) return;
-  downloadCsvRows('identity_accounts.csv', ['Domain', 'Credentials', 'Live Session', 'Emails', 'Token Services', 'Account IDs'], identityData.accounts.map((account) => [
+  downloadCsvRows('identity_accounts.csv', ['Service', 'Usernames', 'Password', 'Live Session', 'Emails', 'Token Services', 'Account IDs'], identityData.accounts.map((account) => [
     account.domain,
-    account.hasCredentials ? 'Yes' : 'No',
+    account.usernames.join('; '),
+    account.hasPassword ? 'Yes' : 'No',
     account.hasLiveSession ? 'Yes' : 'No',
     account.emails.join('; '),
     account.tokenServices.join('; '),
