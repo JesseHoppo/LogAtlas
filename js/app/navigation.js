@@ -174,7 +174,49 @@ export function initNavigation() {
     }
   }
 
+  function setSectionCollapsed(toggle, isCollapsed, { persist = true } = {}) {
+    const section = toggle.closest('.sidebar-section');
+    if (!section) return;
+    section.classList.toggle('sidebar-section-collapsed', isCollapsed);
+    toggle.setAttribute('aria-expanded', String(!isCollapsed));
+
+    if (isCollapsed) collapsedSections.add(section.dataset.section);
+    else collapsedSections.delete(section.dataset.section);
+    if (persist) writeCollapsedSections(collapsedSections);
+  }
+
+  // Nothing shows a count until the module that owns the rows has produced one:
+  // a nav item reading 0 while its dataset is still being parsed says the case
+  // has nothing, which is the one thing it must never say by accident.
+  function applyNavCount(button, count) {
+    if (Number.isFinite(count) && count > 0) {
+      button.dataset.count = count.toLocaleString();
+      // The figure is drawn from an attribute, which leaves it out of the
+      // accessible name, so the name is spelled out instead.
+      button.setAttribute('aria-label', `${button.textContent.trim()}, ${countLabel(count, 'row')}`);
+    } else {
+      delete button.dataset.count;
+      button.removeAttribute('aria-label');
+    }
+  }
+
+  function setNavCount(pageName, count) {
+    const button = sidebarNav.querySelector(`.sidebar-nav-item[data-page="${pageName}"]`);
+    if (button) applyNavCount(button, count);
+  }
+
+  function refreshNavCounts() {
+    for (const [pageName, read] of Object.entries(DATASET_SOURCES)) {
+      setNavCount(pageName, datasetSize(read));
+    }
+  }
+
   sidebarNav.addEventListener('click', (event) => {
+    const toggle = event.target.closest('.sidebar-section-toggle');
+    if (toggle) {
+      setSectionCollapsed(toggle, toggle.getAttribute('aria-expanded') === 'true');
+      return;
+    }
     const button = event.target.closest('.sidebar-nav-item');
     if (!button || button.disabled) return;
     navigateToPage(button.dataset.page);
@@ -191,6 +233,11 @@ export function initNavigation() {
     attributes: true,
     attributeFilter: ['disabled'],
   });
+
+  for (const toggle of sidebarNav.querySelectorAll('.sidebar-section-toggle')) {
+    const section = toggle.closest('.sidebar-section')?.dataset.section;
+    setSectionCollapsed(toggle, collapsedSections.has(section), { persist: false });
+  }
 
   setSidebarOpen(false);
   refreshSidebarAvailability();
