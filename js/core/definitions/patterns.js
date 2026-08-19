@@ -179,7 +179,7 @@ export const IOC_KEY_MAP = [
 export const STEALER_INFRA_PATTERNS = [
   { label: 'Stealer Panel', family: 'Vidar', pattern: /https?:\/\/(?:[a-z0-9-]+\.)*vidars\.[a-z]{2,6}\/[^\s"'<>]*/gi },
   { label: 'Stealer Panel', family: 'Lumma', pattern: /(?:@?lummanowork|@?lummamarketplace_bot|lumma\s*market)/gi },
-  { label: 'Stealer Telegram', pattern: /t\.me\/\+[A-Za-z0-9_-]{8,}/g },
+  { label: 'Stealer Telegram', pattern: /t\.me\/\+[A-Za-z0-9_-]{8,}/gi },
   { label: 'Forum URL', pattern: /\b(?:xss\.is|forum\.exploit\.in|exploit\.in|bhf\.im)\/[^\s"'<>]*/gi },
   { label: 'Loader URL', pattern: /https?:\/\/(?:[a-z0-9-]+\.)*(?:(?:gofile|anonfiles|mediafire|pixeldrain|workupload)\.[a-z]{2,4}|transfer\.sh|file\.io|catbox\.moe|temp\.sh)\/[^\s"'<>]+/gi },
   { label: 'Loader Sample', pattern: /['"]?[A-Z]:\\Users\\[^\\'"<>\s]+\\AppData\\Local\\Temp\\[^\\'"<>\s]+\.(?:bat|ps1|exe|dll|cmd|vbs|hta)['"]?/gi },
