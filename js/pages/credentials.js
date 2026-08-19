@@ -1088,28 +1088,55 @@ function renderNotesPage(searchQuery = '') {
 
 // CSV exports
 
+// Exports carry what the page is showing. A narrowed export that arrives under
+// the same name as a full one is its own evidentiary hazard, so it says so.
+function csvName(dataset, shown, total) {
+  return shown < total ? `${dataset}-filtered.csv` : `${dataset}.csv`;
+}
+
+function exportable(dataset, total, shown) {
+  if (total === 0) {
+    showNotification(`No ${dataset} data to download.`, 'error');
+    return false;
+  }
+  if (shown === 0) {
+    showNotification(`No ${dataset} rows match the current search and filters.`, 'error');
+    return false;
+  }
+  return true;
+}
+
+// Service is derived from the URL rather than parsed out of the file, so it has
+// to be written in here; the table leads with it whenever any row carries one.
 function exportPasswordsCSV() {
-  if (passwordsData.rows.length === 0) return;
-  downloadCsvRows('passwords.csv', passwordsData.headers, passwordsData.rows.map(({ row }) => row));
+  const total = passwordsData.rows.length;
+  if (!exportable('password', total, passwordsFiltered.length)) return;
+  const withService = passwordShowService;
+  downloadCsvRows(csvName('passwords', passwordsFiltered.length, total),
+    [...(withService ? ['Service'] : []), ...passwordsData.headers, 'Source File'],
+    passwordsFiltered.map(({ row, service, source }) =>
+      [...(withService ? [service || ''] : []), ...row, source]));
 }
 
 function exportCookiesCSV() {
-  if (cookiesData.rows.length === 0) return;
-  const { headers, rows } = shapeCookiesCsv(cookiesData);
-  downloadCsvRows('cookies.csv', headers, rows);
+  const total = cookiesData.rows.length;
+  if (!exportable('cookie', total, cookiesFiltered.length)) return;
+  const { headers, rows } = shapeCookiesCsv({ ...cookiesData, rows: cookiesFiltered });
+  downloadCsvRows(csvName('cookies', cookiesFiltered.length, total), headers, rows);
 }
 
 function exportAutofillsCSV() {
-  if (autofillsData.entries.length === 0) return;
-  downloadCsvRows('autofills.csv', ['Field', 'Value'], autofillsData.entries.map(
-    ({ name, value }) => [name, value]
-  ));
+  const total = autofillsData.entries.length;
+  if (!exportable('autofill', total, autofillsFiltered.length)) return;
+  downloadCsvRows(csvName('autofills', autofillsFiltered.length, total), ['Field', 'Value'],
+    autofillsFiltered.map(({ name, value }) => [name, value]));
 }
 
 function exportNotesCSV() {
-  if (notesData.entries.length === 0) return;
-  const { headers, rows } = shapeNotesCsv(notesData);
-  downloadCsvRows('notes.csv', headers, rows);
+  const total = notesData.entries.length;
+  if (!exportable('note', total, notesFiltered.length)) return;
+  const { headers, rows } = shapeNotesCsv({ ...notesData, entries: notesFiltered });
+  downloadCsvRows(csvName('notes', notesFiltered.length, total), headers, rows);
 }
 
 // Show-more handler
