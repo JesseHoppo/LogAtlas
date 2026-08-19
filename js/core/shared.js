@@ -1454,7 +1454,9 @@ function formatRelativeTime(date, referenceDate) {
   if (absDiff < 86400000) return `${Math.round(absDiff / 3600000)}h ${diff > 0 ? 'from now' : 'ago'}`;
   if (absDiff < 2592000000) return `${Math.round(absDiff / 86400000)}d ${diff > 0 ? 'from now' : 'ago'}`;
 
-  return date.toLocaleDateString();
+  // Same UTC calendar date the rest of the app renders, so a cookie's expiry
+  // never reads `25/12/2025` beside a column showing `2025-12-25`.
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 const PASSWORD_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
