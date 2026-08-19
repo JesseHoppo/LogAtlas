@@ -9,9 +9,10 @@ import {
 } from '../core/utils.js';
 import { downloadBlob, copyToClipboard, randomPassword, showNotification } from '../core/shared.js';
 import { toCSV } from '../transforms/shared.js';
-import { buildFileTypeOptionsHtml, getNodeHintBadges } from './fileTypeRegistry.js';
-import { canOfferTransformAction, parseStructuredFile } from './structuredTransforms.js';
-import { emitPreview } from '../pages/shared.js';
+import { buildFileTypeOptionsHtml, getNodeFileType, getNodeHintBadges } from './fileTypeRegistry.js';
+import { canTransformStructuredFile, parseStructuredFile } from './structuredTransforms.js';
+import { countLabel, emitPreview, openTransientModal } from '../pages/shared.js';
+import { topModal } from '../core/modal.js';
 
 let elBreadcrumb;
 let elFileGrid;
@@ -19,6 +20,21 @@ let elFileList;
 let elSearchInput;
 
 const selectedFiles = new Set();
+
+// Where a shift-extension started, and the selection as it stood when it did.
+// The range is re-derived from the anchor on every keystroke, so turning back
+// shrinks it instead of leaving a trail, and anything picked beforehand
+// survives the walk.
+let anchorKey = null;
+let rangeBase = null;
+
+const TOOLBAR_BUTTON_IDS = [
+  'selectionSelectAll',
+  'selectionSetType',
+  'selectionExportZip',
+  'selectionClear',
+];
+
 // Navigation
 
 function navigateTo(pathSegments) {
@@ -31,8 +47,19 @@ function navigateTo(pathSegments) {
 
 // Selection
 
+function currentContainer() {
+  return state.viewMode === 'grid' ? elFileGrid : elFileList;
+}
+
+function setAnchor(key) {
+  anchorKey = key;
+  rangeBase = null;
+}
+
 function clearSelection() {
   selectedFiles.clear();
+  setAnchor(null);
+  updateSelectionUI();
   updateSelectionToolbar();
 }
 
@@ -46,30 +73,118 @@ function toggleSelection(key) {
   } else {
     selectedFiles.add(key);
   }
+  setAnchor(key);
+  updateSelectionUI();
+  updateSelectionToolbar();
+}
+
+// Only file rows carry aria-selected, so this is what a range can span, in the
+// order it is on screen rather than the order the keys went into the set.
+function selectableRows(container) {
+  return container ? [...container.querySelectorAll('[aria-selected]')] : [];
+}
+
+function extendSelectionTo(container, toKey) {
+  const keys = selectableRows(container).map(row => row.dataset.path);
+  const to = keys.indexOf(toKey);
+  if (to < 0) return;
+
+  if (keys.indexOf(anchorKey) < 0) anchorKey = toKey;
+  if (!rangeBase) rangeBase = new Set(selectedFiles);
+  const from = keys.indexOf(anchorKey);
+
+  selectedFiles.clear();
+  for (const key of rangeBase) selectedFiles.add(key);
+  for (let i = Math.min(from, to); i <= Math.max(from, to); i++) selectedFiles.add(keys[i]);
+
+  updateSelectionUI();
+  updateSelectionToolbar();
+}
+
+// What Select all works on: the files of the folder on screen, narrowed to the
+// matches when the filter box is in use.
+function viewSelection(items) {
+  const keys = items.filter(item => item.type === 'file').map(item => itemKey(item.name));
+  return { keys, chosen: keys.filter(key => selectedFiles.has(key)).length };
+}
+
+function toggleSelectAll() {
+  const { keys, chosen } = viewSelection(getItems());
+  if (keys.length === 0) return;
+  const selecting = chosen < keys.length;
+  for (const key of keys) {
+    if (selecting) selectedFiles.add(key);
+    else selectedFiles.delete(key);
+  }
+  setAnchor(null);
   updateSelectionUI();
   updateSelectionToolbar();
 }
 
 function updateSelectionUI() {
-  const container = state.viewMode === 'grid' ? elFileGrid : elFileList;
+  const container = currentContainer();
   if (!container) return;
   for (const el of container.querySelectorAll('[data-path]')) {
     const key = el.dataset.path;
     const cb = el.querySelector('.file-select-cb');
     if (cb) cb.checked = selectedFiles.has(key);
+    if (el.hasAttribute('aria-selected')) el.setAttribute('aria-selected', String(selectedFiles.has(key)));
     el.classList.toggle('selected', selectedFiles.has(key));
   }
 }
 
-function updateSelectionToolbar() {
+// The button names what it would take, which is the only thing on the page that
+// says files can be picked at all before one has been.
+function selectAllLabel(total, chosen) {
+  if (total === 0) return 'Select all';
+  if (chosen === total) return 'Deselect all';
+  if (state.filterText) return `Select ${countLabel(total, 'match', 'matches')}`;
+  // "Select all 1 file" reads as a mistake, and a third of the corpus's folders
+  // hold exactly one.
+  if (total === 1) return 'Select 1 file';
+  return `Select all ${countLabel(total, 'file')}`;
+}
+
+// The toolbar stays on screen for as long as an archive is loaded: Select all is
+// the only way into a selection without a mouse, so hiding it until a selection
+// exists locks keyboard users out of Set type and Download ZIP entirely.
+function updateSelectionToolbar(items = getItems()) {
   const toolbar = document.getElementById('selectionToolbar');
   if (!toolbar) return;
-  if (selectedFiles.size > 0) {
-    toolbar.classList.add('visible');
-    document.getElementById('selectionCount').textContent =
-      `${selectedFiles.size} selected`;
-  } else {
-    toolbar.classList.remove('visible');
+  toolbar.classList.toggle('visible', !!state.fileTree);
+  toolbar.classList.toggle('has-selection', selectedFiles.size > 0);
+
+  const count = document.getElementById('selectionCount');
+  if (count) {
+    count.textContent = selectedFiles.size === 0
+      ? 'No files selected'
+      : `${countLabel(selectedFiles.size, 'file')} selected`;
+  }
+
+  const { keys, chosen } = viewSelection(items);
+  const selectAll = document.getElementById('selectionSelectAll');
+  if (selectAll) selectAll.textContent = selectAllLabel(keys.length, chosen);
+
+  const live = {
+    selectionSelectAll: keys.length > 0,
+    selectionSetType: selectedFiles.size > 0,
+    selectionExportZip: selectedFiles.size > 0,
+    selectionClear: selectedFiles.size > 0,
+  };
+
+  const active = document.activeElement;
+  let handoff = null;
+  for (const id of TOOLBAR_BUTTON_IDS) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.disabled = !live[id];
+    if (!btn.disabled && !handoff) handoff = btn;
+  }
+  // Disabling the button the user is standing on drops focus to <body>. Hand it
+  // to whatever in the bar is still live, or to the filter box, which is where
+  // a view with nothing to select was most likely typed into being.
+  if (active instanceof HTMLElement && active.disabled && TOOLBAR_BUTTON_IDS.includes(active.id)) {
+    (handoff || elSearchInput)?.focus();
   }
 }
 
@@ -539,23 +654,19 @@ function initBrowser() {
     }, 150);
   });
 
-  document.getElementById('selectionSelectAll').addEventListener('click', () => {
-    const items = getItems();
-    for (const item of items) {
-      if (item.type === 'file') {
-        selectedFiles.add(itemKey(item.name));
-      }
-    }
-    updateSelectionUI();
-    updateSelectionToolbar();
-  });
+  // A selection made from the keyboard changes nothing that is announced on its
+  // own, so the count carries it into the accessibility tree.
+  const selectionCount = document.getElementById('selectionCount');
+  if (selectionCount) {
+    selectionCount.setAttribute('role', 'status');
+    selectionCount.setAttribute('aria-live', 'polite');
+    selectionCount.setAttribute('aria-atomic', 'true');
+  }
 
+  document.getElementById('selectionSelectAll').addEventListener('click', toggleSelectAll);
   document.getElementById('selectionSetType').addEventListener('click', showTypeMenu);
   document.getElementById('selectionExportZip').addEventListener('click', exportSelectedZip);
-  document.getElementById('selectionClear').addEventListener('click', () => {
-    clearSelection();
-    render();
-  });
+  document.getElementById('selectionClear').addEventListener('click', clearSelection);
 
   on('extracted', () => {
     state.currentPath = [];
