@@ -60,11 +60,14 @@
     </aside>
     <main class="main-content">
       <h1 class="sr-only">Log Atlas</h1>
-      <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Drop a file here or click to browse" aria-describedby="dropZoneHint">
-        <h2>Drop file here or click to browse</h2>
-        <p id="dropZoneHint">Archives and individual files supported</p>
+      <div class="drop-zone" id="dropZone">
+        <h2>Drop an archive here</h2>
+        <p>ZIP, 7z, RAR, TAR, or loose files</p>
+        <button class="paste-text-trigger" id="browseBtn">Browse files</button>
+        <button class="paste-text-trigger" id="browseFolderBtn">Browse a folder</button>
         <button class="paste-text-trigger" id="pasteTextBtn">or paste text</button>
         <input type="file" id="fileInput" multiple aria-hidden="true">
+        <input type="file" id="folderInput" webkitdirectory aria-hidden="true">
       </div>
       <div class="upload-info" id="uploadInfo">
         <p>All processing in this tool is done client-side, with no information transmitted or stored.</p>
