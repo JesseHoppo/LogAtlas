@@ -1,7 +1,7 @@
 // Password, Cookie, Autofill parsing.
 
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
-import { parseTimestampValue } from '../core/shared.js';
+import { parseTimestampValue, cookieColumnMap } from '../core/shared.js';
 import {
   KV_PATTERN,
   AUTOFILL_KV_PATTERN,
@@ -656,12 +656,9 @@ function splitNetscapeRow(line, columns) {
   return fields;
 }
 
-// Bring manually-mapped cookie rows up to parity with the auto path: normalise
-// the Expiration column (epoch -> ISO) and URL-decode the Value column.
-function normaliseConfigCookies(parsed) {
-  if (!parsed || !parsed.rows) return parsed;
-  const expiryIdx = parsed.headers.findIndex(h => h === 'Expiration');
-  const valueIdx = parsed.headers.findIndex(h => h === 'Value');
+// Expiration reads as epoch -> ISO and Value is URL-decoded on every route into
+// the cookie table, so the same cookie reads the same whatever shape it arrived in.
+function normaliseCookieColumns(parsed, expiryIdx, valueIdx) {
   if (expiryIdx < 0 && valueIdx < 0) return parsed;
 
   const rows = parsed.rows.map((row) => {
@@ -670,7 +667,58 @@ function normaliseConfigCookies(parsed) {
     if (valueIdx >= 0) next[valueIdx] = decodeCookieValue(next[valueIdx] ?? '');
     return next;
   });
-  return { headers: parsed.headers, rows };
+  return { headers: parsed.headers, rows, raggedRows: parsed.raggedRows || 0 };
+}
+
+function normaliseConfigCookies(parsed) {
+  if (!parsed || !parsed.rows) return parsed;
+  return normaliseCookieColumns(
+    parsed,
+    parsed.headers.findIndex(h => h === 'Expiration'),
+    parsed.headers.findIndex(h => h === 'Value'),
+  );
+}
+
+const COOKIE_ROLE_HEADERS = {
+  domain: 'Domain',
+  subDomain: 'Subdomains',
+  path: 'Path',
+  secure: 'Secure',
+  expires: 'Expiration',
+  name: 'Name',
+  value: 'Value',
+};
+
+// A five-column export is the Netscape layout with the subdomain and secure
+// flags left out, the same shape splitNetscapeRow reads. The shared column map
+// only falls back on position from six columns up, so it is laid out here.
+const NARROW_COOKIE_POSITIONS = { domain: 0, path: 1, expires: 2, name: 3, value: 4 };
+
+function applyNarrowCookiePositions(map) {
+  const claimed = new Set(Object.values(map).filter(index => index >= 0));
+  for (const [role, index] of Object.entries(NARROW_COOKIE_POSITIONS)) {
+    if (map[role] >= 0 || claimed.has(index)) continue;
+    map[role] = index;
+    claimed.add(index);
+  }
+  return map;
+}
+
+// Name and Value are the two the map has to resolve for the table to be worth
+// relabelling; without them the columns stay as the delimited parser found them.
+function normaliseDelimitedCookies(parsed) {
+  if (!parsed || !parsed.rows || parsed.rows.length === 0) return parsed;
+
+  const columns = parsed.rows[0].length;
+  const map = cookieColumnMap(parsed.headers, columns);
+  if (columns === 5) applyNarrowCookiePositions(map);
+  if (map.name < 0 || map.value < 0) return parsed;
+
+  const headers = parsed.headers.slice();
+  for (const [role, index] of Object.entries(map)) {
+    if (index >= 0) headers[index] = COOKIE_ROLE_HEADERS[role];
+  }
+  return normaliseCookieColumns({ ...parsed, headers }, map.expires, map.value);
 }
 
 export function parseCookieFile(text, config) {
