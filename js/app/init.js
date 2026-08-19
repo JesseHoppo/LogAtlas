@@ -12,6 +12,7 @@ import { initPasteText } from '../files/pasteText.js';
 import { initDomainExplorer } from '../views/domainExplorer.js';
 import { initCurrentnessLab } from '../views/currentnessLab.js';
 import { loadDomainCategories } from '../core/domainCategories.js';
+import { initNotifications } from '../core/shared.js';
 import {
   initDashboard,
   updateDashboardVisibility,
@@ -35,6 +36,7 @@ renderDataPageShells();
 const { navigateToPage, refreshSidebarAvailability } = initNavigation();
 
 const moduleInitializers = [
+  ['Notifications', initNotifications],
   ['Password modal', initPasswordModal],
   ['File type modal', initFileTypeModal],
   ['Column mapper', initColumnMapper],
