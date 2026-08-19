@@ -284,12 +284,11 @@ function renderDomainDetail(data, baseDomain) {
   }
 
   if (data.credentialsCount > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">Credentials (' + data.credentialsCount + ')</div>';
-    html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Username</th><th>Password</th></tr></thead><tbody>';
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">Credentials (' + data.credentialsCount.toLocaleString() + ')</div>';
+    html += '<table class="domain-detail-table"><thead><tr><th tabindex="0">URL</th><th tabindex="0">Username</th><th tabindex="0">Password</th></tr></thead><tbody>';
     const showCreds = data.credentials.slice(0, 20);
     for (const c of showCreds) {
-      const masked = c.password ? c.password[0] + '\u2022'.repeat(Math.min(c.password.length - 1, 6)) : '';
-      html += `<tr><td title="${escapeHtml(c.url)}">${escapeHtml(c.url)}</td><td>${escapeHtml(c.username)}</td><td class="password-cell masked">${escapeHtml(masked)}</td></tr>`;
+      html += `<tr><td title="${escapeHtml(c.url)}">${escapeHtml(c.url)}</td><td>${escapeHtml(c.username)}</td><td class="password-cell masked">${escapeHtml(maskValue(c.password))}</td></tr>`;
     }
     html += '</tbody></table>';
     html += buildDomainSectionFooter('passwords', query('passwords'), data.credentialsCount, showCreds.length, 'credentials');
