@@ -29,6 +29,9 @@ function extractPrintableStrings(bytes, minLength = 6) {
 
 function maybeDecodeText(content, fileName) {
   if (!content) return '';
+  // A numbered LevelDB write-ahead log is binary despite the extension; decoding
+  // it yields replacement-character soup, so it is carved like its .ldb siblings.
+  if (/^\d+\.log$/i.test(fileName)) return '';
   if (/\.(?:json|txt|log|conf|cfg|ini)$/i.test(fileName) || /^(?:current|lock|log(?:\.old)?|manifest-\d+)$/i.test(fileName)) {
     return new TextDecoder('utf-8', { fatal: false }).decode(content);
   }
@@ -43,7 +46,7 @@ function detectStoreType(fileName, sourcePath, content) {
 
   if (header.startsWith('SQLite format 3')) return 'SQLite';
   if (/\.(?:sqlite|sqlite3|db)$/i.test(lowerName)) return 'SQLite';
-  if (/\.ldb$/i.test(lowerName) || /(?:^|\/)(?:current|lock|log(?:\.old)?|manifest-\d+)$/i.test(normalisedPath)) return 'LevelDB';
+  if (/\.ldb$/i.test(lowerName) || /(?:^|\/)(?:current|lock|log(?:\.old)?|manifest-\d+|\d+\.log)$/i.test(normalisedPath)) return 'LevelDB';
   if (/\.json$/i.test(lowerName)) return 'JSON';
   if (/\.txt$/i.test(lowerName)) return 'Text';
   return 'Store';
