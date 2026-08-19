@@ -380,6 +380,51 @@ function buildCandidatesPanel(summary) {
   `;
 }
 
+// The rest of the identity ranking. The headline names one address; this says
+// which others were considered and on what, so an analyst who disagrees can see
+// the second-placed one without leaving the page.
+function buildIdentityRankingPanel(summary) {
+  const id = summary.primaryIdentity;
+  const candidates = id?.candidates || [];
+  if (candidates.length < 2) return '';
+
+  const CAP = 8;
+  const shown = candidates.slice(0, CAP);
+  const items = shown.map((entry, index) => {
+    const isPick = index === 0;
+    const tone = isPick ? (entry.tentative ? 'warning' : 'success') : 'neutral';
+    const counts = [
+      entry.services > 0 ? countLabel(entry.services, 'service') : 'no service in this case',
+      `score ${entry.score}`,
+    ].join(' · ');
+    const sourceTags = entry.sources
+      .filter((src) => src !== 'credentials')
+      .map((src) => `<span class="lab-tag">${escapeHtml(src)}</span>`)
+      .join('');
+    return `
+      <li class="lab-candidate">
+        <span class="lab-candidate-domain">${escapeHtml(entry.email)}</span>
+        <span class="lab-candidate-status lab-tone-${tone}">${isPick ? 'Primary' : 'Considered'}</span>
+        <span class="lab-candidate-counts">${escapeHtml(counts)}</span>
+        <span class="lab-candidate-sources">${sourceTags}</span>
+      </li>
+    `;
+  }).join('');
+
+  const heading = [
+    `Identity ranking: ${id.label}`,
+    `${countLabel(candidates.length, 'address', 'addresses')} considered`,
+    candidates.length > CAP ? `top ${CAP} shown` : '',
+  ].filter(Boolean).join(' · ');
+
+  return `
+    <details class="lab-candidates">
+      <summary>${escapeHtml(heading)}</summary>
+      <ul class="lab-candidate-list">${items}</ul>
+    </details>
+  `;
+}
+
 function renderCurrentnessMeta(summary, rows) {
   const metaEl = document.getElementById('currentnessLabMeta');
   if (!metaEl) return;
@@ -393,6 +438,7 @@ function renderCurrentnessMeta(summary, rows) {
     ${buildHeroLine(summary)}
     ${buildCategoryBreakdown(rows)}
     <div class="lab-filters">${buildFilterChips(rows)}</div>
+    ${buildIdentityRankingPanel(summary)}
     ${buildCandidatesPanel(summary)}
   `;
 }
