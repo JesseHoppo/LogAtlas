@@ -769,41 +769,58 @@ function renderPasswordsPage(searchQuery = '') {
 
   const total = passwordsData.rows.length;
   const showing = passwordsFiltered.length;
-  // Rows here are per site + username + password and include accounts with no
-  // captured password; unique credentials is the dashboard's narrower count.
+  // One row per URL as saved: rows are deduped on the URL, the username and the
+  // password, and include accounts with no captured password. The unique count
+  // is the narrower one the dashboard reports, folded to the base domain.
   const unique = credAnalysis?.uniqueCredentials || 0;
-  const uniquePart = unique > 0 ? ` (${unique.toLocaleString()} unique credentials)` : '';
-  const baseSummary = showing !== total
-    ? `Showing ${showing.toLocaleString()} of ${total.toLocaleString()} rows${uniquePart} from ${passwordsData.fileCount} file(s)`
-    : `${total.toLocaleString()} rows${uniquePart} from ${passwordsData.fileCount} file(s)`;
-  summary.textContent = failedFiles.length > 0
-    ? `${baseSummary} (${failedFiles.length.toLocaleString()} file(s) skipped)`
-    : baseSummary;
+  summary.textContent = datasetSummary({
+    shown: showing,
+    total,
+    singular: 'row',
+    fileCount: passwordsData.fileCount,
+    extra: [
+      unique > 0 ? `${unique.toLocaleString()} unique by domain + username + password` : '',
+      failedFiles.length > 0 ? `${failedFiles.length.toLocaleString()} skipped` : '',
+    ],
+  });
 
   addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
+
+  // A table drawn as bare column headings over an empty body reads as a failed
+  // render. The parse issues and the footprint describe the whole dataset, so
+  // they stay: they are the reason a narrowed search can find nothing.
+  if (passwordsFiltered.length === 0) {
+    stats.innerHTML = '';
+    content.innerHTML = `${issuesHtml}${buildCredentialFootprintHtml()}${buildNoMatchesHtml('passwords')}`;
+    return;
+  }
 
   const constantCaption = passwordConstantNotes.length
     ? `<div class="data-table-caption">${escapeHtml(passwordConstantNotes.join('   ·   '))}</div>`
     : '';
 
-  const cached = passwordsData.stats || { domains: 0, usernames: 0, withPasswords: 0 };
+  // Counted over the rows on screen, not the whole dataset, so a tile can't be
+  // quoted as the scope of a search that narrowed it.
+  const shown = searchQuery
+    ? summarisePasswordRows(passwordsFiltered, passwordsData.headers)
+    : (passwordsData.stats || { domains: 0, usernames: 0, withPasswords: 0 });
 
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.domains.toLocaleString()}</div>
+      <div class="data-page-stat-value">${shown.domains.toLocaleString()}</div>
       <div class="data-page-stat-label">Domains</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.usernames.toLocaleString()}</div>
+      <div class="data-page-stat-value">${shown.usernames.toLocaleString()}</div>
       <div class="data-page-stat-label">Usernames</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.withPasswords.toLocaleString()}</div>
-      <div class="data-page-stat-label">With Password</div>
+      <div class="data-page-stat-value">${shown.withPasswords.toLocaleString()}</div>
+      <div class="data-page-stat-label">With password</div>
     </div>
     <div class="data-page-stat">
       <div class="data-page-stat-value">${failedFiles.length.toLocaleString()}</div>
-      <div class="data-page-stat-label">Skipped Files</div>
+      <div class="data-page-stat-label">Skipped files</div>
     </div>
   `;
 
@@ -832,9 +849,10 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
   const content = document.getElementById('cookiesContent');
 
   if (cookiesData.rows.length === 0) {
-    summary.textContent = 'No cookies found';
+    summary.textContent = '';
+    addAdjustColumnsBtn(summary, '_cookieFileHint', 'cookies');
     stats.innerHTML = '';
-    content.innerHTML = '<div class="no-data">No cookie data available.</div>';
+    content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.cookies}</div>`;
     return;
   }
 
@@ -917,9 +935,10 @@ function renderAutofillsPage(searchQuery = '') {
   const content = document.getElementById('autofillsContent');
 
   if (autofillsData.entries.length === 0) {
-    summary.textContent = 'No autofill data found';
+    summary.textContent = '';
+    addAdjustColumnsBtn(summary, '_autofillHint', 'autofill');
     stats.innerHTML = '';
-    content.innerHTML = '<div class="no-data">No autofill data available.</div>';
+    content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.autofills}</div>`;
     return;
   }
 
@@ -993,9 +1012,9 @@ function renderNotesPage(searchQuery = '') {
   const content = document.getElementById('notesContent');
 
   if (notesData.entries.length === 0) {
-    summary.textContent = 'No notes found';
+    summary.textContent = '';
     stats.innerHTML = '';
-    content.innerHTML = '<div class="no-data">No note data available.</div>';
+    content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.notes}</div>`;
     return;
   }
 
@@ -1014,11 +1033,15 @@ function renderNotesPage(searchQuery = '') {
   notesShown = Math.min(PAGE_SIZE, filtered.length);
 
   const total = notesData.entries.length;
-  const statsData = summariseNotes(filtered);
-  summary.textContent = filtered.length !== total
-    ? `Showing ${filtered.length.toLocaleString()} of ${total.toLocaleString()} notes from ${notesData.fileCount} file(s)`
-    : `${total.toLocaleString()} notes from ${notesData.fileCount} file(s)`;
+  summary.textContent = datasetSummary({ shown: filtered.length, total, singular: 'note', fileCount: notesData.fileCount });
 
+  if (notesFiltered.length === 0) {
+    stats.innerHTML = '';
+    content.innerHTML = buildNoMatchesHtml('notes');
+    return;
+  }
+
+  const statsData = summariseNotes(filtered);
   stats.innerHTML = `
     <div class="data-page-stat">
       <div class="data-page-stat-value">${statsData.structuredPiiNotes.toLocaleString()}</div>
