@@ -37,17 +37,14 @@ function stripRootPrefix(fullPath) {
   return trimmed;
 }
 
-function cleanDisplayPath(fullPath) {
-  let cleaned = stripRootPrefix(fullPath);
-  const archiveBase = (state.rootZipName || '').replace(/\.(zip|7z|rar|tar|tar\.gz|tgz)$/i, '');
-  if (archiveBase && cleaned.startsWith(archiveBase + '/')) {
-    cleaned = cleaned.slice(archiveBase.length + 1);
-  }
-  return cleaned || fullPath;
-}
-
 function getPathSegments(fullPath) {
   return stripRootPrefix(fullPath).split('/').filter(Boolean);
+}
+
+// The path shown has to be the path clicking it navigates to, so both come
+// from the same segments.
+function cleanDisplayPath(fullPath) {
+  return getPathSegments(fullPath).join('/') || fullPath;
 }
 
 // Highlight on the raw line, escape each fragment afterwards, so the marker can
