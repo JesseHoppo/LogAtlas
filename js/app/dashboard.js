@@ -75,7 +75,11 @@ function findSysinfoValue(data, patterns) {
   return '';
 }
 
-function deriveVictimCountry(sysinfo, autofill) {
+// Resolution order for the victim's country: a sysinfo key holding a country
+// code, then an autofill country *field*, then whatever sysinfo said even if
+// it is a full country name, then the market's prefix on the archive name.
+// Exported so no other surface has to re-derive it and disagree.
+export function deriveVictimCountry(sysinfo, autofill) {
   const fromSysinfo = findSysinfoValue(sysinfo, [/^country$/i, /^location$/i, /^region$/i]);
   if (fromSysinfo && isValidCountryCode(fromSysinfo)) return { value: fromSysinfo, source: 'sysinfo' };
   const autofillCountry = (autofill?.entries || []).find(e => /country/i.test(e?.name || '') && (e?.value || '').trim());
