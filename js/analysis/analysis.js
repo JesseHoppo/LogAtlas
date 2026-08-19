@@ -1718,7 +1718,34 @@ function reportRejections(results) {
   });
 }
 
-async function runAnalysis(fileTree, rootName) {
+// A reanalyse can land while a run is still walking the tree. Two runs sharing
+// the module-level accumulators publish each other's numbers and fire
+// `analysis:complete` on a half-published case, so runs are serialised and a
+// run that was superseded while it waited never starts.
+let analysisEpoch = 0;
+let analysisQueue = Promise.resolve();
+
+// A run that dies before it reaches the publish points leaves every page loader
+// blocked on a promise that will never settle, and the case never finishes
+// loading. A failed run hands them the unknown answers instead.
+function releaseAnalysisWaiters() {
+  if (!caseTimeZoneKnown) publishCaseTimeZone(UNKNOWN_TIME_ZONE);
+  if (!browserClockKnown) publishBrowserClock(UNKNOWN_BROWSER_CLOCK);
+}
+
+function runAnalysis(fileTree, rootName) {
+  const epoch = ++analysisEpoch;
+  analysisQueue = analysisQueue
+    .catch(() => {})
+    .then(() => (epoch === analysisEpoch ? analyseTree(fileTree, rootName) : undefined))
+    .catch((error) => {
+      console.error('Analysis run failed:', error);
+      if (epoch === analysisEpoch) releaseAnalysisWaiters();
+    });
+  return analysisQueue;
+}
+
+async function analyseTree(fileTree, rootName) {
   const root = collapseSingleWrapper(fileTree) || fileTree;
   const treeRootName = root === fileTree ? rootName : (root.name || rootName);
   const buckets = bucketHintedNodes(root, treeRootName);
