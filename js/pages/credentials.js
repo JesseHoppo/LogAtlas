@@ -1029,23 +1029,30 @@ function renderNotesPage(searchQuery = '') {
     </div>
     <div class="data-page-stat">
       <div class="data-page-stat-value">${statsData.credentialNotes.toLocaleString()}</div>
-      <div class="data-page-stat-label">Credential-Like</div>
+      <div class="data-page-stat-label">Credential-like</div>
     </div>
     <div class="data-page-stat">
       <div class="data-page-stat-value">${statsData.walletNotes.toLocaleString()}</div>
-      <div class="data-page-stat-label">Wallet Hints</div>
+      <div class="data-page-stat-label">Wallet hints</div>
     </div>
-    <div class="data-page-stat">
+    <div class="data-page-stat" title="Counted once per note and summed: a URL written in two notes is two mentions.">
       <div class="data-page-stat-value">${statsData.totalUrls.toLocaleString()}</div>
-      <div class="data-page-stat-label">URLs</div>
+      <div class="data-page-stat-label">URL mentions</div>
     </div>
-    <div class="data-page-stat">
+    <div class="data-page-stat" title="Counted once per note and summed: an address written in two notes is two mentions.">
       <div class="data-page-stat-value">${statsData.totalEmails.toLocaleString()}</div>
-      <div class="data-page-stat-label">Emails</div>
+      <div class="data-page-stat-label">Email mentions</div>
     </div>
   `;
 
-  let html = buildNotesPiiGroupHtml(filtered);
+  let html = '';
+  if (statsData.seedPhraseNotes > 0) {
+    html += `<div class="data-page-warning">
+      <div class="data-page-warning-title">Wallet seed phrase in a note</div>
+      <div class="data-page-warning-more">${countLabel(statsData.seedPhraseNotes, 'note')} holding a recovery-phrase candidate — enough on its own to move the funds.</div>
+    </div>`;
+  }
+  html += buildNotesPiiGroupHtml(filtered);
   html += '<div class="data-table-container"><table class="data-table">';
   html += `<thead><tr>${notesSort.th('title', 'Title')}${notesSort.th('type', 'Type')}${notesSort.th('indicators', 'Indicators')}${notesSort.th('preview', 'Preview')}${notesSort.th('source', 'Source')}</tr></thead><tbody data-page-rows>`;
   html += buildRowsHtml(noteRowBuilder, notesFiltered, 0, notesShown);
