@@ -333,12 +333,19 @@ function levenshteinDistance(a, b) {
   return rows[left.length][right.length];
 }
 
+// Judged on the registrable domain only. Read leftmost label first,
+// mail.house.gov and live.ucl.ac.uk look like webmail; they are employers with
+// a mail host in front of them.
 function looksLikePublicEmailTypo(domain) {
   const normalised = normaliseText(domain);
   if (!normalised || PUBLIC_EMAIL_DOMAINS.has(normalised)) return false;
 
-  const labels = normalised.split('.').filter(Boolean);
-  const rootLabel = getRootLabel(normalised);
+  // Empty labels ('gmail..com') would otherwise shift the registrable split.
+  const cleaned = normalised.split('.').filter(Boolean).join('.');
+  const base = normaliseText(extractBaseDomain(cleaned) || cleaned);
+  if (PUBLIC_EMAIL_DOMAINS.has(base)) return true;
+
+  const rootLabel = getRootLabel(base);
   if (!rootLabel) return false;
 
   if (PUBLIC_EMAIL_ROOTS.has(rootLabel)) return true;
@@ -346,8 +353,10 @@ function looksLikePublicEmailTypo(domain) {
   const strippedRoot = rootLabel.replace(/\d+$/g, '');
   if (strippedRoot !== rootLabel && PUBLIC_EMAIL_ROOTS.has(strippedRoot)) return true;
 
-  const noisyTail = labels.slice(1).some((label) => /\d/.test(label) || /(?:comm|coom|c0m|con|cm)$/.test(label));
-  if (noisyTail && PUBLIC_EMAIL_ROOTS.has(strippedRoot)) return true;
+  // Below four characters the root is almost always an administrative label the
+  // base-domain split could not strip ('mil.nz', 'ac.at'), and 'mil' is one edit
+  // from 'mail'.
+  if (rootLabel.length < 4) return false;
 
   return [...PUBLIC_EMAIL_ROOTS].some((candidate) => (
     candidate.length >= 4
