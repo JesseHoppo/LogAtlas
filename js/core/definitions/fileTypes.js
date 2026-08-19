@@ -30,8 +30,12 @@ export const FILE_TYPE_PATTERNS = {
       /^(?:all|unique|icloud)[\s_-]*passwords?(?:\([^)]+\))?\.(txt|tsv|csv)$/i,
       /^passwords?[\s_-]*(?:unique|all)\.(txt|tsv|csv)$/i,
     ],
+    // `Brute.txt` is already a password file, and `passwords_bruteforce.txt`
+    // holds the same thing — the victim's own passwords, gathered for a
+    // brute-force pass. Excluding one and not the other dropped 592 recovered
+    // plaintext passwords from a corpus case. A generic `wordlist` is still
+    // somebody else's dictionary and stays out.
     exclusions: [
-      /bruteforce/i,
       /wordlist/i,
     ],
     parentDirMatch: /^(?:passwords?|logins|ftps?)$/i,
