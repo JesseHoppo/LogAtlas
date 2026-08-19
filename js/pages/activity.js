@@ -40,9 +40,13 @@ import {
   createPagedCollectionRegistry,
   createTableSort,
   bindTableSort,
+  openTransientModal,
 } from './shared.js';
+import { DATA_PAGE_EMPTY_TEXT } from './registry.js';
 
 const SCREENSHOT_MEASURE_BATCH = 16;
+
+const EMPTY_CELL = '<span class="cell-empty">\u2014</span>';
 
 const LURE_LABELS = {
   clickfix: 'ClickFix',
@@ -56,63 +60,107 @@ const LURE_LABELS = {
 let softwareSlots = { inline: null, file: null };
 let processListSlots = { inline: null, file: null };
 
+// A column carries the whole value in its title so that a cell too narrow to
+// show it is still readable on hover, and so that a click copies the value
+// rather than the truncation.
+function fullCell(read) {
+  return (entry) => {
+    const value = String(read(entry) ?? '');
+    return `<td title="${escapeHtml(value)}">${escapeHtml(value)}</td>`;
+  };
+}
+
+function plainCell(read) {
+  return (entry) => `<td>${escapeHtml(String(read(entry) ?? ''))}</td>`;
+}
+
 // One definition per page. Element ids follow the page key as registry.js
 // names them (`<key>Summary/Stats/Content/Search`, `export<Key>Csv`). What a
 // page does differently — search fields, stat tiles, the block above the
 // table, the table itself, the CSV shape — hangs off its entry here, so a
 // change to the shared scaffold cannot reach one page and miss the other six.
+//
+// `columns` is the single description of a column: `label` puts it in the
+// table, `csv` puts it in the export, `value` is what it holds — used to sort
+// it, to write it to the CSV, and to decide whether the dataset fills it at
+// all. `cell` overrides the markup, `sort` and `csvValue` override the value
+// where the two differ. A column with neither `label` nor `csv` would be
+// invisible; one with no `value` (the Actions button) is structure, not data,
+// and is always kept.
 const pages = {
   downloads: {
     navId: 'navDownloads',
     emptyData: () => ({ entries: [], fileCount: 0 }),
-    emptySummary: 'No downloads found',
-    emptyMessage: 'No download data available.',
-    label: (data) => `downloads from ${data.fileCount} file(s)`,
+    noun: 'download',
     matches: (e, q) =>
       e.filePath.toLowerCase().includes(q) ||
       e.sourceUrl.toLowerCase().includes(q) ||
       e.fileSizeRaw.toLowerCase().includes(q) ||
       e.fileSizeDisplay.toLowerCase().includes(q) ||
       e.domain.toLowerCase().includes(q) ||
-      e.extension.toLowerCase().includes(q),
-    stats: (data) => {
-      const cached = data.stats || { withSourceUrl: 0, withFileSize: 0, topExtension: '-', totalKnownSizeDisplay: '-' };
+      e.extension.toLowerCase().includes(q) ||
+      e.browser.toLowerCase().includes(q),
+    // Counted over the filtered rows on screen, not the whole dataset.
+    stats: (data, filtered) => {
+      const extensionCounts = {};
+      let withSourceUrl = 0, withFileSize = 0, totalKnownBytes = 0, knownSizeCount = 0;
+      for (const entry of filtered) {
+        if (entry.extension) extensionCounts[entry.extension] = (extensionCounts[entry.extension] || 0) + 1;
+        if (entry.sourceUrl) withSourceUrl++;
+        if (entry.fileSizeDisplay) withFileSize++;
+        if (entry.fileSizeBytes != null) { totalKnownBytes += entry.fileSizeBytes; knownSizeCount++; }
+      }
+      const topExtension = Object.entries(extensionCounts).sort((a, b) => b[1] - a[1])[0];
       return [
-        { value: cached.withSourceUrl.toLocaleString(), label: 'With Source URL' },
-        { value: cached.withFileSize.toLocaleString(), label: 'With File Size' },
-        { value: escapeHtml(cached.topExtension), label: 'Top Extension' },
-        { value: escapeHtml(cached.totalKnownSizeDisplay), label: 'Known Total Size' },
+        { value: withSourceUrl.toLocaleString(), label: 'With source URL' },
+        { value: withFileSize.toLocaleString(), label: 'With file size' },
+        { value: escapeHtml(topExtension ? topExtension[0] : '-'), label: 'Top extension' },
+        { value: escapeHtml(knownSizeCount > 0 ? formatBytes(totalKnownBytes) : '-'), label: 'Known total size' },
       ];
     },
-    columns: ['File Path', 'Source URL', 'File Size', 'Extension', 'Domain'],
-    // Size sorts on the parsed byte count, so "9 KB" lands below "1 MB".
-    sortAccessors: [(e) => e.filePath, (e) => e.sourceUrl, (e) => e.fileSizeBytes, (e) => e.extension, (e) => e.domain],
-    rowBuilder: downloadsRowBuilder,
-    csv: {
-      file: 'downloads.csv',
-      headers: ['File Path', 'Source URL', 'File Size', 'Extension', 'Domain'],
-      row: ({ filePath, sourceUrl, fileSizeRaw, fileSizeDisplay, extension, domain }) =>
-        [filePath, sourceUrl, fileSizeRaw || fileSizeDisplay, extension, domain],
-    },
+    csvFile: 'downloads.csv',
+    columns: [
+      { label: 'File Path', csv: 'File Path', value: (e) => e.filePath, cell: fullCell((e) => e.filePath) },
+      { label: 'Source URL', csv: 'Source URL', value: (e) => e.sourceUrl, cell: fullCell((e) => e.sourceUrl) },
+      // Size sorts on the parsed byte count, so "9 KB" lands below "1 MB", and
+      // exports the log's own wording rather than the reformatted label.
+      {
+        label: 'File Size', csv: 'File Size',
+        value: (e) => e.fileSizeDisplay,
+        csvValue: (e) => e.fileSizeRaw || e.fileSizeDisplay,
+        sort: (e) => e.fileSizeBytes,
+        cell: fullCell((e) => e.fileSizeDisplay),
+      },
+      { label: 'Extension', csv: 'Extension', value: (e) => e.extension },
+      { label: 'Domain', csv: 'Domain', value: (e) => e.domain },
+      { label: 'Browser', csv: 'Browser', value: (e) => e.browser },
+    ],
   },
 
   detections: {
     navId: 'navDetections',
     emptyData: () => ({ entries: [], fileCount: 0, totalHits: 0 }),
-    emptySummary: 'No domain detections found',
-    emptyMessage: 'No domain-detection data available.',
-    label: (data) => `detections from ${data.fileCount} file(s)`,
+    noun: 'detection',
     matches: (e, q) =>
       e.section.toLowerCase().includes(q) ||
       e.label.toLowerCase().includes(q) ||
       e.target.toLowerCase().includes(q),
-    stats: (data) => {
-      const cached = data.stats || { uniqueTargets: 0, uniqueSections: 0, labelledEntries: 0 };
+    // Counted over the filtered rows on screen, not the whole dataset.
+    stats: (data, filtered) => {
+      const targets = new Set();
+      const sections = new Set();
+      let labelled = 0, hits = 0;
+      for (const entry of filtered) {
+        targets.add(entry.target.toLowerCase());
+        sections.add(entry.section);
+        if (entry.label) labelled++;
+        hits += entry.count;
+      }
       return [
-        { value: cached.uniqueTargets.toLocaleString(), label: 'Unique Targets' },
-        { value: cached.uniqueSections.toLocaleString(), label: 'Sections' },
-        { value: cached.labelledEntries.toLocaleString(), label: 'Tagged Entries' },
-        { value: data.totalHits.toLocaleString(), label: 'Total Hits' },
+        { value: targets.size.toLocaleString(), label: 'Unique targets' },
+        { value: sections.size.toLocaleString(), label: 'Sections' },
+        { value: labelled.toLocaleString(), label: 'Tagged entries' },
+        { value: hits.toLocaleString(), label: 'Total hits' },
       ];
     },
     prelude: (data) => {
@@ -125,165 +173,206 @@ const pages = {
         html += `<div class="domain-bar-row">
         <span class="domain-bar-label">${escapeHtml(sectionName)}</span>
         <div class="domain-bar-track"><div class="domain-bar-fill" style="width:${pct}%"></div></div>
-        <span class="domain-bar-count">${count}</span>
+        <span class="domain-bar-count">${count.toLocaleString()}</span>
       </div>`;
       }
       return html + '</div>';
     },
-    columns: ['Section', 'Label', 'Target', 'Count'],
-    sortAccessors: [(e) => e.section, (e) => e.label, (e) => e.target, (e) => e.count],
-    rowBuilder: detectionRowBuilder,
-    csv: {
-      file: 'domain_detections.csv',
-      headers: ['Section', 'Label', 'Target', 'Count', 'Source'],
-      row: ({ section, label, target, count, source }) => [section, label, target, count, source],
-    },
+    csvFile: 'domain_detections.csv',
+    columns: [
+      { label: 'Section', csv: 'Section', value: (e) => e.section },
+      { label: 'Label', csv: 'Label', value: (e) => e.label },
+      { label: 'Target', csv: 'Target', value: (e) => e.target, cell: fullCell((e) => e.target) },
+      { label: 'Count', csv: 'Count', value: (e) => e.count },
+      { csv: 'Source', value: (e) => e.source },
+    ],
   },
 
   clipboard: {
     navId: 'navClipboard',
     emptyData: () => ({ entries: [], fileCount: 0 }),
-    emptySummary: 'No clipboard entries found',
-    emptyMessage: 'No clipboard data available.',
-    label: (data) => `clipboard entr${data.entries.length === 1 ? 'y' : 'ies'} from ${data.fileCount} file(s)`,
+    noun: 'clipboard entry', nounPlural: 'clipboard entries',
     matches: (e, q) =>
       e.type.toLowerCase().includes(q) ||
       e.text.toLowerCase().includes(q) ||
       e.urls.toLowerCase().includes(q) ||
       (e.lure && (LURE_LABELS[e.lure] || e.lure).toLowerCase().includes(q)) ||
+      e.evidence.toLowerCase().includes(q) ||
       e.source.toLowerCase().includes(q),
-    stats: (data) => {
-      const cached = data.stats || { withUrls: 0, commandCount: 0, pathCount: 0, lureCount: 0 };
-      return [
-        { value: cached.withUrls.toLocaleString(), label: 'With URLs' },
-        { value: cached.commandCount.toLocaleString(), label: 'Commands' },
-        { value: cached.pathCount.toLocaleString(), label: 'Paths' },
-        { value: cached.lureCount.toLocaleString(), label: 'Lures' },
-      ];
-    },
+    // Counted over the filtered rows on screen, not the whole dataset.
+    stats: (data, filtered) => [
+      { value: filtered.filter(entry => entry.urls).length.toLocaleString(), label: 'With URLs' },
+      { value: filtered.filter(entry => entry.type === 'Command').length.toLocaleString(), label: 'Commands' },
+      { value: filtered.filter(entry => entry.type === 'Path').length.toLocaleString(), label: 'Paths' },
+      { value: filtered.filter(entry => entry.lure).length.toLocaleString(), label: 'Lures' },
+    ],
     prelude: (data) => {
       const lureCats = Object.entries(data.stats?.lureCategories || {}).sort((a, b) => b[1] - a[1]);
       if (lureCats.length === 0) return '';
-      const chips = lureCats.map(([cat, count]) => `<span class="dash-ioc-family">${escapeHtml(LURE_LABELS[cat] || cat)} ${count}</span>`).join(' ');
+      const chips = lureCats.map(([cat, count]) => `<span class="dash-ioc-family">${escapeHtml(LURE_LABELS[cat] || cat)} ${count.toLocaleString()}</span>`).join(' ');
       return `<div class="data-page-warning"><div class="data-page-warning-title">Clipboard social-engineering / clipper activity</div><div class="data-page-warning-more">Matches known lure patterns.</div><div class="identity-service-tags">${chips}</div></div>`;
     },
-    columns: ['Type', 'Lure', 'Content', 'URLs', 'Lines', 'Source'],
-    sortAccessors: [(e) => e.type, (e) => e.lure, (e) => e.text, (e) => e.urls, (e) => e.lineCount, (e) => e.source],
-    rowBuilder: clipboardRowBuilder,
-    csv: {
-      file: 'clipboard.csv',
-      headers: ['Type', 'Lure', 'Text', 'URLs', 'Line Count', 'Length', 'Source'],
-      row: ({ type, lure, text, urls, lineCount, length, source }) =>
-        [type, lure ? (LURE_LABELS[lure] || lure) : '', text, urls, lineCount, length, source],
-    },
+    csvFile: 'clipboard.csv',
+    columns: [
+      // A "Seed Phrase" verdict is the most consequential thing this table
+      // says, so the word count it rests on rides in the same cell rather than
+      // in a column every other row leaves blank.
+      {
+        label: 'Type', csv: 'Type', value: (e) => e.type,
+        cell: ({ type, evidence }) =>
+          `<td>${escapeHtml(type)}${evidence ? ` <span class="dash-ioc-family">${escapeHtml(evidence)}</span>` : ''}</td>`,
+      },
+      {
+        label: 'Lure', csv: 'Lure', value: (e) => e.lure,
+        csvValue: (e) => (e.lure ? LURE_LABELS[e.lure] || e.lure : ''),
+        cell: ({ lure }) =>
+          `<td>${lure ? `<span class="dash-ioc-family">${escapeHtml(LURE_LABELS[lure] || lure)}</span>` : ''}</td>`,
+      },
+      { csv: 'Evidence', value: (e) => e.evidence },
+      {
+        label: 'Content', csv: 'Text', value: (e) => e.text,
+        cell: ({ text, preview }) => `<td title="${escapeHtml(text)}">${escapeHtml(preview)}</td>`,
+      },
+      { label: 'URLs', csv: 'URLs', value: (e) => e.urls, cell: fullCell((e) => e.urls) },
+      { label: 'Lines', csv: 'Line Count', value: (e) => e.lineCount },
+      { csv: 'Length', value: (e) => e.length },
+      {
+        label: 'Source', csv: 'Source', value: (e) => e.source,
+        cell: ({ source }) => `<td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td>`,
+      },
+    ],
   },
 
   grabbed: {
     navId: 'navGrabbed',
     emptyData: () => ({ entries: [] }),
-    emptySummary: 'No grabbed files found',
-    emptyMessage: 'No grabbed-file data available.',
-    label: () => 'grabbed files',
+    noun: 'grabbed file',
     matches: (e, q) =>
       e.collection.toLowerCase().includes(q) ||
       e.name.toLowerCase().includes(q) ||
       e.relativePath.toLowerCase().includes(q) ||
       e.extension.toLowerCase().includes(q),
-    stats: (data) => {
-      const cached = data.stats || { highValueCount: 0, fileGrabberCount: 0, extensionCount: 0, totalSizeDisplay: '-' };
+    // Counted over the filtered rows on screen, not the whole dataset.
+    stats: (data, filtered) => {
+      const extensions = new Set();
+      let highValue = 0, fileGrabber = 0, totalBytes = 0;
+      for (const entry of filtered) {
+        if (entry.isHighValue) highValue++;
+        if (entry.collection === 'FileGrabber') fileGrabber++;
+        if (entry.extension) extensions.add(entry.extension);
+        totalBytes += entry.sizeBytes || 0;
+      }
       return [
-        { value: cached.highValueCount.toLocaleString(), label: 'High-Value Files' },
-        { value: cached.fileGrabberCount.toLocaleString(), label: 'FileGrabber' },
-        { value: cached.extensionCount.toLocaleString(), label: 'File Types' },
-        { value: escapeHtml(cached.totalSizeDisplay), label: 'Total Size' },
+        { value: highValue.toLocaleString(), label: 'High-value files' },
+        { value: fileGrabber.toLocaleString(), label: 'FileGrabber' },
+        { value: extensions.size.toLocaleString(), label: 'File types' },
+        { value: escapeHtml(formatBytes(totalBytes)), label: 'Total size' },
       ];
     },
     prelude: (data) => {
       const cached = data.stats || {};
       if (!cached.highValueCount) return '';
-      const chips = (cached.highValueBreakdown || []).map(({ label, count }) => `<span class="dash-ioc-family">${escapeHtml(label)} ${count}</span>`).join(' ');
-      return `<div class="data-page-warning"><div class="data-page-warning-title">${cached.highValueCount.toLocaleString()} high-value file(s) grabbed</div><div class="data-page-warning-more">Password databases, wallet files, VPN profiles, or SSH keys were collected.</div>${chips ? `<div class="identity-service-tags">${chips}</div>` : ''}</div>`;
+      const chips = (cached.highValueBreakdown || []).map(({ label, count }) => `<span class="dash-ioc-family">${escapeHtml(label)} ${count.toLocaleString()}</span>`).join(' ');
+      return `<div class="data-page-warning"><div class="data-page-warning-title">${countLabel(cached.highValueCount, 'high-value file')} grabbed</div><div class="data-page-warning-more">Password databases, wallet files, VPN profiles, or SSH keys were collected.</div>${chips ? `<div class="identity-service-tags">${chips}</div>` : ''}</div>`;
     },
-    columns: ['Collection', 'Name', 'Path', 'Ext', 'Size', 'Modified', 'Actions'],
-    // Size and Modified sort on the raw byte count and Date, not their labels.
-    sortAccessors: [(e) => e.collection, (e) => e.name, (e) => e.relativePath, (e) => e.extension, (e) => e.sizeBytes, (e) => e.modifiedDate, null],
-    rowBuilder: grabbedFileRowBuilder,
-    csv: {
-      file: 'grabbed_files.csv',
-      headers: ['Collection', 'Name', 'High Value', 'Path', 'Extension', 'Size Bytes', 'Modified', 'Source'],
-      row: (entry) => [entry.collection, entry.name, entry.highValue || '', entry.relativePath, entry.extension, entry.sizeBytes, formatOptionalDate(entry.modifiedDate), entry.source],
-    },
+    csvFile: 'grabbed_files.csv',
+    columns: [
+      { label: 'Collection', csv: 'Collection', value: (e) => e.collection },
+      {
+        label: 'Name', csv: 'Name', value: (e) => e.name,
+        cell: ({ name, isHighValue, highValue }) =>
+          `<td title="${escapeHtml(name)}">${escapeHtml(name)}${isHighValue ? ` <span class="dash-ioc-family">${escapeHtml(highValue)}</span>` : ''}</td>`,
+      },
+      { csv: 'High Value', value: (e) => e.highValue },
+      { label: 'Path', csv: 'Path', value: (e) => e.relativePath, cell: fullCell((e) => e.relativePath) },
+      { label: 'Ext', csv: 'Extension', value: (e) => e.extension },
+      // Size and Modified sort on the raw byte count and Date, not their labels.
+      {
+        label: 'Size', csv: 'Size Bytes', value: (e) => e.sizeDisplay,
+        csvValue: (e) => e.sizeBytes, sort: (e) => e.sizeBytes,
+      },
+      {
+        label: 'Modified', csv: 'Modified',
+        value: (e) => formatOptionalDate(e.modifiedDate),
+        sort: (e) => e.modifiedDate,
+        cell: ({ modifiedDate }) => {
+          const modified = formatOptionalDate(modifiedDate);
+          return `<td>${modified ? escapeHtml(modified) : EMPTY_CELL}</td>`;
+        },
+      },
+      {
+        label: 'Actions',
+        cell: (entry, index) => `<td><button class="table-action-btn" data-grabbed-view="${index}">View</button></td>`,
+      },
+      { csv: 'Source', value: (e) => e.source },
+    ],
   },
 
   screenshots: {
     navId: 'navScreenshots',
-    emptyData: () => ({ entries: [], totalBytes: 0 }),
-    emptySummary: 'No screenshots found',
-    emptyMessage: 'No screenshots available.',
-    label: () => 'screenshots',
+    emptyData: () => ({ entries: [] }),
+    noun: 'screenshot',
     matches: (e, q) =>
       e.name.toLowerCase().includes(q) ||
       e.path.toLowerCase().includes(q) ||
       `${e.width || ''}x${e.height || ''}`.toLowerCase().includes(q),
-    stats: (data) => {
-      const knownDimensions = data.entries.filter(entry => entry.width && entry.height).length;
-      const largest = data.entries.reduce((max, entry) => !max || entry.sizeBytes > max.sizeBytes ? entry : max, null);
-      const highestResolution = data.entries.reduce((max, entry) => {
+    // Counted over the filtered cards on screen, not the whole dataset.
+    stats: (data, filtered) => {
+      const knownDimensions = filtered.filter(entry => entry.width && entry.height).length;
+      const largest = filtered.reduce((max, entry) => !max || entry.sizeBytes > max.sizeBytes ? entry : max, null);
+      const highestResolution = filtered.reduce((max, entry) => {
         const area = (entry.width || 0) * (entry.height || 0);
         const maxArea = max ? (max.width || 0) * (max.height || 0) : 0;
         return area > maxArea ? entry : max;
       }, null);
       return [
-        { value: data.entries.length.toLocaleString(), label: 'Images' },
-        { value: knownDimensions.toLocaleString(), label: 'With Dimensions' },
-        { value: escapeHtml(formatBytes(data.totalBytes)), label: 'Total Size' },
+        { value: filtered.length.toLocaleString(), label: 'Images' },
+        { value: knownDimensions.toLocaleString(), label: 'With dimensions' },
+        { value: escapeHtml(formatBytes(filtered.reduce((sum, entry) => sum + (entry.sizeBytes || 0), 0))), label: 'Total size' },
         {
           value: escapeHtml(highestResolution && highestResolution.width ? `${highestResolution.width}\u00d7${highestResolution.height}` : (largest ? largest.sizeDisplay : '-')),
-          label: highestResolution && highestResolution.width ? 'Top Resolution' : 'Largest File',
+          label: highestResolution && highestResolution.width ? 'Top resolution' : 'Largest file',
         },
       ];
     },
     gridClass: 'screenshot-grid',
-    rowBuilder: screenshotCardBuilder,
+    card: screenshotCardBuilder,
     onReset: (data) => revokeScreenshotUrls(data),
-    csv: {
-      file: 'screenshots.csv',
-      headers: ['Name', 'Path', 'Width', 'Height', 'Size Bytes'],
-      row: ({ name, path, width, height, sizeBytes }) => [name, path, width || '', height || '', sizeBytes],
-    },
+    csvFile: 'screenshots.csv',
+    // Cards, not a table, so every column here is export-only.
+    columns: [
+      { csv: 'Name', value: (e) => e.name },
+      { csv: 'Path', value: (e) => e.path },
+      { csv: 'Width', value: (e) => e.width },
+      { csv: 'Height', value: (e) => e.height },
+      { csv: 'Size Bytes', value: (e) => e.sizeBytes },
+    ],
   },
 
   software: {
     navId: 'navSoftware',
     emptyData: () => ({ entries: [], fileCount: 0 }),
-    emptySummary: 'No software data found',
-    emptyMessage: 'No software data available.',
-    label: (data) => `programs from ${data.fileCount} file(s)`,
+    noun: 'program',
     matches: (e, q) => e.name.toLowerCase().includes(q) || (e.version && e.version.toLowerCase().includes(q)),
     // Counted over the filtered rows on screen, not the whole dataset.
     stats: (data, filtered) => [
-      { value: filtered.filter(entry => /(anydesk|teamviewer|rustdesk|supremo|parsec|mobaxtterm|ultraviewer|vnc|remote desktop)/i.test(entry.name)).length.toLocaleString(), label: 'Remote Tools' },
-      { value: filtered.filter(entry => /(metamask|bitwarden|keepass|exodus|phantom|atomic wallet|electrum|ledger live)/i.test(entry.name)).length.toLocaleString(), label: 'Wallet / Vault Apps' },
+      { value: filtered.filter(entry => /(anydesk|teamviewer|rustdesk|supremo|parsec|mobaxtterm|ultraviewer|vnc|remote desktop)/i.test(entry.name)).length.toLocaleString(), label: 'Remote tools' },
+      { value: filtered.filter(entry => /(metamask|bitwarden|keepass|exodus|phantom|atomic wallet|electrum|ledger live)/i.test(entry.name)).length.toLocaleString(), label: 'Wallet / vault apps' },
       { value: filtered.filter(entry => /(chrome|edge|firefox|opera|brave|vivaldi|chromium)/i.test(entry.name)).length.toLocaleString(), label: 'Browsers' },
-      { value: filtered.filter(entry => /(python|visual studio|code|git|docker|node\.js|java|composer|npm)/i.test(entry.name)).length.toLocaleString(), label: 'Developer Tools' },
+      { value: filtered.filter(entry => /(python|visual studio|code|git|docker|node\.js|java|composer|npm)/i.test(entry.name)).length.toLocaleString(), label: 'Developer tools' },
     ],
-    columns: ['Software Name', 'Version'],
-    sortAccessors: [(e) => e.name, (e) => e.version],
-    rowBuilder: softwareRowBuilder,
     onReset: () => { softwareSlots = { inline: null, file: null }; },
-    csv: {
-      file: 'software.csv',
-      headers: ['Software Name', 'Version'],
-      row: ({ name, version }) => [name, version || ''],
-    },
+    csvFile: 'software.csv',
+    columns: [
+      { label: 'Software Name', csv: 'Software Name', value: (e) => e.name, cell: fullCell((e) => e.name) },
+      { label: 'Version', csv: 'Version', value: (e) => e.version },
+    ],
   },
 
   processes: {
     navId: 'navProcesses',
     emptyData: () => ({ entries: [], fileCount: 0 }),
-    emptySummary: 'No process data found',
-    emptyMessage: 'No process data available.',
-    label: (data) => `processes from ${data.fileCount} file(s)`,
+    noun: 'process', nounPlural: 'processes',
     matches: (e, q) =>
       e.name.toLowerCase().includes(q) ||
       String(e.pid || '').includes(q) ||
@@ -292,38 +381,50 @@ const pages = {
     // Counted over the filtered rows on screen, not the whole dataset.
     stats: (data, filtered) => [
       { value: filtered.filter(entry => /(chrome|edge|firefox|opera|brave|vivaldi|iexplore|msedge)/i.test(entry.name)).length.toLocaleString(), label: 'Browsers' },
-      { value: filtered.filter(entry => /(anydesk|teamviewer|rustdesk|parsec|mobaxtterm|mstsc|vnc)/i.test(entry.name) || /(anydesk|teamviewer|rustdesk|parsec|mobaxtterm|mstsc|vnc)/i.test(entry.commandLine || '')).length.toLocaleString(), label: 'Remote Access' },
-      { value: filtered.filter(entry => /(defender|avast|kaspersky|mcafee|crowdstrike|sentinel|eset|norton|bitdefender)/i.test(entry.name)).length.toLocaleString(), label: 'Security Tools' },
-      { value: filtered.filter(entry => entry.commandLine).length.toLocaleString(), label: 'With Command Line' },
+      { value: filtered.filter(entry => /(anydesk|teamviewer|rustdesk|parsec|mobaxtterm|mstsc|vnc)/i.test(entry.name) || /(anydesk|teamviewer|rustdesk|parsec|mobaxtterm|mstsc|vnc)/i.test(entry.commandLine || '')).length.toLocaleString(), label: 'Remote access' },
+      { value: filtered.filter(entry => /(defender|avast|kaspersky|mcafee|crowdstrike|sentinel|eset|norton|bitdefender)/i.test(entry.name)).length.toLocaleString(), label: 'Security tools' },
+      { value: filtered.filter(entry => entry.commandLine).length.toLocaleString(), label: 'With command line' },
     ],
-    columns: ['Process Name', 'PID', 'Session', 'Command Line'],
-    sortAccessors: [(e) => e.name, (e) => (e.pid ? Number(e.pid) : null), (e) => e.sessionId, (e) => e.commandLine],
-    rowBuilder: processRowBuilder,
     onReset: () => { processListSlots = { inline: null, file: null }; },
-    csv: {
-      file: 'processes.csv',
-      headers: ['Process Name', 'PID', 'Session ID', 'Command Line'],
-      row: ({ name, pid, sessionId, commandLine }) => [name, pid || '', sessionId || '', commandLine || ''],
-    },
+    csvFile: 'processes.csv',
+    columns: [
+      { label: 'Process Name', csv: 'Process Name', value: (e) => e.name, cell: fullCell((e) => e.name) },
+      { label: 'PID', csv: 'PID', value: (e) => e.pid, sort: (e) => (e.pid ? Number(e.pid) : null) },
+      { label: 'Session', csv: 'Session ID', value: (e) => e.sessionId },
+      {
+        label: 'Command Line', csv: 'Command Line', value: (e) => e.commandLine,
+        cell: ({ commandLine }) =>
+          `<td title="${escapeHtml(commandLine || '')}">${escapeHtml(truncateText(commandLine || '', 120))}</td>`,
+      },
+    ],
   },
 };
 
+// A column orders by its own value unless it declared something else to order
+// by; `sort: null` opts out, which is what an Actions cell has to do.
+function sortAccessor(column) {
+  return column.sort === undefined ? column.value : column.sort;
+}
+
+// The key is the column's position in the page's full list, so it survives a
+// column being dropped from the table for holding nothing.
 for (const page of Object.values(pages)) {
   page.data = page.emptyData();
   page.filtered = [];
   page.shown = 0;
-  // Sortable only where the page declared an accessor for that column: an
-  // Actions cell has nothing to order by.
+  page.renderRow = page.card || (() => '');
   page.sort = createTableSort((key) => {
     const match = /^col(\d+)$/.exec(key);
-    return match ? (page.sortAccessors?.[Number(match[1])] || null) : null;
+    if (!match) return null;
+    const column = page.columns[Number(match[1])];
+    return column?.label ? sortAccessor(column) : null;
   });
 }
 
 const pageRegistry = createPagedCollectionRegistry(Object.fromEntries(
   Object.entries(pages).map(([pageId, page]) => [pageId, {
     navId: page.navId,
-    rowBuilder: page.rowBuilder,
+    rowBuilder: (entry, index) => page.renderRow(entry, index),
     getFiltered: () => page.filtered,
     getShown: () => page.shown,
     setShown: (value) => { page.shown = value; },
@@ -406,26 +507,7 @@ async function loadDownloadsData(fileTree, rootName) {
     }
   }
 
-  const extensionCounts = {};
-  let withSourceUrl = 0, withFileSize = 0, totalKnownBytes = 0, knownSizeCount = 0;
-  for (const entry of entries) {
-    if (entry.extension) extensionCounts[entry.extension] = (extensionCounts[entry.extension] || 0) + 1;
-    if (entry.sourceUrl) withSourceUrl++;
-    if (entry.fileSizeDisplay) withFileSize++;
-    if (entry.fileSizeBytes != null) { totalKnownBytes += entry.fileSizeBytes; knownSizeCount++; }
-  }
-  const topExt = Object.entries(extensionCounts).sort((a, b) => b[1] - a[1])[0];
-
-  pages.downloads.data = {
-    entries,
-    fileCount,
-    stats: {
-      withSourceUrl,
-      withFileSize,
-      topExtension: topExt ? topExt[0] : '-',
-      totalKnownSizeDisplay: knownSizeCount > 0 ? formatBytes(totalKnownBytes) : '-',
-    },
-  };
+  pages.downloads.data = { entries, fileCount };
 }
 
 async function loadDomainDetectionsData(fileTree, rootName) {
@@ -465,27 +547,17 @@ async function loadDomainDetectionsData(fileTree, rootName) {
     }
   }
 
-  const uniqueTargets = new Set();
-  const uniqueSections = new Set();
-  let labelledEntries = 0;
   const sectionCounts = {};
   for (const entry of entries) {
-    uniqueTargets.add(entry.target.toLowerCase());
-    uniqueSections.add(entry.section);
-    if (entry.label) labelledEntries++;
     sectionCounts[entry.section] = (sectionCounts[entry.section] || 0) + entry.count;
   }
-  const topSections = Object.entries(sectionCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
   pages.detections.data = {
     entries,
     fileCount,
     totalHits,
     stats: {
-      uniqueTargets: uniqueTargets.size,
-      uniqueSections: uniqueSections.size,
-      labelledEntries,
-      topSections,
+      topSections: Object.entries(sectionCounts).sort((a, b) => b[1] - a[1]).slice(0, 8),
     },
   };
 }
@@ -538,19 +610,15 @@ async function loadClipboardData(fileTree, rootName) {
     }
   }
 
-  let withUrls = 0, commandCount = 0, pathCount = 0, lureCount = 0;
   const lureCategories = {};
   for (const e of entries) {
-    if (e.urls) withUrls++;
-    if (e.type === 'Command') commandCount++;
-    if (e.type === 'Path') pathCount++;
-    if (e.lure) { lureCount++; lureCategories[e.lure] = (lureCategories[e.lure] || 0) + 1; }
+    if (e.lure) lureCategories[e.lure] = (lureCategories[e.lure] || 0) + 1;
   }
 
   pages.clipboard.data = {
     entries,
     fileCount,
-    stats: { withUrls, commandCount, pathCount, lureCount, lureCategories },
+    stats: { lureCategories },
   };
 }
 
@@ -577,23 +645,9 @@ async function loadGrabbedFilesData(fileTree, rootName) {
     || a.relativePath.localeCompare(b.relativePath));
   const { highValueCount, highValueBreakdown } = summariseGrabbedFiles(entries);
 
-  const extensions = new Set();
-  let fileGrabberCount = 0, totalBytes = 0;
-  for (const entry of entries) {
-    if (entry.collection === 'FileGrabber') fileGrabberCount++;
-    if (entry.extension) extensions.add(entry.extension);
-    totalBytes += entry.sizeBytes || 0;
-  }
-
   pages.grabbed.data = {
     entries,
-    stats: {
-      highValueCount,
-      highValueBreakdown,
-      fileGrabberCount,
-      extensionCount: extensions.size,
-      totalSizeDisplay: formatBytes(totalBytes),
-    },
+    stats: { highValueCount, highValueBreakdown },
   };
 }
 
@@ -604,12 +658,11 @@ async function loadScreenshotsData(fileTree, rootName) {
   collectHintedNodes(fileTree, '_screenshotHint', rootName, nodes);
 
   if (nodes.length === 0) {
-    pages.screenshots.data = { entries: [], totalBytes: 0 };
+    pages.screenshots.data = { entries: [] };
     return;
   }
 
   const entries = [];
-  let totalBytes = 0;
 
   for (const { node, path } of nodes) {
     try {
@@ -619,7 +672,6 @@ async function loadScreenshotsData(fileTree, rootName) {
       const blob = new Blob([content], { type: getImageMimeFromName(node.name) });
       const blobUrl = URL.createObjectURL(blob);
       const sizeBytes = node.size || content.byteLength || 0;
-      totalBytes += sizeBytes;
 
       entries.push({
         name: node.name,
@@ -646,56 +698,7 @@ async function loadScreenshotsData(fileTree, rootName) {
     });
   }
 
-  pages.screenshots.data = { entries, totalBytes };
-}
-
-// Row builders
-
-function downloadsRowBuilder({ filePath, sourceUrl, fileSizeDisplay, domain, extension }) {
-  return `<tr>
-    <td title="${escapeHtml(filePath)}">${escapeHtml(filePath)}</td>
-    <td title="${escapeHtml(sourceUrl)}">${escapeHtml(sourceUrl)}</td>
-    <td title="${escapeHtml(fileSizeDisplay || '')}">${escapeHtml(fileSizeDisplay || '')}</td>
-    <td>${escapeHtml(extension || '')}</td>
-    <td>${escapeHtml(domain || '')}</td>
-  </tr>`;
-}
-
-function detectionRowBuilder({ section, label, target, count }) {
-  return `<tr>
-    <td>${escapeHtml(section)}</td>
-    <td>${escapeHtml(label || '')}</td>
-    <td title="${escapeHtml(target)}">${escapeHtml(target)}</td>
-    <td>${count}</td>
-  </tr>`;
-}
-
-function clipboardRowBuilder({ type, preview, text, urls, lineCount, lure, source }) {
-  const lureChip = lure ? `<span class="dash-ioc-family">${escapeHtml(LURE_LABELS[lure] || lure)}</span>` : '';
-  return `<tr>
-    <td>${escapeHtml(type)}</td>
-    <td>${lureChip}</td>
-    <td title="${escapeHtml(text)}">${escapeHtml(preview)}</td>
-    <td title="${escapeHtml(urls)}">${escapeHtml(urls)}</td>
-    <td>${lineCount}</td>
-    <td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td>
-  </tr>`;
-}
-
-function grabbedFileRowBuilder(entry, index) {
-  const modified = formatOptionalDate(entry.modifiedDate);
-  const flag = entry.isHighValue ? ` <span class="dash-ioc-family">${escapeHtml(entry.highValue)}</span>` : '';
-  return `<tr>
-    <td>${escapeHtml(entry.collection)}</td>
-    <td title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}${flag}</td>
-    <td title="${escapeHtml(entry.relativePath)}">${escapeHtml(entry.relativePath)}</td>
-    <td>${escapeHtml(entry.extension || '')}</td>
-    <td>${escapeHtml(entry.sizeDisplay)}</td>
-    <td>${modified ? escapeHtml(modified) : '<span style="color:var(--text-muted)">&#8212;</span>'}</td>
-    <td>
-      <button class="table-action-btn" data-grabbed-view="${index}">View</button>
-    </td>
-  </tr>`;
+  pages.screenshots.data = { entries };
 }
 
 function screenshotCardBuilder(entry, index) {
@@ -712,29 +715,75 @@ function screenshotCardBuilder(entry, index) {
   </article>`;
 }
 
-function softwareRowBuilder({ name, version }) {
-  return `<tr><td title="${escapeHtml(name)}">${escapeHtml(name)}</td><td>${escapeHtml(version || '')}</td></tr>`;
-}
-
-function processRowBuilder({ name, pid, sessionId, commandLine }) {
-  return `<tr>
-    <td title="${escapeHtml(name)}">${escapeHtml(name)}</td>
-    <td>${pid ? escapeHtml(String(pid)) : ''}</td>
-    <td>${sessionId ? escapeHtml(String(sessionId)) : ''}</td>
-    <td title="${escapeHtml(commandLine || '')}">${escapeHtml(truncateText(commandLine || '', 120))}</td>
-  </tr>`;
-}
-
-function openScreenshotLightbox(entry) {
-  if (!entry || !entry.blobUrl) return;
-  const lightbox = document.createElement('div');
-  lightbox.className = 'screenshot-lightbox';
-  lightbox.innerHTML = `<img src="${entry.blobUrl}" alt="${escapeHtml(entry.name)}">`;
-  lightbox.addEventListener('click', () => lightbox.remove());
-  document.body.appendChild(lightbox);
+// The Overview shows the first screenshot too and opens this same viewer.
+// A click anywhere dismisses it, which is what the zoom-out cursor promises.
+export function openScreenshotLightbox(src, alt) {
+  if (!src) return;
+  const modal = openTransientModal(
+    `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt || 'Screenshot')}">`,
+    { label: alt || 'Screenshot' }
+  );
+  if (!modal) return;
+  modal.overlay.classList.add('screenshot-lightbox');
+  modal.overlay.addEventListener('click', () => modal.close());
 }
 
 // Rendering
+
+// A column no row in the dataset fills is noise, and it pushes the columns
+// that do carry evidence off the screen: half the process dumps record a name
+// and nothing else, and plenty of download dumps record a URL without ever
+// naming the file it landed in. The judgement is made over the whole dataset
+// rather than the rows currently on screen, so a search that happens to
+// exclude every row with a source URL does not take the column away with it.
+// Recomputed only when the dataset itself is replaced.
+function filledColumns(page) {
+  if (page.filledFor === page.data) return page.filled;
+
+  const filled = new Set();
+  let pending = [];
+  page.columns.forEach((column, index) => {
+    if (column.value) pending.push({ index, read: column.value });
+    else filled.add(index);
+  });
+
+  for (const entry of page.data.entries) {
+    if (pending.length === 0) break;
+    pending = pending.filter(({ index, read }) => {
+      const value = read(entry);
+      if (value == null || String(value).trim() === '') return true;
+      filled.add(index);
+      return false;
+    });
+  }
+
+  page.filled = filled;
+  page.filledFor = page.data;
+  return filled;
+}
+
+// The column being sorted on stays whatever it holds: having it disappear
+// under the analyst who just clicked it is worse than an empty column.
+function keptColumns(page) {
+  const filled = filledColumns(page);
+  const sorted = /^col(\d+)$/.exec(page.sort.key);
+  const sortedIndex = sorted ? Number(sorted[1]) : -1;
+  return page.columns
+    .map((column, index) => ({ column, index }))
+    .filter(({ index }) => filled.has(index) || index === sortedIndex);
+}
+
+function tableRowBuilder(columns) {
+  const cells = columns.map(({ column }) => column.cell || plainCell(column.value));
+  return (entry, index) => `<tr>${cells.map((cell) => cell(entry, index)).join('')}</tr>`;
+}
+
+function tableHtml(page, columns, rows) {
+  const headings = columns.map(({ column, index }) => (
+    sortAccessor(column) ? page.sort.th(`col${index}`, column.label) : `<th>${escapeHtml(column.label)}</th>`
+  )).join('');
+  return `<div class="data-table-container"><table class="data-table"><thead><tr>${headings}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 
 function statCardsHtml(cards) {
   return `
@@ -753,9 +802,9 @@ function renderPage(pageId, searchQuery = '') {
   const { data } = page;
 
   if (data.entries.length === 0) {
-    summary.textContent = page.emptySummary;
+    summary.textContent = '';
     stats.innerHTML = '';
-    content.innerHTML = `<div class="no-data">${page.emptyMessage}</div>`;
+    content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT[pageId]}</div>`;
     return;
   }
 
@@ -768,22 +817,33 @@ function renderPage(pageId, searchQuery = '') {
   page.filtered = filtered;
   page.shown = Math.min(PAGE_SIZE, filtered.length);
 
-  const label = page.label(data);
-  summary.textContent = filtered.length !== data.entries.length
-    ? `Showing ${filtered.length.toLocaleString()} of ${data.entries.length.toLocaleString()} ${label}`
-    : `${data.entries.length.toLocaleString()} ${label}`;
+  summary.textContent = datasetSummary({
+    shown: filtered.length,
+    total: data.entries.length,
+    singular: page.noun,
+    plural: page.nounPlural,
+    fileCount: data.fileCount,
+  });
+
+  // Rendering the table anyway would leave bare column headings — or, on the
+  // screenshot grid, nothing at all — which reads as a failed load. The stat
+  // tiles go with it: a row of zeroes adds nothing to the message above it.
+  if (filtered.length === 0) {
+    stats.innerHTML = '';
+    content.innerHTML = buildNoMatchesHtml(page.nounPlural || `${page.noun}s`);
+    return;
+  }
 
   stats.innerHTML = statCardsHtml(page.stats(data, filtered));
 
-  const rows = buildRowsHtml(page.rowBuilder, filtered, 0, page.shown);
+  const tableColumns = page.card ? [] : keptColumns(page).filter(({ column }) => column.label);
+  page.renderRow = page.card || tableRowBuilder(tableColumns);
+
+  const rows = buildRowsHtml(page.renderRow, filtered, 0, page.shown);
   let html = page.prelude ? page.prelude(data) : '';
   html += page.gridClass
     ? `<div class="${page.gridClass}">${rows}</div>`
-    : '<div class="data-table-container"><table class="data-table">'
-      + `<thead><tr>${page.columns.map((column, index) => (
-          page.sortAccessors?.[index] ? page.sort.th(`col${index}`, column) : `<th>${escapeHtml(column)}</th>`
-        )).join('')}</tr></thead>`
-      + `<tbody>${rows}</tbody></table></div>`;
+    : tableHtml(page, tableColumns, rows);
 
   const remaining = filtered.length - page.shown;
   if (remaining > 0) html += buildShowMoreButton(remaining, pageId);
@@ -911,7 +971,7 @@ export function initActivityPages() {
         (q) => renderPage(pageId, q || searchInputs[pageId]?.value || ''),
       ])
     ),
-    openScreenshotLightbox,
+    openScreenshotLightbox: (entry) => openScreenshotLightbox(entry?.blobUrl, entry?.name),
     getScreenshotsFiltered: () => pages.screenshots.filtered,
     resetSearches: () => {
       for (const input of Object.values(searchInputs)) {
