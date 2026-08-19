@@ -25,6 +25,8 @@ import {
   getColumnMappingFileType,
   parseStructuredFile,
 } from './structuredTransforms.js';
+import { openTransientModal, hasUsableColumns } from '../pages/shared.js';
+import { openModal, closeModal, topModal } from '../core/modal.js';
 
 let elOverlay;
 let elBody;
@@ -703,7 +705,7 @@ function renderCSVTable(parsed, showAll) {
 // Transform buttons
 
 function clearTransformButtons() {
-  const btns = elActions.querySelectorAll('.preview-btn-transform, .preview-btn-try-transform, .preview-btn-back-text, .preview-btn-download-csv');
+  const btns = elActions.querySelectorAll('.preview-btn-transform, .preview-btn-try-transform');
   btns.forEach(b => b.remove());
 }
 
@@ -725,11 +727,11 @@ function addTransformButton(prominent) {
   clearTransformButtons();
   const btn = document.createElement('button');
   btn.className = `preview-btn ${prominent ? 'preview-btn-transform' : 'preview-btn-try-transform'}`;
-  btn.textContent = prominent ? 'Transform to CSV' : 'Try Transform';
+  btn.textContent = prominent ? 'Transform to CSV' : 'Try transform';
   btn.addEventListener('click', () => {
     if (!currentParsedData && currentDecodedText != null) {
       const parsed = parsePreviewText(currentDecodedText, currentNode);
-      if (parsed && parsed.rows.length > 0) {
+      if (hasUsableColumns(parsed)) {
         currentParsedData = parsed;
       } else {
         showPreviewNotice('No structured data detected in this file.');
@@ -779,7 +781,7 @@ function showCSVView(showAll) {
       if (!config || currentNode !== activeNode) return;
 
       const parsed = parsePreviewText(currentDecodedText, currentNode, config);
-      if (!parsed || parsed.rows.length === 0) {
+      if (!hasUsableColumns(parsed)) {
         showPreviewNotice('Mapping produced no rows — not applied. Previous columns kept.');
         return;
       }
