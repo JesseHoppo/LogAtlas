@@ -33,12 +33,6 @@ const IMAGE_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'ico', 'svg',
 ]);
 
-const OFFICE_PREVIEW_EXTENSIONS = new Set([
-  'docx', 'docm', 'dotx', 'dotm',
-  'xlsx', 'xlsm', 'xltx', 'xltm',
-  'pptx', 'pptm', 'potx', 'potm',
-]);
-
 const JUNK_FILES = new Set([
   '.ds_store', 'thumbs.db', 'desktop.ini',
 ]);
@@ -74,11 +68,6 @@ function isTextFile(name) {
 
 function isImageFile(name) {
   return IMAGE_EXTENSIONS.has(getFileExtension(name));
-}
-
-function isPreviewable(name) {
-  const ext = getFileExtension(name);
-  return TEXT_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext) || ext === 'pdf' || OFFICE_PREVIEW_EXTENSIONS.has(ext);
 }
 
 // Quick check if raw bytes look like text (samples the leading window).
@@ -196,7 +185,6 @@ export {
   isArchiveFile,
   isTextFile,
   isImageFile,
-  isPreviewable,
   isJunkFile,
   isMacOSMetadata,
   getFileIcon,
