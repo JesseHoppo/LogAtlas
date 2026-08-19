@@ -262,14 +262,14 @@ function renderHistoryPage(searchQuery = '') {
   if (historyData.entries.length === 0) {
     historyFiltered = [];
     historyShown = 0;
-    summary.textContent = 'No history found';
-    summary.parentNode?.querySelector('.mapper-adjust-btn')?.remove();
+    summary.textContent = '';
+    addAdjustColumnsBtn(summary, '_historyHint', 'history');
     stats.innerHTML = '';
-    content.innerHTML = '<div class="no-data">No history data available.</div>';
+    content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.history}</div>`;
     return;
   }
 
-  let filtered = [...historyData.entries];
+  let filtered = historyData.entries;
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(e => e.url.toLowerCase().includes(q) || e.title.toLowerCase().includes(q) || e.lastVisit.toLowerCase().includes(q));
@@ -278,18 +278,26 @@ function renderHistoryPage(searchQuery = '') {
   historyFiltered = historySort.apply(filtered);
   historyShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const cached = historyData.stats || { topDomains: [], uniqueDomains: 0, mostRecentDate: null };
-  const topDomains = cached.topDomains;
-
-  summary.textContent = filtered.length !== historyData.entries.length
-    ? `Showing ${filtered.length.toLocaleString()} of ${historyData.entries.length.toLocaleString()} entries from ${historyData.fileCount} file(s)`
-    : `${historyData.entries.length.toLocaleString()} entries from ${historyData.fileCount} file(s)`;
-
+  summary.textContent = datasetSummary({ shown: filtered.length, total: historyData.entries.length, singular: 'entry', plural: 'entries', fileCount: historyData.fileCount }) + historyClockNote();
   addAdjustColumnsBtn(summary, '_historyHint', 'history');
 
+  if (filtered.length === 0) {
+    stats.innerHTML = '';
+    content.innerHTML = buildNoMatchesHtml('history entries');
+    return;
+  }
+
+  // Tiles and the domain bars count the rows on screen, not the whole dataset.
+  // The unfiltered pass is the one kept from load time: a full history runs to
+  // tens of thousands of rows and this walks every URL.
+  const cached = filtered.length === historyData.entries.length
+    ? (historyData.stats || { topDomains: [], uniqueDomains: 0, mostRecentDate: null, mostRecentRaw: '' })
+    : historyStats(filtered);
+  const topDomains = cached.topDomains;
+
   stats.innerHTML = `
-    <div class="data-page-stat"><div class="data-page-stat-value">${cached.uniqueDomains.toLocaleString()}</div><div class="data-page-stat-label">Unique Domains</div></div>
-    ${cached.mostRecentDate ? `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:0.95rem">${escapeHtml(formatDateTimeLabel(cached.mostRecentDate))}</div><div class="data-page-stat-label">Most Recent Visit</div></div>` : ''}
+    <div class="data-page-stat"><div class="data-page-stat-value">${cached.uniqueDomains.toLocaleString()}</div><div class="data-page-stat-label">Unique domains</div></div>
+    ${cached.mostRecentDate ? `<div class="data-page-stat"><div class="data-page-stat-value" style="font-size:0.95rem">${escapeHtml(historyVisitLabel(cached.mostRecentRaw, cached.mostRecentDate))}</div><div class="data-page-stat-label">Most recent visit${historyClockKnown() ? '' : ' (log clock)'}</div></div>` : ''}
   `;
 
   let html = '';
@@ -326,9 +334,9 @@ function renderBookmarksPage(searchQuery = '') {
   if (bookmarksData.entries.length === 0) {
     bookmarksFiltered = [];
     bookmarksShown = 0;
-    summary.textContent = 'No bookmarks found';
+    summary.textContent = '';
     stats.innerHTML = '';
-    content.innerHTML = '<div class="no-data">No bookmark data available.</div>';
+    content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.bookmarks}</div>`;
     return;
   }
 
@@ -341,19 +349,23 @@ function renderBookmarksPage(searchQuery = '') {
   bookmarksFiltered = bookmarksSort.apply(filtered);
   bookmarksShown = Math.min(PAGE_SIZE, filtered.length);
 
-  const uniqueDomains = new Set(bookmarksData.entries.map(entry => entry.domain).filter(Boolean));
-  const withTitles = bookmarksData.entries.filter(entry => entry.title).length;
-  const withFolders = bookmarksData.entries.filter(entry => entry.folder).length;
-  const browsers = new Set(bookmarksData.entries.map(entry => entry.browser).filter(Boolean));
+  summary.textContent = datasetSummary({ shown: filtered.length, total: bookmarksData.entries.length, singular: 'bookmark', fileCount: bookmarksData.fileCount });
 
-  summary.textContent = filtered.length !== bookmarksData.entries.length
-    ? `Showing ${filtered.length.toLocaleString()} of ${bookmarksData.entries.length.toLocaleString()} bookmarks from ${bookmarksData.fileCount} file(s)`
-    : `${bookmarksData.entries.length.toLocaleString()} bookmarks from ${bookmarksData.fileCount} file(s)`;
+  if (filtered.length === 0) {
+    stats.innerHTML = '';
+    content.innerHTML = buildNoMatchesHtml('bookmarks');
+    return;
+  }
+
+  const uniqueDomains = new Set(filtered.map(entry => entry.domain).filter(Boolean));
+  const withTitles = filtered.filter(entry => entry.title).length;
+  const withFolders = filtered.filter(entry => entry.folder).length;
+  const browsers = new Set(filtered.map(entry => entry.browser).filter(Boolean));
 
   stats.innerHTML = `
-    <div class="data-page-stat"><div class="data-page-stat-value">${uniqueDomains.size.toLocaleString()}</div><div class="data-page-stat-label">Unique Domains</div></div>
-    <div class="data-page-stat"><div class="data-page-stat-value">${withTitles.toLocaleString()}</div><div class="data-page-stat-label">With Title</div></div>
-    <div class="data-page-stat"><div class="data-page-stat-value">${withFolders.toLocaleString()}</div><div class="data-page-stat-label">With Folder</div></div>
+    <div class="data-page-stat"><div class="data-page-stat-value">${uniqueDomains.size.toLocaleString()}</div><div class="data-page-stat-label">Unique domains</div></div>
+    <div class="data-page-stat"><div class="data-page-stat-value">${withTitles.toLocaleString()}</div><div class="data-page-stat-label">With title</div></div>
+    <div class="data-page-stat"><div class="data-page-stat-value">${withFolders.toLocaleString()}</div><div class="data-page-stat-label">With folder</div></div>
     <div class="data-page-stat"><div class="data-page-stat-value">${browsers.size.toLocaleString()}</div><div class="data-page-stat-label">Browsers</div></div>
   `;
 
