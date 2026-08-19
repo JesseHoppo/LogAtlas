@@ -9,16 +9,28 @@ import {
   downloadBlob,
   copyToClipboard,
   baseDomainFromUrl,
+  extractDomain,
   randomPassword,
   showNotification as notify,
 } from '../core/shared.js';
 import {
   buildCsvText,
   downloadCsvRows,
-  formatDateTimeLabel,
+  captureProvenance,
+  countLabel,
+  formatBytes,
+  formatInstantLabel,
+  getImageMimeFromName,
+  maskValue,
+  openTransientModal,
   shapeCookiesCsv,
   shapeNotesCsv,
 } from '../pages/shared.js';
+import {
+  areCategoriesLoaded,
+  classifySiteDomain,
+  getCategoryLabel,
+} from '../core/domainCategories.js';
 import {
   getPasswordsData,
   getCookiesData,
@@ -72,13 +84,15 @@ function collectAllDatasets() {
     grabbedFiles: getGrabbedFilesData(),
     cards: getCreditCardsData(),
     screenshots: getScreenshotsData(),
+    software: getSoftwareData(),
+    processes: getProcessesData(),
   };
 }
 
-function maskPassword(pw) {
-  if (!pw || pw.length === 0) return '****';
-  if (pw.length <= 2) return '****';
-  return pw[0] + '*'.repeat(Math.min(pw.length - 2, 6)) + pw[pw.length - 1];
+// Credentials and cookies are row-shaped, everything else entry-shaped; the
+// package is worth writing if any one of them holds something.
+function hasAnyDataset(datasets) {
+  return Object.values(datasets).some((set) => (set?.rows?.length || set?.entries?.length || 0) > 0);
 }
 
 // Obfuscated Credentials CSV
@@ -94,9 +108,9 @@ function exportObfuscatedCredentials() {
 
   // The page rows are already one row per site + username + password.
   downloadCsvRows('credentials_obfuscated.csv', data.headers, data.rows.map(({ row }) =>
-    row.map((cell, index) => (index === passIdx ? maskPassword(cell) : cell))
+    row.map((cell, index) => (index === passIdx ? maskValue(cell) : cell))
   ));
-  notify(`Exported ${data.rows.length} credential rows (passwords masked).`);
+  notify(`Downloaded ${countLabel(data.rows.length, 'credential row')} (passwords masked).`);
 }
 
 // Log Summary Report (HTML)
