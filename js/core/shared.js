@@ -542,7 +542,9 @@ function dedupeDomainKey(url) {
 }
 
 function inferBrowserFromPath(pathText) {
-  const value = String(pathText || '');
+  // `Cookies_Chrome_Default.txt` joins the browser to its neighbours with `_`,
+  // a word character, so the word boundaries never fire on the raw path.
+  const value = String(pathText || '').replace(/_/g, ' ');
   for (const { pattern, label } of BROWSER_PATH_PATTERNS) {
     if (pattern.test(value)) return label;
   }
