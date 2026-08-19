@@ -66,11 +66,14 @@ function buildCreditCardRowsFromBlocks(clean) {
     const year = record.year || record['exp year'] || record['expiry year'] || '';
     const nameOnCard = record.nameoncard || record['name on card'] || record.cardholder || record['card holder'] || record.name || record.holder || '';
     const cvc = record.cvc || record.cvv || record.securitycode || record['security code'] || '';
-    const expiration = record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || buildExpirationValue(month, year);
+    const expiration = record.expiration || record.expirationdate || record['expiration date'] || record.expiry || record.expires || record.expire || record.date || buildExpirationValue(month, year);
     const filePath = record.filepath || record['file path'] || record.path || record.target || '';
 
     const pan = isPanLength(cardNumber) ? cardNumber : '';
-    if (!pan && !expiration && !nameOnCard && !cvc && !filePath) continue;
+    // A stored PAN the stealer could not decrypt still describes a card, so the
+    // number field counts even when it is unreadable. A holder name and a file
+    // path on their own do not — that is a grabbed file, not a card.
+    if (!cardNumber && !expiration && !cvc) continue;
     rows.push([pan, nameOnCard, cvc, expiration, filePath]);
   }
 
