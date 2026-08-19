@@ -3375,6 +3375,22 @@ body {
 }
 
 /* Timeline page */
+
+/* One hue per category, declared once and read by both the filter chip's dot
+   and the event dot in the track, so the key cannot give two answers for the
+   same category. Categories are dots, never fills: a fill has to stay legible
+   under the chip label, which forces every hue to double as a 4.5:1 background
+   and drives the palette away from the dots it is meant to mirror. */
+.timeline-filters,
+.timeline-track {
+  --cat-stealer: var(--text-secondary);
+  --cat-file: var(--text-muted);
+  --cat-cookie: var(--warning);
+  --cat-history: var(--zip-color);
+  --cat-notes: var(--teal);
+  --cat-screenshots: var(--info);
+}
+
 .timeline-filters {
   display: flex;
   gap: 0.5rem;
@@ -3383,6 +3399,9 @@ body {
 }
 
 .timeline-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.3rem 0.7rem;
   font-family: var(--font-mono);
   font-size: 0.7rem;
@@ -3395,33 +3414,39 @@ body {
   transition: all 0.15s ease;
 }
 
+.timeline-filter-btn::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--cat, var(--border));
+}
+
 .timeline-filter-btn:hover {
   border-color: var(--border-strong);
 }
 
-/* Active fills mirror the event dot of the same category. The base rule
-   carries a fill of its own so a category without one still reads. */
+/* Active is one treatment for every category — the chip says on or off, the
+   dot says which category. Ink rather than the accent fill: ink flips with the
+   theme and clears 4.5:1 under the label either way, which none of the
+   category hues manage. */
 .timeline-filter-btn.active {
-  background: var(--accent);
-  color: var(--text-on-accent);
+  background: var(--text-primary);
+  color: var(--bg-primary);
   border-color: transparent;
 }
 
-/* Ink flips with the theme; a mid-grey fill leaves the label unreadable
-   against light text in dark mode. */
-.timeline-filter-btn[data-cat="stealer"].active,
-.timeline-filter-btn[data-cat="file"].active {
-  background: var(--text-primary);
-  color: var(--bg-primary);
+.timeline-filter-btn.active::before {
+  box-shadow: 0 0 0 1px var(--bg-primary);
 }
 
-.timeline-filter-btn[data-cat="cookie"].active {
-  background: var(--warning);
-}
-
-.timeline-filter-btn[data-cat="history"].active {
-  background: var(--zip-color);
-}
+.timeline-filter-btn[data-cat="stealer"] { --cat: var(--cat-stealer); }
+.timeline-filter-btn[data-cat="file"] { --cat: var(--cat-file); }
+.timeline-filter-btn[data-cat="cookie"] { --cat: var(--cat-cookie); }
+.timeline-filter-btn[data-cat="history"] { --cat: var(--cat-history); }
+.timeline-filter-btn[data-cat="notes"] { --cat: var(--cat-notes); }
+.timeline-filter-btn[data-cat="screenshots"] { --cat: var(--cat-screenshots); }
 
 .timeline-track {
   position: relative;
@@ -3465,30 +3490,17 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--border);
+  background: var(--cat, var(--border));
   border: 2px solid var(--bg-primary);
-  box-shadow: 0 0 0 2px var(--border);
+  box-shadow: 0 0 0 2px var(--cat, var(--border));
 }
 
-.timeline-event.tl-stealer::before {
-  background: var(--text-secondary);
-  box-shadow: 0 0 0 2px var(--text-secondary);
-}
-
-.timeline-event.tl-file::before {
-  background: var(--text-muted);
-  box-shadow: 0 0 0 2px var(--text-muted);
-}
-
-.timeline-event.tl-cookie::before {
-  background: var(--warning);
-  box-shadow: 0 0 0 2px var(--warning);
-}
-
-.timeline-event.tl-history::before {
-  background: var(--zip-color);
-  box-shadow: 0 0 0 2px var(--zip-color);
-}
+.timeline-event.tl-stealer { --cat: var(--cat-stealer); }
+.timeline-event.tl-file { --cat: var(--cat-file); }
+.timeline-event.tl-cookie { --cat: var(--cat-cookie); }
+.timeline-event.tl-history { --cat: var(--cat-history); }
+.timeline-event.tl-notes { --cat: var(--cat-notes); }
+.timeline-event.tl-screenshots { --cat: var(--cat-screenshots); }
 
 .timeline-event-header {
   display: flex;
