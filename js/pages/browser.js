@@ -126,36 +126,64 @@ async function loadHistoryData(fileTree, rootName) {
           const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
           if (!url) continue;
           const lastVisit = lastIdx >= 0 ? (row[lastIdx] || '').trim() : '';
+          // Most stealers record no visit count at all; an absent count stays
+          // absent rather than defaulting to a 1 an analyst reads as evidence
+          // the site was visited once.
           const parsedVisitCount = visitsIdx >= 0 ? Number.parseInt(row[visitsIdx], 10) : NaN;
           entries.push({
             url,
             title: titleIdx >= 0 ? (row[titleIdx] || '').trim() : '',
-            visitCount: Number.isNaN(parsedVisitCount) ? 1 : parsedVisitCount,
+            visitCount: Number.isNaN(parsedVisitCount) ? null : parsedVisitCount,
             lastVisit,
-            lastVisitDate: parseTimestampValue(lastVisit),
+            lastVisitDate: applyBrowserClock(parseTimestampValue(lastVisit), clock),
           });
         }
       }
     } catch { /* skip */ }
   }
 
-  const domainCounts = new Map();
-  let mostRecentDate = null;
-  for (const entry of entries) {
-    const domain = baseDomainFromUrl(entry.url);
-    if (domain) domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
-    if (entry.lastVisitDate && (!mostRecentDate || entry.lastVisitDate > mostRecentDate)) mostRecentDate = entry.lastVisitDate;
-  }
-
   historyData = {
     entries,
     fileCount,
-    stats: {
-      topDomains: [...domainCounts].sort((a, b) => b[1] - a[1]).slice(0, 10),
-      uniqueDomains: domainCounts.size,
-      mostRecentDate,
-    },
+    clock,
+    hasVisitCounts: entries.some(entry => entry.visitCount !== null),
+    stats: historyStats(entries),
   };
+}
+
+function historyStats(entries) {
+  const domainCounts = new Map();
+  let mostRecent = null;
+  for (const entry of entries) {
+    const domain = baseDomainFromUrl(entry.url);
+    if (domain && isRankableDomain(domain)) domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
+    if (entry.lastVisitDate && (!mostRecent || entry.lastVisitDate > mostRecent.lastVisitDate)) mostRecent = entry;
+  }
+  return {
+    topDomains: [...domainCounts].sort((a, b) => b[1] - a[1]).slice(0, 10),
+    uniqueDomains: domainCounts.size,
+    mostRecentDate: mostRecent?.lastVisitDate || null,
+    mostRecentRaw: mostRecent?.lastVisit || '',
+  };
+}
+
+// With the frame resolved the visit time is a real instant and reads as UTC like
+// every other timestamp in the case. Without one it is still only the log's own
+// wall clock, so it is shown exactly as written rather than dressed as UTC.
+function historyClockKnown() {
+  return historyData.clock?.offsetMinutes != null;
+}
+
+function historyVisitLabel(lastVisit, lastVisitDate) {
+  if (!lastVisitDate || !historyClockKnown()) return lastVisit;
+  return formatDateTimeLabel(lastVisitDate);
+}
+
+function historyClockNote() {
+  if (historyClockKnown()) {
+    return ` \u00b7 visit times converted to UTC from the log clock ${browserClockLabel(historyData.clock)}`;
+  }
+  return ' \u00b7 visit times as the log wrote them; clock zone unresolved, not comparable with UTC';
 }
 
 async function loadBookmarksData(fileTree, rootName) {
@@ -216,9 +244,14 @@ async function loadBrowserMetadataData(fileTree, rootName) {
   browserMetadataData = { entries, fileCount };
 }
 
+const EMPTY_CELL = '<span class="cell-empty">\u2014</span>';
+
 function historyRowBuilder({ url, title, visitCount, lastVisit, lastVisitDate }) {
-  const displayLastVisit = lastVisitDate ? formatDateTimeLabel(lastVisitDate) : lastVisit;
-  return `<tr><td title="${escapeHtml(url)}">${escapeHtml(url)}</td><td title="${escapeHtml(title)}">${escapeHtml(title)}</td><td>${visitCount}</td><td title="${escapeHtml(lastVisit || '')}">${escapeHtml(displayLastVisit || '')}</td></tr>`;
+  const displayLastVisit = historyVisitLabel(lastVisit, lastVisitDate);
+  const visitsCell = historyData.hasVisitCounts
+    ? `<td>${visitCount == null ? EMPTY_CELL : visitCount.toLocaleString()}</td>`
+    : '';
+  return `<tr><td title="${escapeHtml(url)}">${escapeHtml(url)}</td><td title="${escapeHtml(title)}">${escapeHtml(title)}</td>${visitsCell}<td title="${escapeHtml(lastVisit || '')}">${escapeHtml(displayLastVisit || '')}</td></tr>`;
 }
 
 function renderHistoryPage(searchQuery = '') {
@@ -265,13 +298,14 @@ function renderHistoryPage(searchQuery = '') {
     html += '<div class="domain-bars">';
     for (const [domain, count] of topDomains) {
       const pct = Math.round((count / maxCount) * 100);
-      html += `<div class="domain-bar-row"><span class="domain-bar-label">${escapeHtml(domain)}</span><div class="domain-bar-track"><div class="domain-bar-fill" style="width:${pct}%"></div></div><span class="domain-bar-count">${count}</span></div>`;
+      html += `<div class="domain-bar-row"><span class="domain-bar-label">${escapeHtml(domain)}</span><div class="domain-bar-track"><div class="domain-bar-fill" style="width:${pct}%"></div></div><span class="domain-bar-count">${count.toLocaleString()}</span></div>`;
     }
     html += '</div>';
   }
 
   html += '<div class="data-table-container"><table class="data-table">';
-  html += `<thead><tr>${historySort.th('url', 'URL')}${historySort.th('title', 'Title')}${historySort.th('visits', 'Visits')}${historySort.th('lastVisit', 'Last Visit')}</tr></thead><tbody>`;
+  html += `<thead><tr>${historySort.th('url', 'URL')}${historySort.th('title', 'Title')}${
+    historyData.hasVisitCounts ? historySort.th('visits', 'Visits') : ''}${historySort.th('lastVisit', historyClockKnown() ? 'Last Visit (UTC)' : 'Last Visit (log clock)')}</tr></thead><tbody>`;
   html += buildRowsHtml(historyRowBuilder, historyFiltered, 0, historyShown);
   html += '</tbody></table></div>';
 
