@@ -1373,18 +1373,12 @@ function findScreenshot(nodes) {
 
 // Stealer fingerprinting
 
-async function runFingerprint(fileTree, rootName) {
+// `root` arrives already collapsed past any single-directory wrappers, so
+// paths line up with the signatures without descending again here.
+async function runFingerprint(root, rootName) {
   const ctx = { dirs: [], files: [], sysinfoNodes: [], sysinfoCandidates: [], creditsNodes: [], creditsText: null, clipboardNodes: [], clipboardText: null, passwordNode: null, passwordHeaderText: null };
 
-  // If the archive has a single top-level dir, start inside it so paths match signatures
-  let startNode = fileTree;
-  if (fileTree.children) {
-    const children = Object.values(fileTree.children);
-    if (children.length === 1 && children[0].type === 'directory') {
-      startNode = children[0];
-    }
-  }
-  collectContext(startNode, '', ctx);
+  collectContext(root, '', ctx);
 
   if (ctx.sysinfoNodes.length > 0) {
     const allTexts = [];
