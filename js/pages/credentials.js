@@ -495,20 +495,30 @@ async function loadAutofillsData(fileTree, rootName) {
     }
   }
 
-  let emailCount = 0, phoneCount = 0, nameCount = 0, addressCount = 0, idCount = 0;
-  for (const entry of entries) {
-    if (/email|e-mail/i.test(entry.name) || /@/.test(entry.value)) emailCount++;
-    if (/phone|mobile|tel/i.test(entry.name)) phoneCount++;
-    if (/first\s*name|last\s*name|full\s*name|^name$/i.test(entry.name)) nameCount++;
-    if (/address|street|city|postcode|zip|country/i.test(entry.name)) addressCount++;
-    if (/(date.?of.?birth|\bdob\b|birth\s*date|licen[cs]e|driver|passport|medicare|tax\s*file|\btfn\b)/i.test(entry.name)) idCount++;
-  }
+  autofillsData = { entries, fileCount, stats: summariseAutofillEntries(entries) };
+}
 
-  autofillsData = {
-    entries,
-    fileCount,
-    stats: { emailCount, phoneCount, nameCount, addressCount, idCount },
-  };
+const EMAIL_FIELD = /e-?mail/i;
+// `emailAddress` names an email field, not a postal one. Stripping the email
+// half before the address test is the only reliable separator: anchoring fails
+// because `email_address`, `email-address` and `Email Address` all read as one
+// word to a boundary. A field named the other way round
+// (`shippingAddress_email`) is genuinely both and stays in the address count.
+const EMAIL_ADDRESS_FIELD = /e-?mail[\s_.-]*address/ig;
+const ADDRESS_FIELD = /address|street|city|postcode|zip|country/i;
+const ID_FIELD = /(date.?of.?birth|\bdob\b|birth\s*date|licen[cs]e|driver|passport|medicare|tax\s*file|\btfn\b)/i;
+
+function summariseAutofillEntries(entries) {
+  let emailCount = 0, emailShaped = 0, phoneCount = 0, nameCount = 0, addressCount = 0, idCount = 0;
+  for (const { name, value } of entries) {
+    if (EMAIL_FIELD.test(name)) emailCount++;
+    else if (value.includes('@')) emailShaped++;
+    if (/phone|mobile|tel/i.test(name)) phoneCount++;
+    if (/first\s*name|last\s*name|full\s*name|^name$/i.test(name)) nameCount++;
+    if (ADDRESS_FIELD.test(name.replace(EMAIL_ADDRESS_FIELD, ''))) addressCount++;
+    if (ID_FIELD.test(name)) idCount++;
+  }
+  return { emailCount, emailShaped, phoneCount, nameCount, addressCount, idCount };
 }
 
 async function loadNotesData(fileTree, rootName) {
@@ -912,33 +922,44 @@ function renderAutofillsPage(searchQuery = '') {
   autofillsShown = Math.min(PAGE_SIZE, filtered.length);
 
   const total = autofillsData.entries.length;
-  summary.textContent = filtered.length !== total
-    ? `Showing ${filtered.length.toLocaleString()} of ${total.toLocaleString()} entries from ${autofillsData.fileCount} file(s)`
-    : `${total.toLocaleString()} entries from ${autofillsData.fileCount} file(s)`;
+  summary.textContent = datasetSummary({ shown: filtered.length, total, singular: 'entry', plural: 'entries', fileCount: autofillsData.fileCount });
 
   addAdjustColumnsBtn(summary, '_autofillHint', 'autofill');
 
-  const cached = autofillsData.stats || { emailCount: 0, phoneCount: 0, nameCount: 0, addressCount: 0, idCount: 0 };
+  if (autofillsFiltered.length === 0) {
+    stats.innerHTML = '';
+    content.innerHTML = buildNoMatchesHtml('autofill entries');
+    return;
+  }
+
+  // Counted over the rows on screen, not the whole dataset.
+  const shown = searchQuery
+    ? summariseAutofillEntries(filtered)
+    : (autofillsData.stats || { emailCount: 0, emailShaped: 0, phoneCount: 0, nameCount: 0, addressCount: 0, idCount: 0 });
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.emailCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">Email Fields</div>
+      <div class="data-page-stat-value">${shown.emailCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">Email fields</div>
+    </div>
+    ${shown.emailShaped > 0 ? `<div class="data-page-stat" title="Fields not named for email whose stored value is an address — sign-in boxes named loginfmt, identifier or username.">
+      <div class="data-page-stat-value">${shown.emailShaped.toLocaleString()}</div>
+      <div class="data-page-stat-label">Email-shaped values</div>
+    </div>` : ''}
+    <div class="data-page-stat">
+      <div class="data-page-stat-value">${shown.phoneCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">Phone fields</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.phoneCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">Phone Fields</div>
+      <div class="data-page-stat-value">${shown.nameCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">Name fields</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.nameCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">Name Fields</div>
+      <div class="data-page-stat-value">${shown.addressCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">Address fields</div>
     </div>
-    <div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.addressCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">Address Fields</div>
-    </div>
-    ${cached.idCount > 0 ? `<div class="data-page-stat">
-      <div class="data-page-stat-value">${cached.idCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">ID / DOB Fields</div>
+    ${shown.idCount > 0 ? `<div class="data-page-stat">
+      <div class="data-page-stat-value">${shown.idCount.toLocaleString()}</div>
+      <div class="data-page-stat-label">ID / DOB fields</div>
     </div>` : ''}
   `;
 
