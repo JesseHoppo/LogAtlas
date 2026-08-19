@@ -112,7 +112,6 @@ export const FILE_TYPE_PATTERNS = {
 
   browserMetadata: {
     filePatterns: [
-      /^debug\.txt$/i,
       /^user[\s_-]*agents?(?:\s*\[\d+\])?\.(txt|json)$/i,
       /^(?:user[\s_-]*agent|ua|version|path)\.(txt|json)$/i,
     ],
@@ -123,12 +122,26 @@ export const FILE_TYPE_PATTERNS = {
     ],
     pathPatterns: [
       /(^|\/)(?:browser\/)?(?:path|ua|version)\//i,
+    ],
+  },
+
+  // A per-browser trace of the stealer's own run — `bps`, `acp - 0`, `dat -
+  // 248969`, `fin` — written beside the data it took. It records what the
+  // malware did, not anything the browser held.
+  stealerDebug: {
+    filePatterns: [
+      /^debug\.txt$/i,
+    ],
+    pathPatterns: [
       /(^|\/)(?:chrome|edge|firefox|opera|brave|vivaldi|chromium)\/debug\.txt$/i,
     ],
   },
 
+  // Device-capture names (`Monitor 1.jpg`, `Display (2).png`) only count as a
+  // whole name — `monitor`/`display` loose in the vocabulary would swallow
+  // grabbed web assets like `display-ad-banner.png`.
   screenshot: {
-    namePattern: /(?:^|[\s_-])(?:screenshots?|screen)\b/i,
+    namePattern: /(?:^|[\s_-])(?:screenshots?|screen)(?![a-z])|^(?:monitor|display|desktop)(?:[\s_-]*\(?\d+\)?)?\.[a-z0-9]+$/i,
     extensions: /\.(jpg|jpeg|png|bmp|gif|webp)$/i,
   },
 
