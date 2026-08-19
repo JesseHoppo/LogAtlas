@@ -3549,6 +3549,16 @@ body {
   color: var(--zip-color);
 }
 
+.timeline-event-badge-notes {
+  background: var(--teal-dim);
+  color: var(--teal-text);
+}
+
+.timeline-event-badge-screenshots {
+  background: var(--info-dim);
+  color: var(--info-text);
+}
+
 .timeline-event-title {
   font-family: var(--font-mono);
   font-size: 0.8rem;
