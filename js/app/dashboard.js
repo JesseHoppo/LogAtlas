@@ -4,7 +4,9 @@ import { state, on } from '../core/state.js';
 import { loadFileContent } from '../files/extractor.js';
 import { copyToClipboard, extractCountryFromFilename, isValidCountryCode, classifyIpAddress } from '../core/shared.js';
 import { escapeHtml, capitalise } from '../core/utils.js';
-import { formatDateTimeLabel } from '../pages/shared.js';
+import { getCategoryLabel } from '../core/domainCategories.js';
+import { captureProvenance, countLabel, formatInstantLabel } from '../pages/shared.js';
+import { openScreenshotLightbox } from '../pages/activity.js';
 let sysInfoSourcePath = null;
 let overviewScreenshotUrl = null;
 let screenshotGeneration = 0;
@@ -99,25 +101,29 @@ function renderCaseContext({ computer, resolvedUser, userSource, countryInfo, ex
   if (resolvedUser) push('user', userSource && userSource !== 'sysinfo' ? `${resolvedUser} (${userSource})` : resolvedUser);
   if (countryInfo?.value) push('location', countryInfo.source === 'sysinfo' ? countryInfo.value : `${countryInfo.value} (${countryInfo.source})`);
   // Only a sysinfo capture key is evidence of when the log was taken; the rest
-  // are inference and the chip names which one.
+  // are inference, so the chip always names which.
   if (exfilInfo?.date) {
-    const label = formatDateTimeLabel(exfilInfo.date);
-    push('captured', exfilInfo.source === 'sysinfo' ? label : `${label} (${exfilInfo.source})`);
+    push('captured', `${formatInstantLabel(exfilInfo.date)} (${captureProvenance(exfilInfo)})`);
   }
   if (state.rootZipName) push('source', state.rootZipName);
   if (items.length === 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   el.classList.remove('hidden');
-  el.innerHTML = items.join('<span class="ctx-sep">·</span>');
+  el.innerHTML = items.join('');
 }
 
 // `targets` is a priority list: the click handler takes the first page that is
 // actually available, so a card never offers a dead link.
-function buildVerdictCard({ label, value, note, targets }) {
+// A card carries either one headline number or a row of counted chips; a card
+// whose strands are incommensurable has no honest single total.
+function buildVerdictCard({ label, value, chips, note, targets }) {
   const nav = (targets || []).filter(Boolean).join(' ');
   const link = nav ? `<button class="verdict-card-link" data-nav="${escapeHtml(nav)}">View &rarr;</button>` : '';
+  const head = chips
+    ? `<div class="dash-chip-row">${chips.map((chip) => `<span class="dash-chip">${escapeHtml(chip)}</span>`).join('')}</div>`
+    : `<div class="verdict-card-value">${escapeHtml(value)}</div>`;
   return `<div class="verdict-card">
     <div class="verdict-card-label">${escapeHtml(label)}</div>
-    <div class="verdict-card-value">${escapeHtml(value)}</div>
+    ${head}
     <div class="verdict-card-note">${escapeHtml(note)}</div>
     ${link}
   </div>`;
