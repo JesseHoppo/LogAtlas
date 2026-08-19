@@ -712,6 +712,10 @@ async function analyseAutofills(nodes) {
 
   const entries = [];
   const files = [];
+  // Browsers repeat the same form field across profiles and sites, so the row
+  // count is not an exposure count. The Autofills page and the CSV keep every
+  // row; the headline needs the distinct ones.
+  const distinct = new Set();
   let parsedCount = 0;
 
   for (const { node, path } of nodes) {
@@ -735,6 +739,7 @@ async function analyseAutofills(nodes) {
         };
         entries.push(entry);
         fileEntries.push(entry);
+        distinct.add(name.toLowerCase() + DEDUPE_KEY_SEP + value.toLowerCase());
       }
 
       if (fileEntries.length > 0) {
@@ -763,6 +768,7 @@ async function analyseAutofills(nodes) {
   emit('analysis:autofill', {
     fileCount: parsedCount,
     totalEntries: entries.length,
+    uniqueEntries: distinct.size,
     entries,
     files,
     emails: highlights.emails,
