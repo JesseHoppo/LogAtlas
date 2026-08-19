@@ -130,7 +130,10 @@ function extractCookieEvents(cookiesData, captureTime) {
   const headers = cookiesData.headers;
   const domainIdx = headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
   const expiresIdx = headers.findIndex(h => FIELD_PATTERNS.expires.test(h));
-  const domainMap = {};
+  // Cookie domains are attacker-controlled strings; `__proto__` as a key on a
+  // plain object resolves to Object.prototype, skips the initialiser and then
+  // mutates every object in the page.
+  const domainMap = Object.create(null);
 
   for (const rowData of cookiesData.rows) {
     const { row, validity } = rowData;

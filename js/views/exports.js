@@ -122,7 +122,7 @@ function buildCredStats(passwords) {
 
   if (passwords.rows.length === 0) return null;
   const { urlIdx } = credentialColumnIndices(passwords.headers);
-  const domainCounts = {};
+  const domainCounts = Object.create(null);
   for (const { row } of passwords.rows) {
     const domain = baseDomainFromUrl(urlIdx >= 0 ? (row[urlIdx] || '') : '');
     if (domain) domainCounts[domain] = (domainCounts[domain] || 0) + 1;
@@ -155,7 +155,7 @@ function buildCookStats(cookies) {
 
   if (cookies.rows.length === 0) return null;
   const domainIdx = cookies.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
-  const domainCounts = {};
+  const domainCounts = Object.create(null);
   let valid = 0, expired = 0, session = 0, unknown = 0, sessionTokens = 0, liveSessionTokens = 0;
   for (const rowData of cookies.rows) {
     const status = rowData.validity.status;
