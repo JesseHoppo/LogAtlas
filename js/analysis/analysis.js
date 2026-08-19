@@ -21,8 +21,8 @@ import {
   parseClipboardFile,
 } from '../transforms/structured.js';
 import { parseCreditCardFile } from '../transforms/cards.js';
-import { isPromotionalNoiseLine, stripLeadingNoiseLines, brandingHeaderRegion } from '../transforms/shared.js';
-import { parseSoftwareLines, parseProcessLines, evaluateInlineSections } from './logEvaluators.js';
+import { stripLeadingNoiseLines, brandingHeaderRegion } from '../transforms/shared.js';
+import { parseSoftwareLines, parseProcessLines, splitInlineSections, evaluateRecoveredPasswords } from './logEvaluators.js';
 import { parseWalletArtifact } from './walletArtifacts.js';
 import { parseNoteArtifact, summariseNotes, classifyGrabbedFile, summariseGrabbedFiles } from './contextArtifacts.js';
 import {
@@ -523,7 +523,7 @@ async function analyseHistory(nodes) {
 async function analyseSystemInfo(nodes, rootZipName = '') {
   if (nodes.length === 0) {
     emit('analysis:sysinfo', null);
-    extractInlineSections('');
+    extractInlineSections([]);
     return null;
   }
 
@@ -556,49 +556,19 @@ async function analyseSystemInfo(nodes, rootZipName = '') {
 
   if (Object.keys(merged).length === 0) {
     emit('analysis:sysinfo', null);
-    extractInlineSections('');
+    extractInlineSections(decoded);
     return null;
   }
 
   const identityNotes = sanitiseIdentityEntries(merged, rootZipName);
   const combinedText = decoded.length > 0 ? decoded.join('\n') + '\n' : '';
   const iocs = extractIOCs(merged, combinedText) || [];
-  const fields = structuredFieldsFromIocs(iocs);
 
-  emit('analysis:sysinfo', { entries: merged, fields, sourceFiles, sysinfoText: combinedText, identityNotes, iocs });
+  emit('analysis:sysinfo', { entries: merged, sourceFiles, sysinfoText: combinedText, identityNotes, iocs });
 
-  extractInlineSections(combinedText);
+  extractInlineSections(decoded);
 
   return merged;
-}
-
-const IOC_FIELD_KEYS = {
-  'IP Address': 'ip',
-  'Country': 'country',
-  'City': 'city',
-  'Computer Name': 'computerName',
-  'User Name': 'userName',
-  'OS': 'os',
-  'HWID': 'hwid',
-  'Machine ID': 'machineId',
-  'Timezone': 'timezone',
-  'Language': 'language',
-  'Log Date': 'captureDate',
-};
-
-function structuredFieldsFromIocs(iocs) {
-  const fields = {};
-  for (const ioc of iocs) {
-    const key = IOC_FIELD_KEYS[ioc.label];
-    if (!key || fields[key]) continue;
-    if (key === 'captureDate') {
-      const dt = parseTimestampValue(ioc.value);
-      fields[key] = dt ? dt.toISOString() : ioc.value;
-    } else {
-      fields[key] = ioc.value;
-    }
-  }
-  return fields;
 }
 
 // Strip placeholder / OEM / OS-name garbage from identity-bearing sysinfo
@@ -638,15 +608,39 @@ function sanitiseIdentityEntries(entries, rootZipName) {
   return notes;
 }
 
-function extractInlineSections(text) {
+// Sections are split per file: a section runs to the end of its file, so
+// splitting the concatenation would let one file's list swallow the next
+// file's lines, and a second file carrying the same section would replace the
+// first instead of adding to it.
+function extractInlineSections(texts) {
+  const softwareEntries = [];
+  const softwareSeen = new Set();
+  const processMap = new Map();
+  let softwareFiles = 0;
+  let processFiles = 0;
+
+  for (const text of texts) {
+    const { softwareLines, processLines } = splitInlineSections(text);
+    if (softwareLines) {
+      const before = softwareEntries.length;
+      parseSoftwareLines(softwareLines, softwareEntries, softwareSeen);
+      if (softwareEntries.length > before) softwareFiles++;
+    }
+    if (processLines) {
+      const before = processMap.size;
+      parseProcessLines(processLines, processMap);
+      if (processMap.size > before) processFiles++;
+    }
+  }
+
+  const processEntries = [...processMap.values()];
+
   // Both slots publish even when empty: a reanalyse whose sysinfo has lost a
   // section must clear the rows the previous run left behind.
-  const { softwareEntries, processEntries } = evaluateInlineSections(text);
-
-  emit('analysis:software', { fileCount: softwareEntries.length ? 1 : 0, entries: softwareEntries, totalCount: softwareEntries.length, inline: true });
+  emit('analysis:software', { fileCount: softwareFiles, entries: softwareEntries, totalCount: softwareEntries.length, inline: true });
 
   const uniqueCount = new Set(processEntries.map(e => (e.name || e.commandLine || '').toLowerCase())).size;
-  emit('analysis:processList', { fileCount: processEntries.length ? 1 : 0, entries: processEntries, totalCount: processEntries.length, uniqueCount, inline: true });
+  emit('analysis:processList', { fileCount: processFiles, entries: processEntries, totalCount: processEntries.length, uniqueCount, inline: true });
 }
 
 // Clipboard
