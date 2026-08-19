@@ -62,12 +62,11 @@ for (const [name, init] of moduleInitializers) {
   }
 }
 
-const searchRefs = initSearch(navigateToPage);
+initSearch(navigateToPage);
 
 const resetUI = createResetUI({
   navigateToPage,
   refreshSidebarAvailability,
-  searchRefs,
   resetOverviewState,
 });
 
