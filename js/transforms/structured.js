@@ -1049,6 +1049,13 @@ export function parseAccountTokenFile(text, hint = '') {
     appendRow(token, accountId, '', '');
   }
 
+  // Restore-token dumps are bare opaque base64url blobs with no key anywhere, so
+  // nothing above claims them. Taken only when every remaining line is one, or a
+  // paragraph of prose would turn into token rows.
+  if (rows.length === 0 && lines.length > 0 && lines.every(line => BARE_TOKEN_PATTERN.test(line))) {
+    for (const line of lines) appendRow(line, '', '', '');
+  }
+
   return rows.length > 0 ? {
     headers: ['Type', 'Value', 'Account ID', 'Note'],
     rows,
