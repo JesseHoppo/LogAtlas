@@ -320,24 +320,29 @@ function renderWalletsPage(searchQuery = '') {
   const summary = document.getElementById('walletsSummary');
   const stats = document.getElementById('walletsStats');
   const content = document.getElementById('walletsContent');
-  if (walletArtifactsData.entries.length === 0) { summary.textContent = 'No wallet or store artifacts found'; stats.innerHTML = ''; content.innerHTML = '<div class="no-data">No wallet/store artifact data available.</div>'; return; }
+  if (walletArtifactsData.entries.length === 0) { walletArtifactsFiltered = []; walletArtifactsShown = 0; summary.textContent = ''; stats.innerHTML = ''; content.innerHTML = `<div class="no-data">${DATA_PAGE_EMPTY_TEXT.wallets}</div>`; return; }
   let filtered = walletArtifactsData.entries;
   if (searchQuery) { const q = searchQuery.toLowerCase(); filtered = filtered.filter(entry => entry.service.toLowerCase().includes(q) || entry.category.toLowerCase().includes(q) || entry.artifactType.toLowerCase().includes(q) || entry.storeType.toLowerCase().includes(q) || entry.browser.toLowerCase().includes(q) || entry.profile.toLowerCase().includes(q) || entry.highlights.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q)); }
   walletArtifactsFiltered = walletsSort.apply(filtered);
   walletArtifactsShown = Math.min(PAGE_SIZE, filtered.length);
-  const services = new Set(walletArtifactsData.entries.map(e => e.service).filter(Boolean));
-  const passwordManagers = walletArtifactsData.entries.filter(e => e.category === 'Password Manager').length;
-  const rawStores = walletArtifactsData.entries.filter(e => e.storeType === 'LevelDB' || e.storeType === 'SQLite').length;
-  const signalHits = walletArtifactsData.entries.reduce((sum, e) => sum + e.emailCount + e.addressCount + e.tokenCount + e.seedHints, 0);
-  const seedEntries = walletArtifactsData.entries.filter(e => e.seedHints > 0 && e.category !== 'Password Manager');
-  summary.textContent = filtered.length !== walletArtifactsData.entries.length ? `Showing ${filtered.length.toLocaleString()} of ${walletArtifactsData.entries.length.toLocaleString()} wallet/store artifacts from ${walletArtifactsData.fileCount} file(s)` : `${walletArtifactsData.entries.length.toLocaleString()} wallet/store artifacts from ${walletArtifactsData.fileCount} file(s)`;
-  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${passwordManagers.toLocaleString()}</div><div class="data-page-stat-label">Password Managers</div></div><div class="data-page-stat"><div class="data-page-stat-value">${rawStores.toLocaleString()}</div><div class="data-page-stat-label">Raw Stores</div></div><div class="data-page-stat"><div class="data-page-stat-value">${signalHits.toLocaleString()}</div><div class="data-page-stat-label">Signal Hits</div></div>`;
+  summary.textContent = datasetSummary({ shown: filtered.length, total: walletArtifactsData.entries.length, singular: 'wallet artifact', fileCount: walletArtifactsData.fileCount });
+  if (filtered.length === 0) { stats.innerHTML = ''; content.innerHTML = buildNoMatchesHtml('wallet artifacts'); return; }
+  const services = new Set(filtered.map(e => e.service).filter(Boolean));
+  const passwordManagers = filtered.filter(e => e.category === 'Password Manager').length;
+  const rawStores = filtered.filter(e => e.storeType === 'LevelDB' || e.storeType === 'SQLite').length;
+  const signalHits = filtered.reduce((sum, e) => sum + e.emailCount + e.addressCount + e.tokenCount + e.seedHints, 0);
+  // A `mnemonic` / `seed phrase` keyword lands in every wallet extension's own
+  // UI translation table, so the keyword count is context only. The banner needs
+  // a corroborated candidate — an actual word run of seed length. It speaks for
+  // the case rather than the view, so the search box does not narrow it.
+  const seedEntries = walletArtifactsData.entries.filter(e => e.seedPhraseCount > 0);
+  stats.innerHTML = `<div class="data-page-stat"><div class="data-page-stat-value">${services.size.toLocaleString()}</div><div class="data-page-stat-label">Services</div></div><div class="data-page-stat"><div class="data-page-stat-value">${passwordManagers.toLocaleString()}</div><div class="data-page-stat-label">Password managers</div></div><div class="data-page-stat"><div class="data-page-stat-value">${rawStores.toLocaleString()}</div><div class="data-page-stat-label">Raw stores</div></div><div class="data-page-stat"><div class="data-page-stat-value">${signalHits.toLocaleString()}</div><div class="data-page-stat-label">Signal hits</div></div>`;
   let html = '';
   if (seedEntries.length > 0) {
     const names = [...new Set(seedEntries.map(e => e.service).filter(Boolean))].slice(0, 6).map(n => escapeHtml(n)).join(', ');
-    html += `<div class="data-page-warning"><div class="data-page-warning-title">Wallet seed phrase exposure</div><div class="data-page-warning-more">${seedEntries.length.toLocaleString()} crypto-wallet artifact(s) contain recovery-phrase indicators${names ? ` (${names})` : ''}.</div></div>`;
+    html += `<div class="data-page-warning"><div class="data-page-warning-title">Wallet seed phrase exposure</div><div class="data-page-warning-more">${countLabel(seedEntries.length, 'crypto-wallet artifact')} with a recovery-phrase candidate${names ? ` (${names})` : ''}.</div></div>`;
   }
-  html += `<div class="data-table-container"><table class="data-table"><thead><tr>${walletsSort.th('service', 'Service')}${walletsSort.th('category', 'Category')}${walletsSort.th('artifactType', 'Artifact Type')}${walletsSort.th('storeType', 'Store Type')}${walletsSort.th('browser', 'Browser')}${walletsSort.th('profile', 'Profile')}${walletsSort.th('emails', 'Emails')}${walletsSort.th('addresses', 'Addresses')}${walletsSort.th('tokens', 'Tokens')}${walletsSort.th('seeds', 'Seeds')}${walletsSort.th('highlights', 'Highlights')}${walletsSort.th('source', 'Source')}</tr></thead><tbody>`;
+  html += `<div class="data-table-container"><table class="data-table"><thead><tr>${walletsSort.th('service', 'Service')}${walletsSort.th('category', 'Category')}${walletsSort.th('artifactType', 'Artifact Type')}${walletsSort.th('storeType', 'Store Type')}${walletsSort.th('browser', 'Browser')}${walletsSort.th('profile', 'Profile')}${walletsSort.th('emails', 'Emails')}${walletsSort.th('addresses', 'Addresses')}${walletsSort.th('tokens', 'Tokens')}${walletsSort.th('seeds', 'Seed Keywords')}${walletsSort.th('highlights', 'Highlights')}${walletsSort.th('source', 'Source')}</tr></thead><tbody>`;
   html += buildRowsHtml(walletArtifactRowBuilder, walletArtifactsFiltered, 0, walletArtifactsShown);
   html += '</tbody></table></div>';
   const remaining = walletArtifactsFiltered.length - walletArtifactsShown;
