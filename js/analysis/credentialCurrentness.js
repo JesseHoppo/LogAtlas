@@ -42,6 +42,9 @@ const PUBLIC_EMAIL_ROOTS = new Set(
     .filter(Boolean)
 );
 
+// Labels that identify nothing. Anything left after this filter is treated as
+// the organisation's own name, so a generic label here is a false correlation
+// between unrelated companies (corp.acme.com vs corp.atlassian.net).
 const COMMON_DOMAIN_LABELS = new Set([
   'www',
   'mail',
@@ -67,6 +70,18 @@ const COMMON_DOMAIN_LABELS = new Set([
   'gov',
   'edu',
   'ac',
+  'corp',
+  'corporate',
+  'intranet',
+  'intra',
+  'internal',
+  'group',
+  'cloud',
+  'apps',
+  'sites',
+  'teams',
+  'home',
+  'web',
 ]);
 
 const PROVIDER_DEFINITIONS = [
@@ -1120,11 +1135,14 @@ function collectTenantSignal({ usernameEmail, usernameDomain, providerArtifacts,
       continue;
     }
 
-    if (!tokenMatched && artifact.kind === 'tenant' && tokenPatterns.some((pattern) => pattern.test(artifactText))) {
-      const amount = getRecentStrength(artifact.date, captureDate) >= 2 ? 10 : 6;
-      score += amount;
-      evidence.push({ amount, label: `${artifact.providerLabel} tenant activity matches ${tokens[0]}` });
-      tokenMatched = true;
+    if (!tokenMatched && artifact.kind === 'tenant') {
+      const matchedIndex = tokenPatterns.findIndex((pattern) => pattern.test(artifactText));
+      if (matchedIndex >= 0) {
+        const amount = getRecentStrength(artifact.date, captureDate) >= 2 ? 10 : 6;
+        score += amount;
+        evidence.push({ amount, label: `${artifact.providerLabel} tenant activity matches ${tokens[matchedIndex]}` });
+        tokenMatched = true;
+      }
     }
 
     if (exactEmail && artifactText.includes(exactEmail)) {
