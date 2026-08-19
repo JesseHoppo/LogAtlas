@@ -67,18 +67,23 @@ const ROW_YIELD_INTERVAL = 5000;
 // A banner is a handful of short lines; anything larger is what the victim
 // copied, and must not be able to name the stealer.
 const CLIPBOARD_BRANDING_BUDGET = 1536;
-import { inferServiceFromPath, serviceFromTokenType } from '../core/serviceRegistry.js';
-import { classifyCookie, isLiveSessionToken } from './sessionCookies.js';
+import { inferServiceFromPath, serviceFromBrowser, serviceFromTokenType } from '../core/serviceRegistry.js';
+import { classifyCookie, hasReplayableValue, isLiveSessionToken } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
-import { classifySiteDomain } from '../core/domainCategories.js';
+import { classifySiteDomain, loadDomainCategories } from '../core/domainCategories.js';
 import { detectNationalIds } from './structuredPii.js';
 import { FIELD_PATTERNS, CLIPBOARD_LURE_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
+import { RECOVERED_PASSWORD_FILE } from '../transforms/shared.js';
 import { extractIOCs } from './iocExtraction.js';
 
 // NUL: never present in real credential fields, so safe as a dedupe separator.
 const DEDUPE_KEY_SEP = '\u0000';
 
-const BUCKET_HINT_KEYS = [...HINT_KEYS, '_ftpCredentialHint'];
+// HINT_KEYS already carries every additional hint, `_ftpCredentialHint` among
+// them; re-appending it walked those nodes into the same bucket twice. The
+// stealer's own debug trace is analysed here but has no file-type picker entry,
+// so it is named on its own.
+const BUCKET_HINT_KEYS = [...new Set([...HINT_KEYS, '_stealerDebugHint'])];
 
 // Walk the tree once, bucketing file nodes by hint key.
 function bucketHintedNodes(fileTree, rootName) {
