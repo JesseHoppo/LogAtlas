@@ -12,28 +12,36 @@ import {
   decodeBufferWithFallback,
   extractDomain,
   baseDomainFromUrl,
+  isRankableDomain,
   inferBrowserFromPath,
   inferProfileFromPath,
   parseNodeCached,
   parseTimestampValue,
+  applyBrowserClock,
+  browserClockLabel,
+  UNKNOWN_BROWSER_CLOCK,
 } from '../core/shared.js';
+import { browserClockReady } from '../analysis/analysis.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
 import {
+  datasetSummary,
   PAGE_SIZE,
   buildShowMoreButton,
   buildRowsHtml,
+  buildNoMatchesHtml,
   bindDebouncedInput,
   formatDateTimeLabel,
   trimRootPath,
   inferMetadataCategory,
   addAdjustColumnsBtn,
-  downloadCsvRows,
+  exportRows,
   createPagedCollectionRegistry,
   createTableSort,
   bindTableSort,
 } from './shared.js';
+import { DATA_PAGE_EMPTY_TEXT } from './registry.js';
 
-let historyData = { entries: [], fileCount: 0 };
+let historyData = { entries: [], fileCount: 0, clock: UNKNOWN_BROWSER_CLOCK };
 let bookmarksData = { entries: [], fileCount: 0 };
 let browserMetadataData = { entries: [], fileCount: 0 };
 
@@ -41,8 +49,6 @@ let historyFiltered = [];
 let historyShown = 0;
 let bookmarksFiltered = [];
 let bookmarksShown = 0;
-let browserMetadataFiltered = [];
-let browserMetadataShown = 0;
 
 const historySort = createTableSort({
   url: (entry) => entry.url,
@@ -59,14 +65,6 @@ const bookmarksSort = createTableSort({
   domain: (entry) => entry.domain,
   source: (entry) => entry.source,
 });
-const browserMetaSort = createTableSort({
-  browser: (entry) => entry.browser,
-  profile: (entry) => entry.profile,
-  category: (entry) => entry.category,
-  key: (entry) => entry.key,
-  value: (entry) => entry.value,
-  source: (entry) => entry.source,
-});
 
 const pageRegistry = createPagedCollectionRegistry({
   history: {
@@ -77,7 +75,7 @@ const pageRegistry = createPagedCollectionRegistry({
     setShown: (value) => { historyShown = value; },
     isEmpty: () => historyData.entries.length === 0,
     reset: () => {
-      historyData = { entries: [], fileCount: 0 };
+      historyData = { entries: [], fileCount: 0, clock: UNKNOWN_BROWSER_CLOCK };
       historyFiltered = [];
       historyShown = 0;
       historySort.reset();
@@ -97,27 +95,17 @@ const pageRegistry = createPagedCollectionRegistry({
       bookmarksSort.reset();
     },
   },
-  browsermeta: {
-    navId: 'navBrowserMeta',
-    rowBuilder: browserMetadataRowBuilder,
-    getFiltered: () => browserMetadataFiltered,
-    getShown: () => browserMetadataShown,
-    setShown: (value) => { browserMetadataShown = value; },
-    isEmpty: () => browserMetadataData.entries.length === 0,
-    reset: () => {
-      browserMetadataData = { entries: [], fileCount: 0 };
-      browserMetadataFiltered = [];
-      browserMetadataShown = 0;
-      browserMetaSort.reset();
-    },
-  },
 });
 
 async function loadHistoryData(fileTree, rootName) {
   const nodes = [];
   collectHintedNodes(fileTree, '_historyHint', rootName, nodes);
-  if (nodes.length === 0) { historyData = { entries: [], fileCount: 0 }; return; }
+  if (nodes.length === 0) { historyData = { entries: [], fileCount: 0, clock: UNKNOWN_BROWSER_CLOCK }; return; }
 
+  // A visit time is a bare wall clock with no zone on it, and the frame it was
+  // written in is not the victim's — analysis resolves it from the rows and this
+  // page reads that answer rather than deriving a second one.
+  const clock = await browserClockReady();
   const entries = [];
   let fileCount = 0;
 
@@ -440,20 +428,21 @@ export function updateNav() {
   pageRegistry.updateNav();
 }
 
+// Browser metadata has no page of its own — it is parsed for the packaged
+// report only — so it is cleared here rather than through the page registry.
 export function reset() {
   pageRegistry.reset();
+  browserMetadataData = { entries: [], fileCount: 0 };
 }
 
 export function initBrowserPages() {
   const searchInputs = {
     history: document.getElementById('historySearch'),
     bookmarks: document.getElementById('bookmarksSearch'),
-    browsermeta: document.getElementById('browserMetaSearch'),
   };
   const renderers = {
     history: renderHistoryPage,
     bookmarks: renderBookmarksPage,
-    browsermeta: renderBrowserMetaPage,
   };
   for (const [pageName, input] of Object.entries(searchInputs)) {
     bindDebouncedInput(input, (value) => renderers[pageName](value));
@@ -461,12 +450,10 @@ export function initBrowserPages() {
 
   bindTableSort('historyContent', historySort, () => renderHistoryPage(searchInputs.history?.value || ''));
   bindTableSort('bookmarksContent', bookmarksSort, () => renderBookmarksPage(searchInputs.bookmarks?.value || ''));
-  bindTableSort('browserMetaContent', browserMetaSort, () => renderBrowserMetaPage(searchInputs.browsermeta?.value || ''));
 
   for (const [id, handler] of Object.entries({
     exportHistoryCsv: exportHistoryCSV,
     exportBookmarksCsv: exportBookmarksCSV,
-    exportBrowserMetaCsv: exportBrowserMetadataCSV,
   })) {
     document.getElementById(id)?.addEventListener('click', handler);
   }
