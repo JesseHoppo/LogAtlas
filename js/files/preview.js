@@ -1069,4 +1069,4 @@ function initPreview() {
   });
 }
 
-export { initPreview, closePreview };
+export { initPreview, closePreview, isOfficeOpenXmlFile, extractOfficeOpenXmlPreview };
