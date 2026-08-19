@@ -6,6 +6,7 @@ import {
   parseServiceArtifactFile,
 } from '../transforms/structured.js';
 import { parseCreditCardFile } from '../transforms/cards.js';
+import { parseFileZillaSiteManager } from '../transforms/credentials.js';
 import { parseWalletArtifact } from '../analysis/walletArtifacts.js';
 import {
   decodeBufferWithFallback,
@@ -156,7 +157,7 @@ async function loadAccountTokensData(fileTree, rootName) {
 }
 
 async function loadServiceArtifactsData(fileTree, rootName) {
-  serviceArtifactsData = await collectAndParse(fileTree, rootName, '_serviceArtifactHint', (content, node, path) => {
+  const artifacts = await collectAndParse(fileTree, rootName, '_serviceArtifactHint', (content, node, path) => {
     const text = decodeBufferWithFallback(content);
     const parsed = parseNodeCached(node, 'service', parseServiceArtifactFile, text, null);
     if (!parsed || parsed.rows.length === 0) return null;
@@ -172,6 +173,29 @@ async function loadServiceArtifactsData(fileTree, rootName) {
     }
     return rows;
   }, RAW);
+
+  // FileZilla site managers carry a recovered host + user + plaintext password.
+  // They are their own hint, so without this pass the credential is parsed and
+  // then shown nowhere.
+  const ftp = await collectAndParse(fileTree, rootName, '_ftpCredentialHint', (content, node, path) => {
+    const text = decodeBufferWithFallback(content);
+    const parsed = parseNodeCached(node, 'filezilla', parseFileZillaSiteManager, text, null);
+    if (!parsed || parsed.rows.length === 0) return null;
+    const rows = [];
+    parsed.rows.forEach(([url, user, password], index) => {
+      const section = `Site ${index + 1}`;
+      const add = (key, value) => { if (value) rows.push({ service: 'FileZilla', artifactType: 'Saved site', section, key, value, source: path }); };
+      add('Host', url);
+      add('Username', user);
+      add('Password', password);
+    });
+    return rows.length > 0 ? rows : null;
+  }, RAW);
+
+  serviceArtifactsData = {
+    entries: [...artifacts.entries, ...ftp.entries],
+    fileCount: artifacts.fileCount + ftp.fileCount,
+  };
 }
 
 async function loadWalletArtifactsData(fileTree, rootName) {
