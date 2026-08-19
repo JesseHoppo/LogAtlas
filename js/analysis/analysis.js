@@ -356,13 +356,14 @@ async function analyseCookies(nodes, captureDate = null) {
     emit('analysis:cookies', {
       fileCount: 0, totalCookies: 0, uniqueDomains: 0, topDomains: [],
       totalValid: 0, totalExpired: 0, totalSession: 0, totalUnknown: 0, totalNoDomain: 0,
-      sessionTokens: 0, validSessionTokens: 0,
+      sessionTokens: 0, validSessionTokens: 0, replayableSessionTokens: 0,
       trackingTokens: 0, validTrackingTokens: 0,
     });
     return;
   }
 
-  const domainStats = {};
+  // Keyed on hosts read out of the log, so never a plain object literal.
+  const domainStats = Object.create(null);
   const cookieSeen = new Set();
   // Every counted cookie lands in exactly one bucket, whether or not it carried
   // a domain, so the buckets always add up to the total printed above them.
@@ -431,7 +432,7 @@ async function analyseCookies(nodes, captureDate = null) {
 
   // Roll per-host stats up to eTLD+1 for the headline list; per-host detail
   // stays available on the cookies page.
-  const baseStats = {};
+  const baseStats = Object.create(null);
   for (const [host, stats] of Object.entries(domainStats)) {
     const base = extractBaseDomain(host) || host;
     if (!isRankableDomain(base)) continue;
