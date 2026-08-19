@@ -43,9 +43,15 @@ function isLikelyCookieFile(name, parentDir, fullPath) {
     && c.browserProfiles.some(rx => rx.test(bareName));
 }
 
-function isLikelySystemInfoFile(name, parentDir) {
-  if (FILE_TYPE_PATTERNS.sysinfo.filePatterns.some(rx => rx.test(name))) return true;
-  if (parentDir && FILE_TYPE_PATTERNS.sysinfo.dirPatterns.some(rx => rx.test(parentDir)) && /\.(?:txt|json)$/i.test(name)) return true;
+function isLikelySystemInfoFile(name, parentDir, fullPath = '') {
+  const s = FILE_TYPE_PATTERNS.sysinfo;
+  if (s.filePatterns.some(rx => rx.test(name))) {
+    // `info.txt` at an archive root is the system profile; the same name under a
+    // grabber root is the victim's own note, and merging it into the profile
+    // runs their text through the IOC scan and the stealer self-ID test.
+    return !(s.weakFilePatterns.some(rx => rx.test(name)) && isGrabbedPath(fullPath));
+  }
+  if (parentDir && s.dirPatterns.some(rx => rx.test(parentDir)) && /\.(?:txt|json)$/i.test(name)) return true;
   return false;
 }
 
@@ -178,11 +184,15 @@ function isLikelyKeylogFile(_name, _parentDir, fullPath) {
   return FILE_TYPE_PATTERNS.keylog.pathPatterns.some(rx => rx.test(normalisedPath));
 }
 
+function isGrabbedPath(fullPath) {
+  const normalisedPath = normalisePath(fullPath);
+  return FILE_TYPE_PATTERNS.grabbedFiles.pathPatterns.some(rx => rx.test(normalisedPath));
+}
+
 function isLikelyGrabbedFile(_name, parentDir, fullPath) {
   const grabbed = FILE_TYPE_PATTERNS.grabbedFiles;
-  const normalisedPath = normalisePath(fullPath);
   if (parentDir && grabbed.folderPatterns.some(rx => rx.test(parentDir))) return true;
-  return grabbed.pathPatterns.some(rx => rx.test(normalisedPath));
+  return isGrabbedPath(fullPath);
 }
 
 function applyDetectionHints(node, rawName, parentDir, fullPath = '') {
