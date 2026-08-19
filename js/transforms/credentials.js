@@ -14,6 +14,7 @@ import {
   isPromotionalNoiseLine,
   classifyPasswordFieldKey,
   canonicalisePasswordExtraHeader,
+  decodeHtmlEntities,
 } from './shared.js';
 import {
   detectFormat,
@@ -498,7 +499,10 @@ export function parsePasswordFile(text, config) {
   return comboParsed || keyValueParsed || finaliseCredentialDataset(parseLoosePasswordBlocks(clean));
 }
 
-const FILEZILLA_PROTOCOLS = { 0: 'ftp', 1: 'sftp', 3: 'ftps' };
+// FileZilla's ServerProtocol enum. 0 is FTP with opportunistic TLS and 6 is
+// FileZilla's explicit "insecure FTP", so both travel as ftp://. An unlisted or
+// absent value leaves the scheme off rather than asserting a transport.
+const FILEZILLA_PROTOCOLS = { 0: 'ftp', 1: 'sftp', 2: 'http', 3: 'https', 4: 'ftps', 5: 'ftpes', 6: 'ftp' };
 
 function decodeBase64(value) {
   try {
@@ -516,7 +520,7 @@ export function parseFileZillaSiteManager(xmlText) {
   for (const block of serverBlocks) {
     const field = (tag) => {
       const m = block.match(new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, 'i'));
-      return m ? m[1].trim() : '';
+      return m ? decodeHtmlEntities(m[1]).trim() : '';
     };
 
     const host = field('Host');
@@ -524,18 +528,19 @@ export function parseFileZillaSiteManager(xmlText) {
 
     const port = field('Port');
     const user = field('User');
-    const proto = FILEZILLA_PROTOCOLS[field('Protocol')] || 'sftp';
+    const proto = FILEZILLA_PROTOCOLS[field('Protocol')];
 
     let password = '';
     const passMatch = block.match(/<Pass(\s[^>]*)?>([^<]*)<\/Pass>/i);
     if (passMatch) {
-      password = /encoding="base64"/i.test(passMatch[1] || '')
-        ? decodeBase64(passMatch[2].trim())
-        : passMatch[2].trim();
+      // Entities first: the base64 alphabet carries none, so a payload that is
+      // really base64 is untouched and a mislabelled one still comes out clean.
+      const stored = decodeHtmlEntities(passMatch[2]).trim();
+      password = /encoding="base64"/i.test(passMatch[1] || '') ? decodeBase64(stored) : stored;
     }
 
-    const url = `${proto}://${host}${port ? `:${port}` : ''}`;
-    rows.push([url, user, password]);
+    const hostPort = `${host}${port ? `:${port}` : ''}`;
+    rows.push([proto ? `${proto}://${hostPort}` : hostPort, user, password]);
   }
 
   return rows.length > 0 ? { headers: ['URL', 'Username', 'Password'], rows } : null;
