@@ -19,7 +19,7 @@ function isLikelyPasswordFilename(name, parentDir, fullPath = '') {
   if (FILE_TYPE_PATTERNS.password.exclusions.some(rx => rx.test(trimmedName))) return false;
   if (isLikelyAggregatePasswordFile(trimmedName)) return false;
   if (/(^|\/)(?:mails?|email clients?)\/outlook\/credentials\.txt$/i.test(normalisedPath)) return false;
-  if (parentDir && FILE_TYPE_PATTERNS.password.parentDirMatch.test(parentDir)) return true;
+  if (parentDir && FILE_TYPE_PATTERNS.password.parentDirMatch.test(parentDir) && TEXT_EXTENSIONS.test(trimmedName)) return true;
   return FILE_TYPE_PATTERNS.password.patterns.some(rx => rx.test(trimmedName));
 }
 
