@@ -879,6 +879,34 @@ export function parseBrowserMetadataFile(text) {
   return rows.length > 0 ? { headers: ['Key', 'Value'], rows } : null;
 }
 
+// The stealer's own run trace: one three-letter step per line, some carrying a
+// result after a dash (`acp - 0`, `erc - 1/0`, `dat - 248969`). The codes are
+// the malware's, so they are reported verbatim rather than guessed at; `fin`
+// closing the file is what says the run finished.
+export function parseStealerDebugFile(text) {
+  const clean = normaliseText(text).trim();
+  if (!clean) return null;
+
+  const rows = [];
+  for (const raw of clean.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const match = line.match(/^([A-Za-z]{2,6})\s*-\s*(.+)$/);
+    rows.push([
+      String(rows.length + 1),
+      match ? match[1] : line,
+      match ? sanitiseStructuredValue(match[2]) : '',
+    ]);
+  }
+
+  return rows.length > 0 ? { headers: ['Step', 'Code', 'Result'], rows } : null;
+}
+
+const BARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{40,}$/;
+// Comma-joined account IDs; every field has to be an ID so a CSV-ish token line
+// is not split apart.
+const ACCOUNT_ID_LIST_PATTERN = /^\d{6,}(?:\s*[,;]\s*\d{6,})+$/;
+
 export function parseAccountTokenFile(text, hint = '') {
   const clean = removePromotionalNoise(normaliseSeparators(normaliseText(text)));
   if (!clean) return null;
