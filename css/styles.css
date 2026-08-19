@@ -3983,6 +3983,18 @@ body {
   border-top: 1px solid var(--border);
 }
 
+.mapper-status {
+  margin-right: auto;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.mapper-status-error {
+  color: var(--error);
+}
+
 .mapper-btn {
   font-size: 0.8rem;
   font-family: var(--font-mono);
