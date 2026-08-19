@@ -1108,6 +1108,14 @@ function parseThunderbirdPrefs(clean) {
   return rows;
 }
 
+// Three dot-separated segments. The dot is kept out of the segment classes and
+// the run is fenced at both ends, so only the start of a run is ever a candidate
+// and a long dot-free blob — a wallet-extension LevelDB ciphertext, say — costs
+// one linear scan instead of a backtrack from every offset in it. Used with
+// String.match, which resets lastIndex.
+const TOKEN_CANDIDATE_PATTERN = /(?<![A-Za-z0-9._-])[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9._-])/g;
+const TOKEN_SCAN_MAX_BYTES = 1 << 20;
+
 export function parseServiceArtifactFile(text) {
   const clean = removePromotionalNoise(normaliseText(text)).trim();
   if (!clean) return null;
@@ -1166,7 +1174,7 @@ export function parseServiceArtifactFile(text) {
     }
   }
 
-  const tokenCandidates = clean.match(/[A-Za-z0-9._-]{20,}\.[A-Za-z0-9._-]{4,}\.[A-Za-z0-9._-]{10,}/g) || [];
+  const tokenCandidates = clean.slice(0, TOKEN_SCAN_MAX_BYTES).match(TOKEN_CANDIDATE_PATTERN) || [];
   for (const candidate of tokenCandidates.slice(0, 10)) {
     const value = sanitiseStructuredValue(candidate, 300);
     if (!seen.has(`token:${value}`)) {
