@@ -3186,23 +3186,32 @@ body {
   line-height: 1.45;
   vertical-align: top;
 }
-/* Click-to-copy. Kept faint: a cell is read far more often than it is copied. */
-.data-table td,
-.domain-detail-table td,
-.lab-creds-table td {
-  cursor: copy;
+/* Click-to-copy leaves the text cursor alone: a cell is read and selected far
+   more often than it is copied, and a copy cursor over every table hid that
+   the text can be selected at all. Only the hovered cell is marked. */
+.data-table tbody td:hover,
+.domain-detail-table tbody td:hover,
+.lab-creds-table tbody td:hover {
+  box-shadow: inset 0 -1px 0 var(--border-strong);
 }
-.data-table tbody tr:hover td,
-.domain-detail-table tbody tr:hover td,
-.lab-creds-table tbody tr:hover td {
-  box-shadow: inset 1px 0 0 var(--border);
-}
-.data-table td.cell-copied,
-.domain-detail-table td.cell-copied,
-.lab-creds-table td.cell-copied {
+/* Spelled out through tbody and tr, and through the Domain explorer's detail
+   nesting, so the fill outranks the row backgrounds declared further down the
+   sheet. At the plain `.data-table td` weight the copied cell keeps the hover
+   fill and the value reads as blank for the length of the flash. */
+.data-table tbody tr td.cell-copied,
+.domain-table .domain-detail-row .domain-detail-table td.cell-copied,
+.lab-creds-table tbody tr td.cell-copied {
   background: var(--accent);
   color: var(--text-on-accent);
   transition: none;
+}
+/* Badges and tone classes inside the cell carry their own ink, which the fill
+   does not override on its own. The copy control keeps its own, since it sits
+   on a surface of its own rather than on the fill. */
+.data-table tbody tr td.cell-copied *:not(.cell-copy-btn),
+.domain-table .domain-detail-row .domain-detail-table td.cell-copied *:not(.cell-copy-btn),
+.lab-creds-table tbody tr td.cell-copied *:not(.cell-copy-btn) {
+  color: inherit;
 }
 .data-table td:not(.cell-copied),
 .domain-detail-table td:not(.cell-copied),
@@ -3216,6 +3225,46 @@ body {
   .lab-creds-table td:not(.cell-copied) {
     transition: none;
   }
+}
+
+/* The one copy control the page owns is moved into whichever cell is hovered or
+   focused. Cells truncate to a single line, so it is pinned to the cell's right
+   edge on a surface of its own instead of taking part in that line; the cell is
+   the positioning context it hangs off. */
+.data-table td,
+.domain-detail-table td,
+.lab-creds-table td {
+  position: relative;
+}
+.cell-copy-btn {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+/* The icon carries no intrinsic size of its own. */
+.cell-copy-btn svg {
+  width: 11px;
+  height: 11px;
+}
+.cell-copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.cell-copy-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* Long-form cells opt back into wrapping; everything else stays a single
