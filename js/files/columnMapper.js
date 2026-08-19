@@ -439,16 +439,52 @@ function handleApply() {
     columnMap[col] = sel.value;
   });
 
-  closeMapper({ delimiter, hasHeaderRow, columnMap });
+  // Columns past the ones on screen carry no role and are kept as they parse,
+  // so an all-skip screen only empties the table when the whole file is on it.
+  if (!previewTruncated && Object.values(columnMap).every(role => role === 'skip')) {
+    setStatus('Every column is set to (Skip), so nothing would be kept.', 'error');
+    return;
+  }
+
+  const config = { delimiter, hasHeaderRow, columnMap, trimLines: activeTrimLines(delimiter) };
+  if (!parseWithMapping(currentText, currentFileType, config)) {
+    setStatus('That mapping keeps no usable rows. Adjust the columns or cancel.', 'error');
+    return;
+  }
+
+  closeMapper(config);
 }
 
 function closeMapper(result) {
-  elModal.classList.remove('visible');
+  closeModal(elModal);
   if (mapperResolver) {
     mapperResolver(result);
     mapperResolver = null;
   }
   currentText = '';
+  setStatus('');
+}
+
+// A mapping that parses to nothing replaces a file's automatic parse with an
+// empty table, and the rows it drops leave no trace anywhere in the case.
+// Every caller that stores a config checks it here first. A mapping that keeps
+// a single row from a file the automatic parse read as many is the same loss in
+// a different shape: the whole document folded into one record, which means the
+// delimiter is wrong rather than the column roles.
+function parseWithMapping(text, fileType, config) {
+  const parse = PARSERS[fileType] || PARSERS.credentials;
+  const run = (cfg) => {
+    try {
+      return parse(text, cfg);
+    } catch {
+      return null;
+    }
+  };
+
+  const parsed = run(config);
+  if (!parsed || !parsed.headers?.length || !parsed.rows?.length) return null;
+  if (parsed.rows.length > 1) return parsed;
+  return (run(null)?.rows?.length || 0) > 1 ? null : parsed;
 }
 
 // fileType: 'credentials' | 'cookies' | 'history' | 'autofill'
@@ -537,13 +573,6 @@ function initColumnMapper() {
   elModal.addEventListener('click', (e) => {
     if (e.target === elModal) closeMapper(null);
   });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && elModal.classList.contains('visible')) {
-      e.preventDefault();
-      closeMapper(null);
-    }
-  });
 }
 
-export { openColumnMapper, initColumnMapper };
+export { openColumnMapper, initColumnMapper, parseWithMapping };
