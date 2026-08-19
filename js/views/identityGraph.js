@@ -392,22 +392,34 @@ function buildEmailIndex(data) {
   const CAP = 15;
   const shown = identityShowAllEmails ? map : map.slice(0, CAP);
   const rows = shown.map((entry) => {
-    const active = entry.email === identityActiveEmail ? ' active' : '';
+    const isActive = entry.email === identityActiveEmail;
     const hasSession = entry.services.some((s) => s.hasLiveSession);
-    const dot = hasSession ? '<span class="identity-email-dot" title="Has a session live at capture"></span>' : '';
-    return `<button class="identity-email-row${active}" type="button" data-email="${escapeHtml(entry.email)}">
+    // The dot is decoration; its meaning belongs in the button's name, which is
+    // the only thing a screen reader gets when the row filters the table below.
+    const dot = hasSession ? '<span class="identity-email-dot" aria-hidden="true"></span>' : '';
+    const label = `${entry.email}, ${countLabel(entry.services.length, 'domain')}${hasSession ? ', session live at capture' : ''}`;
+    return `<button class="identity-email-row${isActive ? ' active' : ''}" type="button" aria-pressed="${isActive}"
+      aria-label="${escapeHtml(label)}" data-email="${escapeHtml(entry.email)}">
       <span class="identity-email-addr">${escapeHtml(entry.email)}</span>
-      <span class="identity-email-count">${entry.services.length}</span>${dot}
+      <span class="identity-email-count">${entry.services.length.toLocaleString()}</span>${dot}
     </button>`;
   }).join('');
   const moreBtn = map.length > CAP
-    ? `<button class="identity-email-more" type="button">${identityShowAllEmails ? 'Show fewer' : `Show all ${map.length}`}</button>`
+    ? `<button class="identity-email-more" type="button">${identityShowAllEmails ? 'Show fewer' : `Show all ${map.length.toLocaleString()}`}</button>`
     : '';
   return `<div class="identity-email-index">
-    <div class="identity-subsection-title">Identities (${map.length})</div>
+    <div class="identity-subsection-title">Identities (${map.length.toLocaleString()})</div>
     <div class="identity-email-list">${rows}</div>
     ${moreBtn}
   </div>`;
+}
+
+// Toggling an identity rebuilds the whole block, which throws away the button
+// that was clicked; without this, focus lands back on the body every time.
+function focusEmailRow(email) {
+  if (!email) return;
+  const rows = document.querySelectorAll('#identityPrimary .identity-email-row');
+  [...rows].find(row => row.dataset.email === email)?.focus();
 }
 
 function renderIdentityPage(searchQuery = '') {
@@ -566,18 +578,22 @@ function initIdentityPage() {
       const email = row.dataset.email;
       identityActiveEmail = identityActiveEmail === email ? null : email;
       renderIdentityPage(search?.value || '');
+      focusEmailRow(email);
       return;
     }
     if (event.target.closest('.identity-email-more')) {
       identityShowAllEmails = !identityShowAllEmails;
       renderIdentityPage(search?.value || '');
+      document.querySelector('.identity-email-more')?.focus();
     }
   });
 
   document.getElementById('identityContent')?.addEventListener('click', (event) => {
     if (event.target.closest('.identity-clear-filter')) {
+      const cleared = identityActiveEmail;
       identityActiveEmail = null;
       renderIdentityPage(search?.value || '');
+      focusEmailRow(cleared);
     }
   });
 
