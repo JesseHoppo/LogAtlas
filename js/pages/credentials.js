@@ -587,11 +587,11 @@ function buildPasswordParseIssuesHtml(failedFiles) {
   const remaining = failedFiles.length - visible.length;
   return `
     <div class="data-page-warning">
-      <div class="data-page-warning-title">${failedFiles.length.toLocaleString()} password file(s) could not be parsed</div>
+      <div class="data-page-warning-title">${countLabel(failedFiles.length, 'password file')} not parsed</div>
       <ul class="data-page-warning-list">
         ${visible.map(({ path, reason }) => `<li><strong>${escapeHtml(trimRootPath(path))}</strong>${reason ? ` <span>${escapeHtml(reason)}</span>` : ''}</li>`).join('')}
       </ul>
-      ${remaining > 0 ? `<div class="data-page-warning-more">${remaining.toLocaleString()} more file(s) omitted</div>` : ''}
+      ${remaining > 0 ? `<div class="data-page-warning-more">${countLabel(remaining, 'more file')} omitted</div>` : ''}
     </div>
   `;
 }
@@ -630,25 +630,22 @@ function buildCredentialFootprintHtml() {
   const cards = [];
 
   if (recovered && recovered.total > 0) {
-    const sample = (recovered.sample || []).slice(0, 8)
-      .map(p => `<span class="identity-service-tag">${escapeHtml(maskValue(p))}</span>`).join('');
     cards.push(buildFootprintCard(
       'Recovered passwords',
-      `${recovered.unique.toLocaleString()} unique plaintext password(s) from ${recovered.fileCount.toLocaleString()} bare dump file(s) with no account context.`,
-      sample ? `<div class="identity-service-tags">${sample}</div>` : ''
+      `${countLabel(recovered.unique, 'password')} from ${countLabel(recovered.fileCount, 'bare dump file')}, with no account context.`
     ));
   }
   if (namedNoPassword > 0) {
     cards.push(buildFootprintCard('Accounts without a captured password',
-      `${namedNoPassword.toLocaleString()} site + username pair(s) with no password value in the log.`));
+      `${countLabel(namedNoPassword, 'site + username pair')} with no password value.`));
   }
   if (savedOnly > 0) {
     cards.push(buildFootprintCard('Saved-site footprint',
-      `${savedOnly.toLocaleString()} site(s) the victim saved with no captured username or password.`));
+      `${countLabel(savedOnly, 'saved site')} with no captured username or password.`));
   }
   if (onion > 0) {
     cards.push(buildFootprintCard('Tor / .onion credentials',
-      `${onion.toLocaleString()} credential domain(s) on the Tor network.`));
+      `${countLabel(onion, 'credential domain')} on the Tor network.`));
   }
   if (localNetwork.length > 0) {
     cards.push(buildFootprintCard('Local network',
