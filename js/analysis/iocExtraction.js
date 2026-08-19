@@ -113,6 +113,7 @@ function extractIOCs(sysinfoEntries, sysinfoText) {
           const norm = value.replace(/^@/, '').toLowerCase();
           if ([...claimedStrings].some(c => c.replace(/^@/, '').toLowerCase().includes(norm))) continue;
         }
+        if (kind === 'stealer-infra' && infraCount >= LIMITS.stealerInfraMaxItems) continue outer;
         const ioc = { label, value };
         if (kind) ioc.kind = kind;
         pushIoc(ioc);
