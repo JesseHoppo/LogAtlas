@@ -56,9 +56,14 @@ function sortValue(raw) {
   return text === '' ? BLANK : text.toLowerCase();
 }
 
+// Resolved once. `localeCompare` with an options object re-resolves the
+// collator on every comparison, which is a visible freeze when a header click
+// sorts a hundred thousand rows.
+const SORT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
 function compareSortValues(a, b) {
   if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  return SORT_COLLATOR.compare(String(a), String(b));
 }
 
 // Header sorting for the data tables. `columns` is a map of sort key to
