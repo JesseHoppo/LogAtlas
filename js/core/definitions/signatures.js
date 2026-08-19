@@ -692,10 +692,6 @@ export const SIGNATURES = {
       { pattern: /DarkCrystal/i, label: 'Sysinfo content: DarkCrystal branding' },
       { pattern: /DCRAT/i, label: 'Sysinfo content: DCRAT branding' },
     ],
-    asciiBanners: [
-      '___   _   ___   _   ______',
-      'DarkCrystal',
-    ],
     folders: [],
     files: [
       { pattern: /^Passwords\.txt$/i, label: 'File: Passwords.txt' },
