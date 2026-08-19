@@ -134,6 +134,9 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
     emails: [],
     phones: [],
     location: null,
+    locationSource: null,
+    autofillAddress: null,
+    autofillAddressCount: 0,
     osUsername: null,
     computerName: null,
     os: null,
@@ -145,26 +148,31 @@ function extractPrimaryIdentity(sysinfoData, autofillData) {
     for (const [key, value] of Object.entries(sysinfoData.entries)) {
       if (IDENTITY_SYSINFO_KEYS.osUsername.some(rx => rx.test(key))) identity.osUsername = value;
       if (IDENTITY_SYSINFO_KEYS.computerName.some(rx => rx.test(key))) identity.computerName = value;
-      if (IDENTITY_SYSINFO_KEYS.country.some(rx => rx.test(key))) identity.location = value;
       if (!identity.os && IDENTITY_SYSINFO_KEYS.os.some(rx => rx.test(key))) identity.os = value;
     }
   }
   identity.osFamily = classifyOS(identity.os);
 
+  // The dashboard's resolver, not a second one: the two surfaces quote the
+  // same country for the same archive, from the same order of evidence.
+  const location = deriveVictimCountry(sysinfoData, autofillData);
+  identity.location = location.value || null;
+  identity.locationSource = location.value ? location.source : null;
+
   if (autofillData) {
     if (autofillData.names) identity.names = [...autofillData.names];
     if (autofillData.emails) identity.emails = [...autofillData.emails];
     if (autofillData.phones) identity.phones = [...autofillData.phones];
-    if (!identity.location && autofillData.addresses && autofillData.addresses.length > 0) {
-      // Prefer the longest reasonably-shaped row. Bare postcodes / suburb
-      // names alone (`4113`, `Brisbane`) make terrible "Location" labels.
-      const candidates = autofillData.addresses
-        .map(addr => String(addr || '').trim())
-        .filter(addr => addr.length >= 8);
-      if (candidates.length > 0) {
-        candidates.sort((a, b) => b.length - a.length);
-        identity.location = candidates[0];
-      }
+    // A stored street address is a form value, not where the host sits: it may
+    // be a delivery address for someone else, a workplace or a former home. It
+    // is reported as itself, with the number of candidates the longest one was
+    // picked from. Bare postcodes / suburb names (`4113`) are dropped.
+    const addresses = (autofillData.addresses || [])
+      .map(addr => String(addr || '').trim())
+      .filter(addr => addr.length >= 8);
+    if (addresses.length > 0) {
+      identity.autofillAddress = [...addresses].sort((a, b) => b.length - a.length)[0];
+      identity.autofillAddressCount = addresses.length;
     }
   }
 
