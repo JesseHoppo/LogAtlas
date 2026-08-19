@@ -190,17 +190,21 @@ function buildDomainIndex() {
   const notes = getNotesData();
   if (notes && notes.entries.length > 0) {
     for (const note of notes.entries) {
+      // `note.domains` is already folded to base domains, so the raw URLs are
+      // what carries a subdomain the other six sources would have recorded.
       const countedBases = new Set();
-      for (const domain of note.domains || []) {
-        const base = extractBaseDomain(domain);
+      for (const url of note.urls || []) {
+        const host = extractDomain(url);
+        if (!host) continue;
+        const base = extractBaseDomain(host);
         const entry = getEntry(base);
-        // a note listing several subdomains of one base counts once for that base
+        // a note listing several hosts under one base counts once for that base
         if (!countedBases.has(base)) {
           countedBases.add(base);
           entry.notesCount++;
           if (entry.notes.length < SAMPLE) entry.notes.push({ title: note.title, indicators: note.indicators });
         }
-        if (domain !== base) entry.subdomains.add(domain);
+        if (host !== base) entry.subdomains.add(host);
       }
     }
   }
