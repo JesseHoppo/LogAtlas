@@ -732,19 +732,20 @@ export function createPagedCollectionRegistry(definitions) {
   };
 }
 
+// The number badge on an option is drawn from its `data-key`, so the rows past
+// the nine the digit keys can reach carry neither the attribute nor a badge.
+const SHORTCUT_ROWS = 9;
+
 function chooseMapperNode(nodes, fileType) {
   if (nodes.length === 1) return Promise.resolve(nodes[0]);
 
   return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay visible';
-    overlay.innerHTML = `
+    const modal = openTransientModal(`
       <div class="modal modal-filetype">
-        <h3>Choose File</h3>
-        <p>Select the ${escapeHtml(fileType)} file to remap.</p>
+        <h3>Which ${escapeHtml(fileType)} file?</h3>
         <div class="filetype-options">
           ${nodes.map(({ node, path }, index) => `
-            <button class="filetype-option" data-idx="${index}">
+            <button class="filetype-option"${index < SHORTCUT_ROWS ? ` data-key="${index + 1}"` : ''} data-idx="${index}">
               <span class="filetype-icon">${escapeHtml(node.name || `File ${index + 1}`)}</span>
               <span class="filetype-desc">${escapeHtml(trimRootPath(path))}</span>
             </button>
@@ -754,10 +755,12 @@ function chooseMapperNode(nodes, fileType) {
           <button class="modal-btn modal-btn-cancel" id="mapperChooseCancel">Cancel</button>
         </div>
       </div>
-    `;
+    `, { onDismiss: () => resolve(null) });
+    if (!modal) { resolve(null); return; }
+    const { overlay, close } = modal;
 
     const cleanup = (selection) => {
-      overlay.remove();
+      close();
       resolve(selection);
     };
 
