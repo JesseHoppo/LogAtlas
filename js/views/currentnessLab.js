@@ -496,6 +496,19 @@ function renderCredDetail(row) {
     ? `<p class="lab-detail-note">Same password seen on: ${row.reuseSites.map((s) => `<code>${escapeHtml(s)}</code>`).join(', ')}</p>`
     : '';
 
+  // One account stored across two browser profiles collapses to one row here;
+  // the files it was recovered from are the spread, and they hang off the count
+  // rather than filling the panel with paths.
+  const sources = (row.sources || []).map((source) => trimRootPath(source));
+  const sourceRow = sources.length > 0
+    ? `<div class="lab-detail-row">
+        <span class="lab-detail-label">Sources</span>
+        <div class="lab-detail-body">
+          <p class="lab-detail-note" title="${escapeHtml(sources.join('\n'))}">${escapeHtml(countLabel(sources.length, 'file'))}</p>
+        </div>
+      </div>`
+    : '';
+
   return `
     <div class="lab-detail">
       <div class="lab-detail-row">
@@ -527,6 +540,7 @@ function renderCredDetail(row) {
         <span class="lab-detail-label">Evidence</span>
         <ul class="lab-detail-evidence">${evidenceHtml}</ul>
       </div>
+      ${sourceRow}
     </div>
   `;
 }
@@ -630,7 +644,7 @@ function exportCurrentnessCsv() {
   const rows = applyCurrentnessFilters(currentnessModel.rows, searchValue);
   downloadCsvRows(
     'credential_currentness_lab.csv',
-    ['URL', 'Username', 'Score', 'Band', 'Disposition', 'Identity Fit', 'Site Domain', 'Site Host', 'Domain Category', 'Identity Domain', 'Conflict Domain', 'Identity Score', 'Site Score', 'Tenant Score', 'Platform Score', 'Penalty', 'Priority', 'App Credential', 'Consumer Site', 'Evidence'],
+    ['URL', 'Username', 'Score', 'Band', 'Disposition', 'Identity Fit', 'Site Domain', 'Site Host', 'Domain Category', 'Sensitive Site', 'Identity Domain', 'Conflict Domain', 'Identity Score', 'Site Score', 'Tenant Score', 'Platform Score', 'Penalty', 'Priority', 'App Credential', 'Consumer Site', 'Evidence', 'Source Files', 'Sources'],
     rows.map((row) => [
       row.url,
       row.username,
@@ -641,6 +655,7 @@ function exportCurrentnessCsv() {
       row.siteDomain,
       row.siteHost,
       row.categoryLabel || 'Uncategorised',
+      row.categories?.includes('sensitive') ? 'Yes' : 'No',
       row.usernameDomain,
       row.conflictDomain,
       row.identityScore,
@@ -652,6 +667,8 @@ function exportCurrentnessCsv() {
       row.isAppCredential ? 'Yes' : 'No',
       row.isConsumerSite ? 'Yes' : 'No',
       row.evidence.join('; '),
+      (row.sources || []).length,
+      (row.sources || []).map((source) => trimRootPath(source)).join('; '),
     ])
   );
 }
