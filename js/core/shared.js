@@ -4,11 +4,17 @@ import { on } from './state.js';
 const SHARED_TEXT_DECODER = new TextDecoder('utf-8');
 const STRICT_TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
 const WIN1252_TEXT_DECODER = new TextDecoder('windows-1252');
+// A byte order mark belongs to the head of the file. Runs taken from further in
+// must keep a U+FEFF that is part of the text.
+const UTF8_KEEP_BOM_DECODER = new TextDecoder('utf-8', { ignoreBOM: true });
 
 // Share of a file's non-ASCII bytes that must fail UTF-8 before Windows-1252
 // wins. A genuinely cp1252 file sits near 1.0 (every high byte is its own
 // error); valid UTF-8 carrying a few stray bytes sits near 0.
 const WIN1252_FAILURE_RATIO = 0.5;
+// Share of those bytes that must sit against an ASCII letter — i.e. inside a
+// word — before the file is read as prose rather than as bytes.
+const WIN1252_WORD_ADJACENCY = 0.7;
 
 function asBytes(buffer) {
   if (buffer instanceof Uint8Array) return buffer;
@@ -16,11 +22,69 @@ function asBytes(buffer) {
   return new Uint8Array(buffer);
 }
 
+// Length of the well-formed UTF-8 sequence starting at `i`, or 0 when the byte
+// cannot begin one. The continuation ranges are narrowed per lead byte so that
+// overlongs, surrogates and anything past U+10FFFF count as invalid rather than
+// being rescued as characters they never encoded.
+function utf8SequenceLength(bytes, i) {
+  const lead = bytes[i];
+  if (lead <= 0x7f) return 1;
+
+  let trail;
+  let min = 0x80;
+  let max = 0xbf;
+  if (lead >= 0xc2 && lead <= 0xdf) trail = 1;
+  else if (lead === 0xe0) { trail = 2; min = 0xa0; }
+  else if (lead >= 0xe1 && lead <= 0xec) trail = 2;
+  else if (lead === 0xed) { trail = 2; max = 0x9f; }
+  else if (lead <= 0xef) trail = 2;
+  else if (lead === 0xf0) { trail = 3; min = 0x90; }
+  else if (lead <= 0xf3) trail = 3;
+  else if (lead === 0xf4) { trail = 3; max = 0x8f; }
+  else return 0;
+
+  if (i + trail >= bytes.length) return 0;
+  if (bytes[i + 1] < min || bytes[i + 1] > max) return 0;
+  for (let k = 2; k <= trail; k++) {
+    if (bytes[i + k] < 0x80 || bytes[i + k] > 0xbf) return 0;
+  }
+  return trail + 1;
+}
+
+// A file is not obliged to be one encoding. Sysinfo lists in particular are
+// assembled from strings the machine handed over in whatever it held them in,
+// so a UTF-8 file arrives carrying the odd cp1252 byte — one `0xFC` inside
+// `Bürkert` among thousands of well-formed Cyrillic sequences. Reading the
+// whole file as cp1252 would wreck the Cyrillic; reading it as UTF-8 loses the
+// one character. So each invalid byte is rescued on its own and the rest of the
+// file decodes as what it is.
+function decodeMixedBytes(bytes) {
+  let text = '';
+  let runStart = 0;
+  let i = 0;
+
+  const flushRun = (end) => {
+    if (end <= runStart) return;
+    const run = bytes.subarray(runStart, end);
+    text += (runStart === 0 ? SHARED_TEXT_DECODER : UTF8_KEEP_BOM_DECODER).decode(run);
+  };
+
+  while (i < bytes.length) {
+    const length = utf8SequenceLength(bytes, i);
+    if (length > 0) { i += length; continue; }
+    flushRun(i);
+    text += WIN1252_TEXT_DECODER.decode(bytes.subarray(i, i + 1));
+    runStart = ++i;
+  }
+  flushRun(bytes.length);
+  return text;
+}
+
 // Some logs ship sysinfo / software lists as Windows-1252 instead of UTF-8;
 // the unmarked accented bytes land as U+FFFD. Comparing replacement counts
 // can't decide it — windows-1252 maps all 256 byte values, so it never
-// produces one — so cp1252 only wins when most of the file's non-ASCII bytes
-// failed and the bytes really don't decode as UTF-8.
+// produces one — so the bytes are only read as cp1252 when they really don't
+// decode as UTF-8.
 function decodeBufferWithFallback(buffer) {
   const bytes = asBytes(buffer);
   const utf8 = SHARED_TEXT_DECODER.decode(bytes);
@@ -33,14 +97,60 @@ function decodeBufferWithFallback(buffer) {
   for (let i = 0; i < bytes.length && nonAscii <= budget; i++) {
     if (bytes[i] > 0x7f) nonAscii++;
   }
-  if (nonAscii > budget) return utf8;
+  // Well past the ratio: the file is UTF-8 and the few failures are strays —
+  // worth rescuing one by one, but only where they read as text. A LevelDB log
+  // or an .ldb table is overwhelmingly UTF-8 too, and its framing bytes are not
+  // characters in any encoding.
+  if (nonAscii > budget) return strayBytesAreProse(bytes) ? decodeMixedBytes(bytes) : utf8;
 
   try {
     // A strict decode that still succeeds means every U+FFFD was written as one.
     return STRICT_TEXT_DECODER.decode(bytes);
   } catch {
-    return WIN1252_TEXT_DECODER.decode(bytes);
+    return isLatin1Prose(bytes) ? decodeMixedBytes(bytes) : utf8;
   }
+}
+
+function isAsciiLetter(byte) {
+  return (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a);
+}
+
+// The ratio test on its own can't tell `Intel®` and `µTorrent` from DPAPI
+// ciphertext, LevelDB framing or a JPEG, and cp1252 maps every byte, so those
+// come back as fluent-looking Latin with nothing marking them as unreadable —
+// an encrypted cookie value reads as a recovered one. What separates them is
+// position: an accented byte in prose sits inside a word, ciphertext bytes sit
+// among each other. Anything holding a NUL is not text at all.
+function isLatin1Prose(bytes) {
+  let high = 0;
+  let inWord = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte === 0) return false;
+    if (byte <= 0x7f) continue;
+    high++;
+    if (isAsciiLetter(bytes[i - 1]) || isAsciiLetter(bytes[i + 1])) inWord++;
+  }
+  return high > 0 && inWord / high >= WIN1252_WORD_ADJACENCY;
+}
+
+// Same word test, applied to the bytes a per-byte rescue would actually touch:
+// a UTF-8 file's handful of invalid bytes. In a sysinfo list they sit inside a
+// word (`Bürkert`); in a wallet store they are length prefixes and key framing
+// sitting against each other, and rescuing those puts readable Latin where the
+// file holds no text.
+function strayBytesAreProse(bytes) {
+  let stray = 0;
+  let inWord = 0;
+  let i = 0;
+  while (i < bytes.length) {
+    const length = utf8SequenceLength(bytes, i);
+    if (length > 0) { i += length; continue; }
+    stray++;
+    if (isAsciiLetter(bytes[i - 1]) || isAsciiLetter(bytes[i + 1])) inWord++;
+    i++;
+  }
+  return stray === 0 || inWord / stray >= WIN1252_WORD_ADJACENCY;
 }
 
 const CHROME_EPOCH_OFFSET = 11644473600000000n;
