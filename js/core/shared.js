@@ -1066,29 +1066,50 @@ function parseTimestampValue(value) {
 
 // `\b` doesn't fire between `_` and a digit (underscore is a word char), so
 // `_2025-10-21` needs a non-digit anchor instead.
+//
+// A name like `...-19-12-2025-05-02-44` carries one timestamp that two patterns
+// both claim: the day-first reading takes the whole of it, while the year-first
+// one latches onto `2025-05-02` — the year followed by the clock. Trying the
+// patterns in a fixed order picks the wrong reading, so every pattern runs and
+// the candidates are ranked: a reading that consumed a time of day beats a
+// bare date, and among equals the one that starts earliest in the name wins.
+const ARCHIVE_TIMESTAMP_PATTERNS = [
+  {
+    re: /(?:^|[^0-9])(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/,
+    read: (m) => [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0), m[4] != null],
+  },
+  {
+    re: /(?:^|[^0-9])(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/,
+    read: (m) => [Number(m[3]), Number(m[2]), Number(m[1]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0), m[4] != null],
+  },
+  {
+    re: /(?:^|[^0-9])(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})(?:$|[^0-9])/,
+    read: (m) => [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]), true],
+  },
+  // Undelimited `20251206`. Nothing separates this from an eight-digit archive
+  // ID, so the month and day are spelt out rather than left to `\d{2}` and the
+  // run has to be exactly eight digits long.
+  {
+    re: /(?:^|[^0-9])(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:$|[^0-9])/,
+    read: (m) => [Number(m[1]), Number(m[2]), Number(m[3]), 0, 0, 0, false],
+  },
+];
+
 function parseArchiveTimestamp(name) {
   const source = String(name || '');
   if (!source) return null;
 
-  const ymd = source.match(/(?:^|[^0-9])(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
-  if (ymd) {
-    const [, year, month, day, hour = '0', minute = '0', second = '0'] = ymd;
-    const date = buildLocalDate(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
-    if (date) return date;
+  const candidates = [];
+  for (const { re, read } of ARCHIVE_TIMESTAMP_PATTERNS) {
+    const match = source.match(re);
+    if (!match) continue;
+    const [year, month, day, hour, minute, second, hasTime] = read(match);
+    const date = buildLocalDate(year, month, day, hour, minute, second);
+    if (date) candidates.push({ date, hasTime, index: match.index });
   }
-
-  const dmy = source.match(/(?:^|[^0-9])(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})(?:[ T_-](\d{1,2})[-_.:](\d{1,2})(?:[-_.:](\d{1,2}))?)?(?:$|[^0-9])/);
-  if (dmy) {
-    const [, day, month, year, hour = '0', minute = '0', second = '0'] = dmy;
-    const date = buildLocalDate(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
-    if (date) return date;
-  }
-
-  const compact = source.match(/(?:^|[^0-9])(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})(?:$|[^0-9])/);
-  if (compact) {
-    const [, year, month, day, hour, minute, second] = compact;
-    const date = buildLocalDate(Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second));
-    if (date) return date;
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => (b.hasTime - a.hasTime) || (a.index - b.index));
+    return candidates[0].date;
   }
 
   // Last resort: two-digit-year day-first (`28-10-25`). The separator has to
