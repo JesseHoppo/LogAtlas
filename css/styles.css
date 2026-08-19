@@ -2103,6 +2103,18 @@ body {
   display: flex;
 }
 
+/* A modal with nothing focusable inside it parks focus on the overlay itself.
+   That is a container, not a control, so it takes no ring. The attribute is
+   matched deliberately: it out-specifies the global [tabindex]:focus-visible
+   ring, which would otherwise draw a 2px accent border around the whole
+   backdrop. */
+.modal-overlay[tabindex]:focus,
+.modal-overlay[tabindex]:focus-visible,
+.preview-overlay[tabindex]:focus,
+.preview-overlay[tabindex]:focus-visible {
+  outline: none;
+}
+
 .modal {
   background: var(--bg-primary);
   border: 1px solid var(--border);
