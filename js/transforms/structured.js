@@ -1033,6 +1033,9 @@ export function parseAccountTokenFile(text, hint = '') {
                   accountId = match[1].trim();
                 } else if (/^\d{6,}$/.test(line)) {
                   accountId = line;
+                } else if (ACCOUNT_ID_LIST_PATTERN.test(line)) {
+                  for (const id of line.split(/[,;]/)) appendRow('', id.trim(), '', '');
+                  continue;
                 } else if (DISCORD_TOKEN_PATTERN.test(line) || JWT_TOKEN_PATTERN.test(line) || /^1\/\//.test(line) || /^EAAB/i.test(line)) {
                   token = line;
                 }
