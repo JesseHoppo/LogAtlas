@@ -199,51 +199,107 @@ function setMatchesHost(set, host) {
   return false;
 }
 
-async function fetchSet(url) {
+async function fetchText(url) {
   try {
     const res = await fetch(url, { cache: 'force-cache' });
-    if (!res.ok) return new Set();
-    return indexLines(await res.text());
+    return res.ok ? await res.text() : '';
   } catch {
-    return new Set();
+    return '';
+  }
+}
+
+// `<list> <domain>` per line, where <list> is a file basename or `*`.
+function parseOverrides(text) {
+  const out = new Map();
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/#.*/, '').trim().toLowerCase();
+    if (!line) continue;
+    const [list, domain] = line.split(/\s+/);
+    if (!domain) continue;
+    if (!out.has(list)) out.set(list, new Set());
+    out.get(list).add(domain.replace(/^www\./, ''));
+  }
+  return out;
+}
+
+function applyOverrides(overrides) {
+  const everyList = overrides.get('*');
+  for (const [filename, name] of LIST_BY_FILENAME) {
+    const set = sets[name];
+    if (!set) continue;
+    for (const domain of everyList || []) set.delete(domain);
+    for (const domain of overrides.get(filename) || []) set.delete(domain);
   }
 }
 
 function loadDomainCategories() {
   if (loadingPromise) return loadingPromise;
-  loadingPromise = Promise.all(
-    Object.entries(FILES).map(([name, url]) =>
-      fetchSet(url).then((set) => { sets[name] = set; })
+  const lists = Promise.all(
+    Object.entries({ ...FILES, ...EMAIL_FILES }).map(([name, url]) =>
+      fetchText(url).then((text) => { sets[name] = indexLines(text); })
     )
-  ).then(() => {
+  );
+  loadingPromise = Promise.all([lists, fetchText(OVERRIDES_FILE)]).then(([, overrideText]) => {
+    applyOverrides(parseOverrides(overrideText));
+    loaded = true;
     emit('domains:categoriesLoaded', { sizes: getSizes() });
     return sets;
   });
   return loadingPromise;
 }
 
+// Everything except the suffix rules needs the lists, so a view rendering before
+// they land shows an all-uncategorised breakdown that means nothing.
+function areCategoriesLoaded() {
+  return loaded;
+}
+
 function getSizes() {
   const out = {};
-  for (const k of Object.keys(FILES)) out[k] = sets[k]?.size || 0;
+  for (const k of [...Object.keys(FILES), ...Object.keys(EMAIL_FILES)]) out[k] = sets[k]?.size || 0;
   return out;
+}
+
+// An address or a bare domain; anything before the last `@` is the local part
+// and says nothing about who runs the mailbox.
+function emailHost(value) {
+  const text = String(value || '').trim().toLowerCase();
+  const at = text.lastIndexOf('@');
+  return normaliseHost(at >= 0 ? text.slice(at + 1) : text);
+}
+
+function isFreeEmailProvider(value) {
+  return setMatchesHost(sets.freeProvider, emailHost(value));
+}
+
+function isDisposableEmailDomain(value) {
+  return setMatchesHost(sets.disposable, emailHost(value));
 }
 
 function normaliseHost(host) {
   return String(host || '').toLowerCase().replace(/^www\./, '').replace(/[\/?#].*/, '');
 }
 
+function matchesCategory(key, host) {
+  if (key === 'known') return KNOWN_SITE_LISTS.some((name) => setMatchesHost(sets[name], host));
+  return setMatchesHost(sets[key], host);
+}
+
 function classifySiteDomain(host) {
   const cleanHost = normaliseHost(host);
   if (!cleanHost) return { base: '', categories: [], primaryKey: null, primaryLabel: '' };
-  const base = extractBaseDomain(cleanHost) || cleanHost;
+  const base = registrableDomain(cleanHost);
   const suffixMatches = new Set(matchSuffixCategory(cleanHost));
+  if (isLocalDevice(cleanHost)) suffixMatches.add('localDevice');
   if (setMatchesHost(sets.university, cleanHost)) suffixMatches.add('edu');
   const categories = [];
   for (const key of SITE_CATEGORY_PRIORITY) {
-    if (suffixMatches.has(key) || setMatchesHost(sets[key], cleanHost)) categories.push(key);
+    if (suffixMatches.has(key) || matchesCategory(key, cleanHost)) categories.push(key);
   }
-  if (categories.some((key) => SENSITIVE_CATEGORIES.has(key))) categories.push('sensitive');
   const primaryKey = categories[0] || null;
+  // Escalate on the label we actually show, not on any match: a bank that is
+  // also a government agency reads as Government and is escalated once.
+  if (SENSITIVE_CATEGORIES.has(primaryKey)) categories.push('sensitive');
   return {
     base,
     categories,
@@ -256,11 +312,34 @@ function getCategoryLabel(key) {
   return CATEGORY_LABELS[key] || '';
 }
 
+// What a badge is standing on, for the analyst who wants to know why a domain
+// carries it. Keys with no single source (`sensitive` is an escalation of
+// whichever category won) are left to the caller's generic wording.
+const SUFFIX_RULE_SOURCES = {
+  gov: 'Matched the government suffix rule: .gov, gov/gob/gouv/govt/go under a country code, or a listed national suffix',
+  military: 'Matched the military suffix rule: .mil, mil under a country code, or a listed national suffix',
+  edu: 'Matched the education suffix rule (.edu, or edu/ac/sch under a country code) or data/site-domains/university.txt',
+  localDevice: 'Matched the local-device rule: a private or loopback IP address, or a .local/.lan/.internal name',
+};
+
+function getCategorySource(key) {
+  if (key === 'known') return `Matched ${KNOWN_SITE_LISTS.map((name) => FILES[name]).join(' or ')}`;
+  if (SUFFIX_RULE_SOURCES[key]) return SUFFIX_RULE_SOURCES[key];
+  return FILES[key] ? `Matched ${FILES[key]}` : '';
+}
+
+function isGenericCategory(key) {
+  return GENERIC_CATEGORIES.has(key);
+}
+
 export {
   loadDomainCategories,
+  areCategoriesLoaded,
+  isFreeEmailProvider,
+  isDisposableEmailDomain,
   classifySiteDomain,
   getCategoryLabel,
-  matchSuffixCategory,
-  getSizes,
+  getCategorySource,
+  isGenericCategory,
   SITE_CATEGORY_PRIORITY,
 };
