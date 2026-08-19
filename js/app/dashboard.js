@@ -643,6 +643,19 @@ function renderConsistencyChecks({ credentials, cookies, history, countryInfo, c
   }
 }
 
+// Each fingerprint render needs its own element ids; a counter is enough and
+// keeps a wall-clock reading out of the markup.
+let fingerprintRenderCount = 0;
+
+// The Overview names only the categories where a single account changes what the
+// response has to cover, in the order they change it. The consumer bulk — social,
+// search, the merely known — is what Domain explorer is for.
+const NOTABLE_DETECTION_LABELS = ['gov', 'military', 'bank', 'finance', 'rmm', 'ddns', 'gambling', 'edu']
+  .map(getCategoryLabel);
+
+const DOMAIN_DETECT_CATEGORIES = 4;
+const DOMAIN_DETECT_PER_CATEGORY = 5;
+
 const COUNTED_HINTS = [
   '_passwordFileHint',
   '_cookieFileHint',
@@ -1094,9 +1107,13 @@ export function initDashboard() {
     section.classList.remove('hidden');
 
     const confidenceLabel = capitalise(data.confidence) + ' confidence';
-    const signalsId = 'fingerprintSignals_' + Date.now();
+    const signalsId = 'fingerprintSignals_' + (++fingerprintRenderCount);
     const structureOnly = data.source === 'structure-only'
-      ? `<span class="dash-fingerprint-source" title="No sysinfo file present; family inferred from folder/file layout only.">structure-only</span>`
+      ? `<span class="dash-fingerprint-source" title="No sysinfo file; family inferred from layout alone.">structure-only</span>`
+      : '';
+    // Who sold the log, kept apart from what stole it.
+    const distributor = data.distributor
+      ? `<span class="dash-fingerprint-source" title="Resale brand stamped on the log.">via ${escapeHtml(data.distributor)}</span>`
       : '';
 
     body.innerHTML = `
@@ -1108,9 +1125,10 @@ export function initDashboard() {
           ${escapeHtml(confidenceLabel)}
         </span>
         ${structureOnly}
+        ${distributor}
       </div>
       <div class="dash-fingerprint-signals">
-        <button class="dash-fingerprint-toggle" id="${signalsId}Btn">&#9656; Matched signals (${data.matchedSignals.length})</button>
+        <button class="dash-fingerprint-toggle" id="${signalsId}Btn" aria-expanded="false" aria-controls="${signalsId}">&#9656; Matched signals (${data.matchedSignals.length.toLocaleString()})</button>
         <ul class="dash-fingerprint-list" id="${signalsId}">
           ${data.matchedSignals.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
         </ul>
@@ -1121,7 +1139,8 @@ export function initDashboard() {
     const signalList = document.getElementById(signalsId);
     toggleBtn.addEventListener('click', () => {
       const expanded = signalList.classList.toggle('expanded');
-      toggleBtn.innerHTML = (expanded ? '&#9662;' : '&#9656;') + ` Matched signals (${data.matchedSignals.length})`;
+      toggleBtn.setAttribute('aria-expanded', String(expanded));
+      toggleBtn.innerHTML = (expanded ? '&#9662;' : '&#9656;') + ` Matched signals (${data.matchedSignals.length.toLocaleString()})`;
     });
   });
 
