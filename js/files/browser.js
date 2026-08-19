@@ -463,40 +463,41 @@ function onItemKeyDown(e) {
   else if (e.key === 'Home') nextIdx = 0;
   else if (e.key === 'End') nextIdx = items.length - 1;
 
-  items[nextIdx]?.focus();
+  const next = items[nextIdx];
+  if (!next) return;
+
+  if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    if (!rangeBase && el.hasAttribute('aria-selected')) anchorKey = el.dataset.path;
+    if (next.hasAttribute('aria-selected')) extendSelectionTo(e.currentTarget, next.dataset.path);
+  } else {
+    // Moving without shift ends the walk, so the next one starts from here.
+    setAnchor(null);
+  }
+
+  next.focus();
 }
 
-// Set Type action
+// Set type action
 
 function showTypeMenu() {
   const nodes = getSelectedEntries().map(({ node }) => node);
   if (nodes.length === 0) return;
 
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay visible';
-  overlay.id = 'setTypeModal';
-  overlay.innerHTML = `
+  // A mixed selection has no current type to mark, so nothing is marked.
+  const distinct = new Set(nodes.map(getNodeFileType));
+  const activeType = distinct.size === 1 ? [...distinct][0] : null;
+
+  const modal = openTransientModal(`
     <div class="modal modal-filetype">
-      <h3>Set Type for ${nodes.length} File(s)</h3>
-      <div class="filetype-options">${buildFileTypeOptionsHtml({ includeRemove: true })}</div>
+      <h3>Type for ${countLabel(nodes.length, 'file')}</h3>
+      <div class="filetype-options">${buildFileTypeOptionsHtml({ includeRemove: true, activeType })}</div>
     </div>
-  `;
-  document.body.appendChild(overlay);
+  `, { onDismiss: () => document.removeEventListener('keydown', onNumberKey) });
+  if (!modal) return;
+  const { overlay, close } = modal;
+  const options = overlay.querySelector('.filetype-options');
 
-  function close() {
-    overlay.remove();
-    document.removeEventListener('keydown', onKey);
-  }
-  function onKey(e) {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-  }
-  document.addEventListener('keydown', onKey);
-
-  overlay.querySelector('.filetype-options').addEventListener('click', (ev) => {
-    const btn = ev.target.closest('.filetype-option');
-    if (!btn) return;
-    const type = btn.dataset.type;
-
+  function choose(type) {
     for (const node of nodes) {
       applyManualType(node, type);
     }
@@ -506,32 +507,66 @@ function showTypeMenu() {
     }
 
     close();
+    document.removeEventListener('keydown', onNumberKey);
     clearSelection();
     render();
     emit('reanalyze');
-  });
+  }
 
-  overlay.addEventListener('click', (ev) => {
-    if (ev.target === overlay) close();
+  // Each option renders its number key, so the key has to act on it.
+  function onNumberKey(event) {
+    if (topModal() !== overlay) return;
+    if (!/^[1-9]$/.test(event.key)) return;
+    const button = [...options.querySelectorAll('.filetype-option')].find(o => o.dataset.key === event.key);
+    if (!button) return;
+    event.preventDefault();
+    choose(button.dataset.type);
+  }
+  document.addEventListener('keydown', onNumberKey);
+
+  options.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.filetype-option');
+    if (btn) choose(btn.dataset.type);
   });
 }
 
 // Export selected files to ZIP
 
+// zip.js rejects a duplicate entry name, so two files that would land on the
+// same name inside the archive are numbered instead of one of them vanishing.
+function uniqueEntryName(name, used) {
+  let candidate = name;
+  if (used.has(candidate)) {
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    let n = 2;
+    do {
+      candidate = `${stem} (${n++})${ext}`;
+    } while (used.has(candidate));
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function describeList(names, limit = 4) {
+  if (names.length <= limit) return names.join(', ');
+  return `${names.slice(0, limit).join(', ')} and ${countLabel(names.length - limit, 'other')}`;
+}
+
 async function exportSelectedZip() {
   const entries = getSelectedEntries();
   if (entries.length === 0) return;
 
-  const hasTransformable = entries.some(({ node, name }) => canOfferTransformAction(node, name));
+  const hasTransformable = entries.some(({ node }) => canTransformStructuredFile(node));
 
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay visible';
-  overlay.id = 'exportSelectionModal';
-  overlay.innerHTML = `
+  let settle;
+  const answered = new Promise((resolve) => { settle = resolve; });
+  const modal = openTransientModal(`
     <div class="modal">
-      <h3>Export ${entries.length} File(s)</h3>
+      <h3>Download ${countLabel(entries.length, 'file')}</h3>
       ${hasTransformable ? `<label class="remember-password" style="margin-bottom: 0.5rem; display: block;">
-        <input type="checkbox" id="exportSelTransform"> Export structured files as CSV when possible
+        <input type="checkbox" id="exportSelTransform"> Add a CSV alongside each classified file
       </label>` : ''}
       <label class="remember-password" style="margin-bottom: 1rem; display: block;">
         <input type="checkbox" id="exportSelPwProtect"> Password protect
@@ -541,25 +576,21 @@ async function exportSelectedZip() {
         <button class="modal-btn modal-btn-submit" id="exportSelDownload">Download ZIP</button>
       </div>
     </div>
-  `;
-  document.body.appendChild(overlay);
+  `, { onDismiss: () => settle(null) });
+  if (!modal) return;
 
-  const result = await new Promise((resolve) => {
-    overlay.querySelector('#exportSelCancel').addEventListener('click', () => {
-      overlay.remove();
-      resolve(null);
-    });
-    overlay.querySelector('#exportSelDownload').addEventListener('click', () => {
-      const pw = overlay.querySelector('#exportSelPwProtect').checked;
-      const transformEl = overlay.querySelector('#exportSelTransform');
-      const transform = transformEl ? transformEl.checked : false;
-      overlay.remove();
-      resolve({ passwordProtect: pw, applyTransforms: transform });
-    });
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) { overlay.remove(); resolve(null); }
-    });
+  modal.overlay.querySelector('#exportSelCancel').addEventListener('click', () => {
+    modal.close();
+    settle(null);
   });
+  modal.overlay.querySelector('#exportSelDownload').addEventListener('click', () => {
+    const pw = modal.overlay.querySelector('#exportSelPwProtect').checked;
+    const transformEl = modal.overlay.querySelector('#exportSelTransform');
+    modal.close();
+    settle({ passwordProtect: pw, applyTransforms: transformEl ? transformEl.checked : false });
+  });
+
+  const result = await answered;
 
   if (!result) return;
 
