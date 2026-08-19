@@ -614,7 +614,7 @@ body {
   display: block;
 }
 
-/* Dashboard sections (Overview + System Info pages) */
+/* Dashboard sections (Overview + System info pages) */
 
 .dash-section {
   background: var(--bg-primary);
@@ -4213,7 +4213,7 @@ body {
   color: var(--text-primary);
 }
 
-/* Domain Explorer */
+/* Domain explorer */
 
 .domain-table .domain-row {
   cursor: pointer;
