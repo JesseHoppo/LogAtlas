@@ -380,78 +380,43 @@ function renderBookmarksPage(searchQuery = '') {
   content.innerHTML = html;
 }
 
-function browserMetadataRowBuilder({ browser, profile, category, key, value, source }) {
-  return `<tr><td>${escapeHtml(browser || '')}</td><td>${escapeHtml(profile || '')}</td><td>${escapeHtml(category || '')}</td><td title="${escapeHtml(key)}">${escapeHtml(key)}</td><td title="${escapeHtml(value)}">${escapeHtml(value)}</td><td title="${escapeHtml(source)}">${escapeHtml(trimRootPath(source))}</td></tr>`;
+// Visits is only a column when the log recorded counts, and a row the log
+// skipped exports as an empty cell — the same absence the table shows. The visit
+// column is named for the frame it is in, so a CSV read away from the case can
+// still be placed against the capture instant.
+export function shapeHistoryCsv(history) {
+  const withVisits = !!history.hasVisitCounts;
+  const framed = history.clock?.offsetMinutes != null;
+  const visitHeader = framed ? 'Last Visit (UTC)' : 'Last Visit (log clock)';
+  const visitCell = ({ lastVisit, lastVisitDate }) => (
+    framed && lastVisitDate ? formatDateTimeLabel(lastVisitDate) : lastVisit
+  );
+  return {
+    headers: withVisits
+      ? ['URL', 'Title', 'Visits', visitHeader]
+      : ['URL', 'Title', visitHeader],
+    rows: history.entries.map((entry) => (
+      withVisits
+        ? [entry.url, entry.title, entry.visitCount, visitCell(entry)]
+        : [entry.url, entry.title, visitCell(entry)]
+    )),
+  };
 }
 
-function renderBrowserMetaPage(searchQuery = '') {
-  const summary = document.getElementById('browserMetaSummary');
-  const stats = document.getElementById('browserMetaStats');
-  const content = document.getElementById('browserMetaContent');
-
-  if (browserMetadataData.entries.length === 0) {
-    browserMetadataFiltered = [];
-    browserMetadataShown = 0;
-    summary.textContent = 'No browser metadata found';
-    stats.innerHTML = '';
-    content.innerHTML = '<div class="no-data">No browser metadata available.</div>';
-    return;
-  }
-
-  let filtered = browserMetadataData.entries;
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
-    filtered = filtered.filter(entry => entry.browser.toLowerCase().includes(q) || entry.profile.toLowerCase().includes(q) || entry.category.toLowerCase().includes(q) || entry.key.toLowerCase().includes(q) || entry.value.toLowerCase().includes(q) || entry.source.toLowerCase().includes(q));
-  }
-
-  browserMetadataFiltered = browserMetaSort.apply(filtered);
-  browserMetadataShown = Math.min(PAGE_SIZE, filtered.length);
-
-  const categories = new Set(browserMetadataData.entries.map(entry => entry.category).filter(Boolean));
-  const browsers = new Set(browserMetadataData.entries.map(entry => entry.browser).filter(Boolean));
-  const profiles = new Set(browserMetadataData.entries.map(entry => entry.profile).filter(Boolean));
-  const withValues = browserMetadataData.entries.filter(entry => entry.value).length;
-
-  summary.textContent = filtered.length !== browserMetadataData.entries.length
-    ? `Showing ${filtered.length.toLocaleString()} of ${browserMetadataData.entries.length.toLocaleString()} metadata rows from ${browserMetadataData.fileCount} file(s)`
-    : `${browserMetadataData.entries.length.toLocaleString()} metadata rows from ${browserMetadataData.fileCount} file(s)`;
-
-  stats.innerHTML = `
-    <div class="data-page-stat"><div class="data-page-stat-value">${browsers.size.toLocaleString()}</div><div class="data-page-stat-label">Browsers</div></div>
-    <div class="data-page-stat"><div class="data-page-stat-value">${profiles.size.toLocaleString()}</div><div class="data-page-stat-label">Profiles</div></div>
-    <div class="data-page-stat"><div class="data-page-stat-value">${categories.size.toLocaleString()}</div><div class="data-page-stat-label">Categories</div></div>
-    <div class="data-page-stat"><div class="data-page-stat-value">${withValues.toLocaleString()}</div><div class="data-page-stat-label">With Value</div></div>
-  `;
-
-  let html = `<div class="data-table-container"><table class="data-table"><thead><tr>${
-    browserMetaSort.th('browser', 'Browser')}${browserMetaSort.th('profile', 'Profile')}${browserMetaSort.th('category', 'Category')}${
-    browserMetaSort.th('key', 'Key')}${browserMetaSort.th('value', 'Value')}${browserMetaSort.th('source', 'Source')}</tr></thead><tbody>`;
-  html += buildRowsHtml(browserMetadataRowBuilder, browserMetadataFiltered, 0, browserMetadataShown);
-  html += '</tbody></table></div>';
-  const remaining = browserMetadataFiltered.length - browserMetadataShown;
-  if (remaining > 0) html += buildShowMoreButton(remaining, 'browsermeta');
-  content.innerHTML = html;
-}
-
+// History is the one table whose column set depends on the log, so its rows are
+// shaped before they get here.
 function exportHistoryCSV() {
-  if (historyData.entries.length === 0) return;
-  downloadCsvRows('history.csv', ['URL', 'Title', 'Visits', 'Last Visit'], historyData.entries.map(
-    ({ url, title, visitCount, lastVisit }) => [url, title, visitCount, lastVisit]
-  ));
+  const { headers, rows } = shapeHistoryCsv({ ...historyData, entries: historyFiltered });
+  exportRows({ file: 'history.csv', noun: 'history entries', headers, entries: historyData.entries, filtered: rows });
 }
 
 function exportBookmarksCSV() {
-  if (bookmarksData.entries.length === 0) return;
-  downloadCsvRows('bookmarks.csv', ['URL', 'Title', 'Folder', 'Browser', 'Profile', 'Domain', 'Source'], bookmarksData.entries.map(
-    ({ url, title, folder, browser, profile, domain, source }) => [url, title, folder, browser, profile, domain, source]
-  ));
-}
-
-function exportBrowserMetadataCSV() {
-  if (browserMetadataData.entries.length === 0) return;
-  downloadCsvRows('browser_metadata.csv', ['Browser', 'Profile', 'Category', 'Key', 'Value', 'Source'], browserMetadataData.entries.map(
-    ({ browser, profile, category, key, value, source }) => [browser, profile, category, key, value, source]
-  ));
+  exportRows({
+    file: 'bookmarks.csv', noun: 'bookmarks',
+    headers: ['URL', 'Title', 'Folder', 'Browser', 'Profile', 'Domain', 'Source'],
+    entries: bookmarksData.entries, filtered: bookmarksFiltered,
+    row: ({ url, title, folder, browser, profile, domain, source }) => [url, title, folder, browser, profile, domain, source],
+  });
 }
 
 export function loadAll(fileTree, rootName) {
