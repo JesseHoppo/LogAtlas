@@ -428,12 +428,29 @@ function getVisiblePreviewText() {
   return getPreviewTexts().visibleText;
 }
 
+// Match offsets are used to slice the source text, so the folded copy has to
+// stay the same length. A handful of code points ('İ' among them) grow when
+// lowercased; those keep their original form and simply match case-sensitively.
+function foldCase(text) {
+  const lower = text.toLowerCase();
+  if (lower.length === text.length) return lower;
+
+  let out = '';
+  for (const ch of text) {
+    const folded = ch.toLowerCase();
+    out += folded.length === ch.length ? folded : ch;
+  }
+  return out;
+}
+
+// Matches never overlap: a query like `--` on a rule of dashes counts each
+// pair once, the same way the highlighter consumes them.
 function countOccurrences(haystack, needle) {
   let count = 0;
   let idx = 0;
   while ((idx = haystack.indexOf(needle, idx)) !== -1) {
     count += 1;
-    idx += 1;
+    idx += needle.length;
   }
   return count;
 }
@@ -491,18 +508,18 @@ function performSearch(query) {
   }
 
   const { displayText, visibleText } = getPreviewTexts();
-  const lowerText = visibleText.toLowerCase();
-  const lowerQuery = query.toLowerCase();
+  const lowerText = foldCase(visibleText);
+  const lowerQuery = foldCase(query);
   let idx = 0;
   const matchPositions = [];
   while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
     matchPositions.push(idx);
-    idx += 1;
+    idx += lowerQuery.length;
   }
 
   // The visible text is a prefix of the display text, so the rest holds the capped-away matches.
   if (displayText.length > visibleText.length) {
-    hiddenMatchCount = countOccurrences(displayText.slice(visibleText.length).toLowerCase(), lowerQuery);
+    hiddenMatchCount = countOccurrences(foldCase(displayText.slice(visibleText.length)), lowerQuery);
   }
   updateCappedMatchNotice();
 
@@ -520,7 +537,7 @@ function performSearch(query) {
     let lastEnd = 0;
     for (let i = 0; i < matchPositions.length; i++) {
       const start = matchPositions[i];
-      const end = start + query.length;
+      const end = start + lowerQuery.length;
       html += escapeHtml(visibleText.substring(lastEnd, start));
       html += `<span class="preview-search-match">${escapeHtml(visibleText.substring(start, end))}</span>`;
       lastEnd = end;
@@ -547,7 +564,7 @@ function highlightMatchesInElement(root, lowerQuery) {
 
   for (const textNode of textNodes) {
     const value = textNode.nodeValue || '';
-    const lower = value.toLowerCase();
+    const lower = foldCase(value);
     if (lower.indexOf(lowerQuery) === -1) continue;
 
     const frag = document.createDocumentFragment();
