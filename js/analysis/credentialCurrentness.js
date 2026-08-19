@@ -1362,26 +1362,35 @@ function scoreCredential(entry, context) {
       } else {
         addScore(result, 6, `History activity for ${siteLabel} (no capture anchor for recency)`, 'site');
       }
-      if (historySummary.loginHits > 0) addScore(result, 6, `${historySummary.loginHits} login-like history hit${historySummary.loginHits === 1 ? '' : 's'} for ${siteLabel}`, 'site');
-      if (historySummary.totalVisitCount >= 5) addScore(result, 4, `${historySummary.totalVisitCount} total visits to ${siteLabel}`, 'site');
+      if (historySummary.loginHits > 0) addScore(result, 6, `${historySummary.loginHits.toLocaleString()} login-like history hit${historySummary.loginHits === 1 ? '' : 's'} for ${siteLabel}`, 'site');
+      if (historySummary.totalVisitCount >= 5) addScore(result, 4, `${historySummary.totalVisitCount.toLocaleString()} total visits to ${siteLabel}`, 'site');
+      siteSignalCount += 1;
+    } else if (historySummary?.totalEntries) {
+      // Plenty of history exports carry no visit timestamp at all. The rows
+      // still prove the site was browsed, so they earn the same credit as a
+      // dated hit with no capture anchor — but never a recent visit, and never
+      // the visit-count bonus, since those exports leave the column at zero.
+      const entries = historySummary.totalEntries;
+      addScore(result, 6, `Undated history activity for ${siteLabel} (${entries.toLocaleString()} ${entries === 1 ? 'entry' : 'entries'})`, 'site');
+      if (historySummary.loginHits > 0) addScore(result, 6, `${historySummary.loginHits.toLocaleString()} login-like history hit${historySummary.loginHits === 1 ? '' : 's'} for ${siteLabel}`, 'site');
       siteSignalCount += 1;
     }
 
     const noteCount = siteIndexes.noteByBase.get(siteBase)?.count || 0;
     if (noteCount > 0) {
-      addScore(result, 6, `${noteCount} note reference${noteCount === 1 ? '' : 's'} to ${siteBase}`, 'site');
+      addScore(result, 6, `${noteCount.toLocaleString()} note reference${noteCount === 1 ? '' : 's'} to ${siteBase}`, 'site');
       siteSignalCount += 1;
     }
 
     const downloadCount = siteIndexes.downloadByBase.get(siteBase) || 0;
     if (downloadCount > 0) {
-      addScore(result, 6, `${downloadCount} download reference${downloadCount === 1 ? '' : 's'} to ${siteBase}`, 'site');
+      addScore(result, 6, `${downloadCount.toLocaleString()} download reference${downloadCount === 1 ? '' : 's'} to ${siteBase}`, 'site');
       siteSignalCount += 1;
     }
 
     const bookmarkCount = siteIndexes.bookmarkByBase.get(siteBase) || 0;
     if (bookmarkCount > 0) {
-      addScore(result, 3, `${bookmarkCount} bookmark${bookmarkCount === 1 ? '' : 's'} for ${siteBase}`, 'site');
+      addScore(result, 3, `${bookmarkCount.toLocaleString()} bookmark${bookmarkCount === 1 ? '' : 's'} for ${siteBase}`, 'site');
       siteSignalCount += 1;
     }
   }
