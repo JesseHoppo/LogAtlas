@@ -602,6 +602,64 @@ function parseJSONCookies(text) {
   }
 }
 
+function parseWrappedJSONCookies(text) {
+  const arr = findCookieArrayInObject(text);
+  return arr ? parseJSONCookies(JSON.stringify(arr)) : null;
+}
+
+function parseJSONCookieText(text) {
+  const wrapped = text.startsWith('{');
+  if (!wrapped && !text.startsWith('[')) return null;
+
+  const direct = wrapped ? parseWrappedJSONCookies(text) : parseJSONCookies(text);
+  if (direct) return direct;
+
+  // CDP dumps sometimes hold one response document per profile, run together
+  // with no separator, so the text never parses as a single value.
+  const chunks = splitJSONDocuments(text);
+  if (chunks.length < 2) return null;
+
+  const rows = [];
+  for (const chunk of chunks) {
+    const parsed = chunk.startsWith('{') ? parseWrappedJSONCookies(chunk) : parseJSONCookies(chunk);
+    if (parsed) rows.push(...parsed.rows);
+  }
+  return rows.length > 0 ? { headers: JSON_COOKIE_HEADERS, rows } : null;
+}
+
+// Balanced top-level values, so a `{…}{…}` run can be read one document at a time.
+function splitJSONDocuments(text) {
+  const chunks = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{' || ch === '[') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth < 0) break;
+      if (depth === 0 && start >= 0) {
+        chunks.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return chunks;
+}
+
 function findCookieArrayInObject(text) {
   try {
     const obj = JSON.parse(text);
@@ -726,22 +784,28 @@ export function parseCookieFile(text, config) {
 
   if (config) return normaliseConfigCookies(parseWithConfig(clean, config));
 
-  const sanitised = stripLeadingNoiseLines(clean).trim();
+  const stripped = stripLeadingNoiseLines(clean);
+  const sanitised = stripped.trim();
 
-  const trimmed = sanitised || clean.trim();
-  if (trimmed.startsWith('[')) {
-    const jsonResult = parseJSONCookies(trimmed);
+  // The noise stripper reads a lone `[` or `{` as decoration, so indented JSON
+  // only keeps its shape in the untouched text.
+  const raw = clean.trim();
+  const jsonSources = sanitised && sanitised !== raw ? [raw, sanitised] : [raw];
+  const looksJSON = jsonSources.some(source => source.startsWith('[') || source.startsWith('{'));
+
+  // A seller banner above the export pushes the document's opening line down.
+  const jsonStart = looksJSON ? -1 : raw.search(/^[[{]/m);
+  if (jsonStart > 0) jsonSources.push(raw.slice(jsonStart));
+
+  for (const source of jsonSources) {
+    const jsonResult = parseJSONCookieText(source);
     if (jsonResult) return jsonResult;
   }
-  if (trimmed.startsWith('{')) {
-    const arr = findCookieArrayInObject(trimmed);
-    if (arr) {
-      const jsonResult = parseJSONCookies(JSON.stringify(arr));
-      if (jsonResult) return jsonResult;
-    }
-  }
 
-  const allLines = (sanitised || clean).split('\n').filter(l => l.trim() !== '');
+  // Split the body with its trailing tabs intact: a cookie whose value is empty
+  // still occupies its column, and trimming the last line hides it.
+  const body = sanitised ? stripped.trimStart() : clean;
+  const allLines = body.split('\n').filter(l => l.trim() !== '');
   if (allLines.length === 0) return null;
 
   const lines = allLines.filter((l) => {
@@ -784,10 +848,14 @@ export function parseCookieFile(text, config) {
     if (rows.length > 0) return { headers: COOKIE_HEADERS, rows };
   }
 
-  // Fallback: try generic delimited detection (CSV, pipe, etc.)
-  const format = detectFormat(sanitised || clean);
+  // Fallback: try generic delimited detection (CSV, pipe, etc.). A JSON
+  // document that got this far is malformed, and splitting it on commas builds
+  // a table of fragments rather than cookies.
+  if (looksJSON) return null;
+
+  const format = detectFormat(body);
   if (format && format.type === 'delimited') {
-    return parseDelimited(sanitised || clean, format);
+    return normaliseDelimitedCookies(parseDelimited(body, format));
   }
 
   return null;
