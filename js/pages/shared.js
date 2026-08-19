@@ -743,19 +743,38 @@ function chooseMapperNode(nodes, fileType) {
       cleanup(nodes[parseInt(btn.dataset.idx, 10)] || null);
     });
 
-    overlay.querySelector('#mapperChooseCancel').addEventListener('click', () => cleanup(null));
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) cleanup(null);
+    overlay.addEventListener('keydown', (ev) => {
+      const index = parseInt(ev.key, 10) - 1;
+      if (!Number.isInteger(index) || index < 0 || index >= Math.min(nodes.length, SHORTCUT_ROWS)) return;
+      ev.preventDefault();
+      cleanup(nodes[index]);
     });
 
-    document.body.appendChild(overlay);
+    overlay.querySelector('#mapperChooseCancel').addEventListener('click', () => cleanup(null));
   });
 }
 
-async function openMapperForHint(hintKey, fileType) {
+// A mapping that leaves every column on "(Skip)" parses to a headerless table
+// of empty rows, and storing it replaces the file's whole contribution to the
+// case with nothing. Candidate configs are parsed and checked before they are
+// kept, wherever they are applied from.
+export function hasUsableColumns(parsed) {
+  if (!parsed || !Array.isArray(parsed.headers) || parsed.headers.length === 0) return false;
+  return (parsed.rows || []).some((row) => Array.isArray(row) && row.length > 0);
+}
+
+function hintedNodes(hintKey) {
   const nodes = [];
   collectHintedNodes(state.fileTree, hintKey, state.rootZipName, nodes);
-  if (nodes.length === 0) return;
+  return nodes;
+}
+
+async function openMapperForHint(hintKey, fileType) {
+  const nodes = hintedNodes(hintKey);
+  if (nodes.length === 0) {
+    showNotification(`Nothing in this case is typed as ${fileType} any more — no columns to adjust.`);
+    return;
+  }
 
   const selected = await chooseMapperNode(nodes, fileType);
   if (!selected) return;
@@ -768,17 +787,42 @@ async function openMapperForHint(hintKey, fileType) {
   const config = await openColumnMapper(text, fileName, fileType);
   if (!config) return;
 
+  const parsed = parseStructuredFile({
+    node: selected.node,
+    text,
+    fileName: selected.node.name || '',
+    sourcePath: fileName,
+    overrideConfig: config,
+  });
+  if (!hasUsableColumns(parsed)) {
+    showNotification('Mapping produced no rows — not applied. Previous columns kept.', 'error');
+    return;
+  }
+
   selected.node._parseConfig = config;
   emit('reanalyze');
 }
 
+// The mapper stays reachable while a hinted file exists, even when the page it
+// feeds is empty: a column mapping that dropped every row is exactly how that
+// happens, and the button is the only way back. Once the file has been re-typed
+// away the button goes rather than sitting there dead, so call this from the
+// empty branch too.
 export function addAdjustColumnsBtn(summaryEl, hintKey, fileType) {
-  const actionsArea = summaryEl.parentNode.querySelector('.data-page-actions');
-  if (actionsArea && !actionsArea.querySelector('.mapper-adjust-btn')) {
-    const adjustBtn = document.createElement('button');
-    adjustBtn.className = 'mapper-adjust-btn';
-    adjustBtn.textContent = 'Adjust columns\u2026';
-    adjustBtn.addEventListener('click', () => openMapperForHint(hintKey, fileType));
-    actionsArea.insertBefore(adjustBtn, actionsArea.firstChild);
+  const header = summaryEl?.parentNode;
+  if (!header) return;
+
+  if (hintedNodes(hintKey).length === 0) {
+    header.querySelector('.mapper-adjust-btn')?.remove();
+    return;
   }
+
+  const actionsArea = header.querySelector('.data-page-actions');
+  if (!actionsArea || actionsArea.querySelector('.mapper-adjust-btn')) return;
+
+  const adjustBtn = document.createElement('button');
+  adjustBtn.className = 'mapper-adjust-btn';
+  adjustBtn.textContent = 'Adjust columns\u2026';
+  adjustBtn.addEventListener('click', () => openMapperForHint(hintKey, fileType));
+  actionsArea.insertBefore(adjustBtn, actionsArea.firstChild);
 }
