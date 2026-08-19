@@ -1,7 +1,8 @@
 import { state } from '../core/state.js';
 import { downloadBlob, showNotification } from '../core/shared.js';
-import { downloadCsvRows } from '../pages/shared.js';
+import { countLabel, downloadCsvRows } from '../pages/shared.js';
 import { getPasswordsData } from '../pages/credentials.js';
+import { TOOL_NAME, TOOL_VERSION } from '../views/exports.js';
 
 function exportFileListCsv() {
   downloadCsvRows('file-list.csv', ['Path', 'Name', 'Type', 'Size (bytes)', 'Depth', 'Is Nested Archive', 'Encrypted'], state.flatFiles.map((file) => [
@@ -17,6 +18,10 @@ function exportFileListCsv() {
 
 function exportFileListJson() {
   const payload = {
+    tool: TOOL_NAME,
+    toolVersion: TOOL_VERSION,
+    source: state.rootZipName || '',
+    // UTC, ISO-8601 with the Z suffix: this file is read by tools, not people.
     exportedAt: new Date().toISOString(),
     totalFiles: state.flatFiles.filter((file) => file.type === 'file').length,
     totalFolders: state.flatFiles.filter((file) => file.type === 'directory').length,
