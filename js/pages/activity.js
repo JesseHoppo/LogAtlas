@@ -1022,6 +1022,8 @@ function getDomainDetectionsData() { return pages.detections.data; }
 function getClipboardData() { return pages.clipboard.data; }
 function getGrabbedFilesData() { return pages.grabbed.data; }
 function getScreenshotsData() { return pages.screenshots.data; }
+function getSoftwareData() { return pages.software.data; }
+function getProcessesData() { return pages.processes.data; }
 
 export {
   getDownloadsData,
@@ -1029,4 +1031,6 @@ export {
   getClipboardData,
   getGrabbedFilesData,
   getScreenshotsData,
+  getSoftwareData,
+  getProcessesData,
 };
