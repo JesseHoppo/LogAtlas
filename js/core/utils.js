@@ -100,25 +100,32 @@ function isMacOSMetadata(path) {
   return path.startsWith('__MACOSX');
 }
 
+const FILE_ICONS = new Map(Object.entries({
+  txt: 'TXT', log: 'LOG', csv: 'CSV', tsv: 'TSV',
+  json: 'JSON', xml: 'XML',
+  png: 'IMG', jpg: 'IMG', jpeg: 'IMG',
+  gif: 'IMG', bmp: 'IMG', webp: 'IMG', svg: 'SVG',
+  db: 'DB', sqlite: 'DB', sqlite3: 'DB',
+  exe: 'EXE', dll: 'DLL',
+  html: 'HTML', htm: 'HTML',
+  pdf: 'PDF',
+  doc: 'DOC', docx: 'DOC',
+  xls: 'XLS', xlsx: 'XLS',
+  ini: 'CFG', cfg: 'CFG', conf: 'CFG',
+}));
+
 function getFileIcon(name, isDirectory, isArchive) {
   if (isDirectory) return 'DIR';
   if (isArchive || isArchiveFile(name)) return 'ZIP';
 
   const ext = getFileExtension(name);
-  const icons = {
-    txt: 'TXT', log: 'LOG', csv: 'CSV', tsv: 'TSV',
-    json: 'JSON', xml: 'XML',
-    png: 'IMG', jpg: 'IMG', jpeg: 'IMG',
-    gif: 'IMG', bmp: 'IMG', webp: 'IMG', svg: 'SVG',
-    db: 'DB', sqlite: 'DB', sqlite3: 'DB',
-    exe: 'EXE', dll: 'DLL',
-    html: 'HTML', htm: 'HTML',
-    pdf: 'PDF',
-    doc: 'DOC', docx: 'DOC',
-    xls: 'XLS', xlsx: 'XLS',
-    ini: 'CFG', cfg: 'CFG', conf: 'CFG',
-  };
-  return icons[ext] || ext.toUpperCase() || '\u2014';
+  const known = FILE_ICONS.get(ext);
+  if (known) return known;
+  // The badge goes into markup unescaped, and the extension comes from an
+  // archive an attacker wrote: `evil.<img onerror=…>` would be an extension.
+  // Letters and digits only, and short enough to stay a badge.
+  const fallback = ext.replace(/[^a-z0-9]/gi, '').slice(0, 4).toUpperCase();
+  return fallback || '\u2014';
 }
 
 function getMimeType(name) {
