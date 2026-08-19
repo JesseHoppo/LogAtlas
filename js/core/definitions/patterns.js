@@ -68,6 +68,15 @@ export const AD_TRACKER_DOMAINS = new Set([
   'scorecardresearch.com', 'servenobid.com', 'sharethrough.com',
   'smaato.com', 'sonobi.com', 'sparteo.com', 'stickyadstv.com',
   'taboola.com', 'tremorhub.com', 'yieldmo.com',
+  // Seen ranking above the victim's own services in corpus cases.
+  '360yield.com', 'a-mo.net', 'adform.net', 'adroll.com', 'adsrvr.org',
+  'adtdp.com', 'agkn.com', 'appier.net', 'axonix.com', 'bidr.io',
+  'bidswitch.net', 'bluekai.com', 'crwdcntrl.net', 'demdex.net',
+  'everesttech.net', 'eyeota.net', 'gumgum.com', 'iesnare.com',
+  'inmobi.com', 'insightexpressai.com', 'loopme.me', 'mediago.io',
+  'ml314.com', 'moloco.com', 'onelink.me', 'podscribe.com', 'rlcdn.com',
+  'rlets.com', 'simpli.fi', 'stackadapt.com', 'tapad.com', 'teads.tv',
+  'turn.com', 'zprk.io',
 ]);
 
 
