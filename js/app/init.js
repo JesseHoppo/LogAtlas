@@ -1,6 +1,6 @@
 import { initBrowser, navigateTo } from '../files/browser.js';
-import { initPreview, closePreview } from '../files/preview.js';
-import { initPasswordModal, closePasswordModal } from '../files/password.js';
+import { initPreview } from '../files/preview.js';
+import { initPasswordModal } from '../files/password.js';
 import { initFileTypeModal } from '../files/fileTypeModal.js';
 import { initDataPages } from '../pages/dataPages.js';
 import { initCellCopy } from '../pages/shared.js';
@@ -86,16 +86,12 @@ initSystemInfoActions({
   navigateToPage,
   navigateTo,
 });
-initKeyboardShortcuts({
-  closePreview,
-  closePasswordModal,
-  navigateTo,
-});
+initKeyboardShortcuts({ navigateTo });
 initThemeToggle();
 
 document.getElementById('resetBtn')?.addEventListener('click', resetUI);
 
-// Fetch the vendored domain category data in the background. Credential Triage
+// Fetch the vendored domain category data in the background. Credential triage
 // subscribes to `domains:categoriesLoaded` and rebuilds when ready.
 void loadDomainCategories();
 
