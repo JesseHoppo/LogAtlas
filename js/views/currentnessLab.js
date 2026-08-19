@@ -286,6 +286,25 @@ function buildFilterChips(rows) {
     .join('');
 }
 
+function categoryPillLabel(key) {
+  if (key === 'unknown') return 'Uncategorised';
+  return getCategoryLabel(key) || key;
+}
+
+// Every category the rows actually carry earns a pill, so the strip always sums
+// to the ranked-row count. Order follows the classifier's own precision ranking
+// — "unknown" leads as the analyst-priority bucket, the ranked keys run
+// high-value to generic — and anything the classifier grows later lands at the
+// end by size rather than vanishing.
+function orderCategoryKeys(counts) {
+  const ranked = ['unknown', ...SITE_CATEGORY_PRIORITY].filter((key) => counts.has(key));
+  const seen = new Set(ranked);
+  const rest = [...counts.keys()]
+    .filter((key) => !seen.has(key))
+    .sort((a, b) => counts.get(b) - counts.get(a));
+  return [...ranked, ...rest];
+}
+
 function buildCategoryBreakdown(rows) {
   if (!rows?.length) return '';
   const counts = new Map();
@@ -295,37 +314,50 @@ function buildCategoryBreakdown(rows) {
   }
   if (counts.size <= 1 && counts.has('unknown')) return ''; // categories haven't loaded yet
 
-  const segments = CATEGORY_BREAKDOWN_ORDER
+  const segments = orderCategoryKeys(counts)
     .map((key) => {
-      const count = counts.get(key) || 0;
-      if (!count) return '';
-      const label = key === 'unknown' ? 'Uncategorised' : getCategoryLabel(key);
       const tone = key === 'unknown' ? ' lab-cat-unknown' : '';
-      return `<span class="lab-cat-pill${tone}"><strong>${count.toLocaleString()}</strong> ${escapeHtml(label)}</span>`;
+      return `<span class="lab-cat-pill${tone}"><strong>${counts.get(key).toLocaleString()}</strong> ${escapeHtml(categoryPillLabel(key))}</span>`;
     })
-    .filter(Boolean)
     .join('');
 
-  return `<div class="lab-cat-breakdown" title="Domain categories from data/site-domains/">${segments}</div>`;
+  return `<div class="lab-cat-breakdown" title="Domain categories across the rows on screen">${segments}</div>`;
+}
+
+// Each candidate carries the engine's own verdict; group on that rather than on
+// tone so "tentative" is not reported as a currentness judgement it never made.
+function groupCandidatesByStatus(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = entry.status || 'unknown';
+    if (!groups.has(key)) {
+      groups.set(key, { label: entry.statusLabel || key, tone: entry.statusTone || 'neutral', entries: [] });
+    }
+    groups.get(key).entries.push(entry);
+  }
+  const rank = (tone) => {
+    const at = CANDIDATE_TONE_ORDER.indexOf(tone);
+    return at < 0 ? CANDIDATE_TONE_ORDER.length : at;
+  };
+  return [...groups.values()].sort((a, b) => rank(a.tone) - rank(b.tone));
 }
 
 function buildCandidatesPanel(summary) {
   if (!summary.identityDomains?.length) return '';
 
-  const corroborated = summary.identityDomains.filter((entry) => entry.statusTone === 'success' || entry.statusTone === 'accent');
-  const legacy = summary.identityDomains.filter((entry) => !corroborated.includes(entry));
+  const groups = groupCandidatesByStatus(summary.identityDomains);
+  const summaryParts = [
+    countLabel(summary.identityDomains.length, 'candidate'),
+    ...groups.map((group) => `${group.entries.length.toLocaleString()} ${group.label.toLowerCase()}`),
+  ];
 
-  const summaryParts = [`${summary.identityDomains.length} candidate${summary.identityDomains.length === 1 ? '' : 's'}`];
-  if (corroborated.length) summaryParts.push(`${corroborated.length} corroborated`);
-  if (legacy.length) summaryParts.push(`${legacy.length} likely legacy`);
-
-  const items = [...corroborated, ...legacy].map((entry) => {
+  const items = groups.flatMap((group) => group.entries).map((entry) => {
     const tone = escapeHtml(entry.statusTone || 'neutral');
     const counts = [
-      entry.likelyCurrent ? `${entry.likelyCurrent} likely` : '',
-      entry.review ? `${entry.review} review` : '',
-      entry.weak ? `${entry.weak} weak` : '',
-    ].filter(Boolean).join(' · ') || `${entry.rowCount} rows`;
+      entry.likelyCurrent ? `${entry.likelyCurrent.toLocaleString()} likely` : '',
+      entry.review ? `${entry.review.toLocaleString()} review` : '',
+      entry.weak ? `${entry.weak.toLocaleString()} weak` : '',
+    ].filter(Boolean).join(' · ') || countLabel(entry.rowCount, 'row');
     const sourceTags = [...entry.sources]
       .filter((src) => src !== 'credentials')
       .map((src) => `<span class="lab-tag">${escapeHtml(src)}</span>`)
