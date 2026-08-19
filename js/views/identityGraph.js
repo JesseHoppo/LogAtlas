@@ -276,7 +276,7 @@ function buildIdentityProfile(passwordsData, cookiesData, accountTokensData, sys
   };
 
   return {
-    primaryIdentity, emailAccountMap, exposureSummary,
+    primaryIdentity, primaryEmail, emailAccountMap, exposureSummary,
     accounts,
   };
 }
@@ -299,7 +299,8 @@ function initIdentityGraph() {
   function tryBuild() {
     if (!dataLoaded || !sysinfoReceived || !autofillReceived) return;
     const result = buildIdentityProfile(
-      getPasswordsData(), getCookiesData(), getAccountTokensData(), sysinfoData, autofillData
+      getPasswordsData(), getCookiesData(), getAccountTokensData(), sysinfoData, autofillData,
+      resolvePrimaryIdentity(collectCurrentnessInput())
     );
     emit('analysis:identity', result);
   }
@@ -389,19 +390,31 @@ function renderIdentityPage(searchQuery = '') {
     ['Token-backed', es.tokenBackedServices],
     ['Email addresses', es.uniqueEmails],
   ].map(([label, value]) =>
-    `<div class="data-page-stat"><div class="data-page-stat-value">${value}</div><div class="data-page-stat-label">${label}</div></div>`
+    `<div class="data-page-stat"><div class="data-page-stat-value">${value.toLocaleString()}</div><div class="data-page-stat-label">${label}</div></div>`
   ).join('');
 
   // Primary identity: one compact block. Email addresses are a count that links
   // to the Identities index below, not a wall of every address in one cell.
   const pi = data.primaryIdentity;
+  const pe = data.primaryEmail;
   const fields = [];
-  if (pi.names.length > 0) fields.push(['Name', pi.names.slice(0, 3).join(', ') + (pi.names.length > 3 ? ` +${pi.names.length - 3} more` : '')]);
-  if (pi.osUsername) fields.push(['OS User', pi.userSource && pi.userSource !== 'sysinfo' ? `${pi.osUsername} (from ${USER_SOURCE_LABEL[pi.userSource]})` : pi.osUsername]);
+  // The address the case is about, and what put it first — the same ranking
+  // Credential triage headlines, so the two pages cannot name different people.
+  if (pe?.email) {
+    const why = [...(pe.evidence || []), pe.tentative ? 'no corroborating activity' : ''].filter(Boolean).join(' · ');
+    fields.push(['Primary identity', why ? `${pe.email} — ${why}` : pe.email]);
+  }
+  if (pi.names.length > 0) fields.push(['Name', capList(pi.names)]);
+  if (pi.osUsername) fields.push(['OS user', pi.userSource && pi.userSource !== 'sysinfo' ? `${pi.osUsername} (from ${USER_SOURCE_LABEL[pi.userSource]})` : pi.osUsername]);
   if (pi.computerName) fields.push(['Computer', pi.computerName]);
   if (pi.os) fields.push(['OS', pi.os]);
-  if (pi.location) fields.push(['Location', pi.location]);
-  if (pi.phones.length > 0) fields.push(['Phone', pi.phones.slice(0, 3).join(', ')]);
+  if (pi.location) fields.push(['Location', pi.locationSource && pi.locationSource !== 'sysinfo' ? `${pi.location} (from ${pi.locationSource})` : pi.location]);
+  if (pi.autofillAddress) {
+    fields.push(['Autofill address', pi.autofillAddressCount > 1
+      ? `${pi.autofillAddress} (1 of ${countLabel(pi.autofillAddressCount, 'autofill address', 'autofill addresses')})`
+      : pi.autofillAddress]);
+  }
+  if (pi.phones.length > 0) fields.push(['Phone', capList(pi.phones)]);
 
   const fieldsHtml = fields.length > 0
     ? '<div class="identity-grid">' + fields.map(([label, value]) =>

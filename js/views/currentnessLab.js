@@ -134,7 +134,10 @@ function normaliseDownloads() {
   }));
 }
 
-function normaliseCurrentnessInput() {
+// The Identity page resolves its primary identity from this same bundle, so the
+// two pages cannot rank the case's addresses differently. Exported rather than
+// copied: a second collector is how they drifted apart.
+function collectCurrentnessInput() {
   return {
     credentials: normaliseCredentials(),
     cookies: normaliseCookies(),
@@ -626,7 +629,7 @@ function renderCurrentnessPage(searchQuery = '') {
 }
 
 function rebuildCurrentnessModel() {
-  const input = normaliseCurrentnessInput();
+  const input = collectCurrentnessInput();
   if (!input.credentials.length) {
     currentnessModel = null;
     document.getElementById('navCurrentnessLab').disabled = true;
@@ -814,4 +817,4 @@ function initCurrentnessLab() {
   });
 }
 
-export { initCurrentnessLab };
+export { initCurrentnessLab, collectCurrentnessInput };
