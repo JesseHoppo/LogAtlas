@@ -115,7 +115,7 @@ function extractHistoryRowsFromRawUrls(lines) {
   const rows = lines
     .map(line => line.trim())
     .filter(line => line && !isPromotionalNoiseLine(line) && looksLikeHistoryUrl(line))
-    .map(url => [url, '', '1', '']);
+    .map(url => [url, '', '', '']);
 
   return rows.length > 0 ? rows : null;
 }
@@ -353,7 +353,7 @@ export function parseHistoryFile(text, config) {
   for (const block of normalised.split(/\n\s*\n+/).filter(block => block.trim())) {
     let url = '';
     let title = '';
-    let visits = '1';
+    let visits = '';
     let lastVisit = '';
 
     for (const rawLine of block.split('\n')) {
@@ -372,7 +372,7 @@ export function parseHistoryFile(text, config) {
       else if (/^(?:visit\s*time|last\s*visit|time|date|timestamp)$/.test(key)) lastVisit = value;
     }
 
-    if (url) blockRows.push([url, title, visits || '1', lastVisit]);
+    if (url) blockRows.push([url, title, visits, lastVisit]);
   }
   if (blockRows.length > 0) {
     return { headers: ['URL', 'Title', 'Visits', 'Last Visit'], rows: blockRows };
@@ -399,7 +399,7 @@ export function parseHistoryFile(text, config) {
         const rows = result.rows.map(row => [
           row[indices.url] || '',
           row[indices.title ?? -1] || '',
-          row[indices.visits ?? -1] || '1',
+          row[indices.visits ?? -1] || '',
           row[indices.time ?? -1] || '',
         ]);
         if (rows.some(row => looksLikeHistoryUrl(row[0]))) {
@@ -417,12 +417,12 @@ export function parseHistoryFile(text, config) {
       const prefix = line.slice(0, separatorIndex).trim();
       const remainder = line.slice(separatorIndex + 3).trim();
       if (/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?$/.test(prefix) && looksLikeHistoryUrl(remainder)) {
-        rows.push([remainder, '', '1', prefix]);
+        rows.push([remainder, '', '', prefix]);
         continue;
       }
     }
     if (looksLikeHistoryUrl(line)) {
-      rows.push([line, '', '1', '']);
+      rows.push([line, '', '', '']);
     }
   }
   if (rows.length > 0) {
