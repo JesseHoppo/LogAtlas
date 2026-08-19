@@ -238,22 +238,22 @@
             </div>
             <div class="file-browser" id="fileBrowser">
               <nav class="breadcrumb" id="breadcrumb" role="navigation" aria-label="File path"></nav>
-              <div class="file-grid" id="fileGrid" role="list"></div>
-              <div class="file-list active" id="fileList" role="list"></div>
+              <div class="file-grid" id="fileGrid" role="listbox" aria-multiselectable="true" aria-label="Files"></div>
+              <div class="file-list active" id="fileList" role="listbox" aria-multiselectable="true" aria-label="Files"></div>
             </div>
           </div>
           <div class="selection-toolbar" id="selectionToolbar">
-            <span class="selection-count" id="selectionCount">0 selected</span>
-            <button class="selection-btn" id="selectionSelectAll">Select All</button>
-            <button class="selection-btn" id="selectionSetType">Set Type</button>
-            <button class="selection-btn" id="selectionExportZip">Export ZIP</button>
+            <span class="selection-count" id="selectionCount">No files selected</span>
+            <button class="selection-btn" id="selectionSelectAll">Select all</button>
+            <button class="selection-btn" id="selectionSetType">Set type</button>
+            <button class="selection-btn" id="selectionExportZip">Download ZIP</button>
             <button class="selection-btn selection-btn-clear" id="selectionClear">Clear</button>
           </div>
 
           <div class="export-actions">
-            <button class="export-btn export-btn-primary" id="exportCredentials">Export All Credentials</button>
-            <button class="export-btn" id="exportCsv">Export File List (CSV)</button>
-            <button class="export-btn" id="exportJson">Export File List (JSON)</button>
+            <button class="export-btn export-btn-primary" id="exportCredentials">Download all credentials</button>
+            <button class="export-btn" id="exportCsv">Download file list (CSV)</button>
+            <button class="export-btn" id="exportJson">Download file list (JSON)</button>
           </div>
         </div>
         <div id="generatedDataPages"></div>

@@ -1415,10 +1415,13 @@ body {
   background: var(--accent-dim);
 }
 
-/* Selection toolbar (sticky so actions remain visible while scrolling) */
+/* Selection toolbar. It sits below the file panel, so sticking it to the top
+   would pin it only across the export row underneath; pinned to the bottom of
+   the scrollport it stays with the list it acts on however long that list is. */
 .selection-toolbar {
   display: none;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
   background: var(--bg-primary);
@@ -1426,12 +1429,18 @@ body {
   border-radius: var(--radius-md);
   margin-bottom: 0.75rem;
   position: sticky;
-  top: 0.5rem;
+  bottom: 0.5rem;
   z-index: 50;
   box-shadow: var(--shadow-float);
 }
 .selection-toolbar.visible {
   display: flex;
+}
+/* It sits there for the whole session, so it only earns the accent border and
+   the float once something is actually selected. */
+.selection-toolbar:not(.has-selection) {
+  border-color: var(--border);
+  box-shadow: none;
 }
 .selection-count {
   font-family: var(--font-mono);
@@ -1444,6 +1453,7 @@ body {
   font-family: var(--font-ui);
   font-size: 0.75rem;
   font-weight: 500;
+  white-space: nowrap;
   padding: 0.35rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1452,16 +1462,20 @@ body {
   cursor: pointer;
   transition: all 0.1s ease;
 }
-.selection-btn:hover {
+.selection-btn:hover:not(:disabled) {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--accent);
+}
+.selection-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .selection-btn-clear {
   color: var(--text-muted);
   border-color: transparent;
 }
-.selection-btn-clear:hover {
+.selection-btn-clear:hover:not(:disabled) {
   color: var(--error);
   background: var(--error-dim);
   border-color: var(--error-border);
