@@ -88,7 +88,7 @@ function mapCreditCardHeaders(parsed) {
   const headerMap = {};
   for (let i = 0; i < parsed.headers.length; i++) {
     const header = parsed.headers[i].toLowerCase();
-    if (/^(?:card\s*number|cardnumber|number|pan)$/i.test(header)) headerMap.number = i;
+    if (/^(?:(?:credit\s*)?card(?:\s*(?:number|num|no\.?))?|cardnumber|number|cc(?:\s*num(?:ber)?)?|cn|pan)$/i.test(header)) headerMap.number = i;
     else if (/^(?:name\s*on\s*card|nameoncard|cardholder|card\s*holder|holder|name)$/i.test(header)) headerMap.name = i;
     else if (/^(?:cvc|cvv|security\s*code)$/i.test(header)) headerMap.cvc = i;
     else if (/^(?:expiration(?:\s*date)?|expiry|expires?|expire|date)$/i.test(header)) headerMap.expiration = i;
@@ -220,7 +220,15 @@ export function parseCreditCardFile(text) {
   const format = detectFormat(clean);
   if (format && format.type === 'delimited') {
     const parsed = parseDelimited(clean, format);
-    const mapped = mapCreditCardHeaders(parsed) || mapCreditCardRowsByContent(parsed);
+    let mapped = mapCreditCardHeaders(parsed);
+    // Headers that name the holder and the expiry but not the number leave the
+    // PAN in a column nothing claimed. Content inspection is the only way to
+    // recover it, and it has to beat recognised column semantics to be used, so
+    // it only wins on a Luhn-valid cell.
+    if (!mapped || !mapped.rows.some(row => row[0])) {
+      const byContent = mapCreditCardRowsByContent(parsed);
+      if (byContent && (!mapped || byContent.rows.some(row => isLuhnPan(row[0])))) mapped = byContent;
+    }
     if (mapped) return mapped;
   }
 
