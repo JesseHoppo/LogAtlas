@@ -19,8 +19,8 @@ const CATEGORIES = {
   file:    { label: 'Files',   badgeClass: 'timeline-event-badge-file' },
   cookie:  { label: 'Cookies', badgeClass: 'timeline-event-badge-cookie' },
   history: { label: 'History', badgeClass: 'timeline-event-badge-history' },
-  notes: { label: 'Notes', badgeClass: 'timeline-event-badge-cookie' },
-  screenshots: { label: 'Screenshots', badgeClass: 'timeline-event-badge-history' },
+  notes:   { label: 'Notes',   badgeClass: 'timeline-event-badge-notes' },
+  screenshots: { label: 'Screenshots', badgeClass: 'timeline-event-badge-screenshots' },
 };
 
 function dateKey(date) {
