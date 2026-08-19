@@ -1532,6 +1532,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -1547,6 +1549,9 @@ body {
   font-size: 0.8rem;
   color: var(--text-primary);
   min-width: 0;
+  /* The search box and actions are fixed-width, so without a grow the file
+     name was squeezed to a single character. */
+  flex: 1 1 8rem;
 }
 .preview-title-icon {
   font-size: 1rem;
@@ -1679,10 +1684,13 @@ body {
   gap: 0.4rem;
   margin-left: auto;
   margin-right: 1rem;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .preview-search-input {
   width: 180px;
+  min-width: 5rem;
   padding: 0.3rem 0.6rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
