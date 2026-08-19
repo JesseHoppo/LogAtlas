@@ -149,7 +149,6 @@ export const FILE_TYPE_PATTERNS = {
     filePatterns: [
       /^(?:credit[\s_-]*)?cards?\.(txt|tsv|csv)$/i,
       /^cc[\s_-]?data\.(txt|tsv|csv)$/i,
-      /^CreditCards?\.(txt|tsv|csv)$/i,
       /^[^/]*[\s_-]cards?\.(txt|tsv|csv)$/i,
     ],
     // "card" also names hardware, ID documents and stationery; those turn up
