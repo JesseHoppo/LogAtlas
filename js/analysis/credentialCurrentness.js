@@ -1227,6 +1227,9 @@ function scoreCredential(entry, context) {
   const result = {
     url: entry.url || '',
     username,
+    // Every file the deduped credential was recovered from — one account stored
+    // across two browser profiles is one row here and two paths.
+    sources: entry.sources?.length ? [...entry.sources] : (entry.source ? [entry.source] : []),
     siteHost,
     siteDomain: siteBase,
     usernameDomain,
