@@ -95,9 +95,16 @@ function parsePasswordKeyValueRecords(text) {
     const rawKey = kvMatch[1].trim();
     const value = kvMatch[2].trim();
     const role = classifyPasswordFieldKey(rawKey);
-    const header = role
-      ? (role === 'url' ? 'URL' : role === 'username' ? 'Username' : 'Password')
-      : canonicalisePasswordExtraHeader(rawKey);
+    // A record that opens with a bare URL: the key/value split reads the scheme
+    // as the key, which would file the site under a column named after it. It
+    // is the record's site, not a credential of its own — combolists are whole
+    // files of these lines and stay with the combo parser.
+    const bareUrl = !role && value.startsWith('//') && URL_SCHEME_KEY.test(rawKey);
+    const header = bareUrl
+      ? 'URL'
+      : role
+        ? (role === 'url' ? 'URL' : role === 'username' ? 'Username' : 'Password')
+        : canonicalisePasswordExtraHeader(rawKey);
 
     if (line.includes('://') && line.indexOf(':') < line.indexOf('://') && !role && !['Software', 'Browser', 'Profile'].includes(header)) {
       if (allowPasswordContinuation && current.Password) {
@@ -107,9 +114,15 @@ function parsePasswordKeyValueRecords(text) {
     }
 
     if (!header) continue;
+    // `Site 1:` or `Server 2:` with the fields indented under it labels the
+    // record; taking it as a field of its own leaves a column empty on every row.
+    if (!value && !bareUrl && nextContentLineIsIndented(lines, index)) {
+      flush();
+      continue;
+    }
     if (hasCredentialField && current[header]) flush();
 
-    current[header] = value;
+    current[header] = bareUrl ? line : value;
     if (role) hasCredentialField = true;
     allowPasswordContinuation = header === 'Password' && /^android:\/\//i.test(current.URL || '');
   }
