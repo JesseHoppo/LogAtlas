@@ -3134,18 +3134,24 @@ body {
   vertical-align: bottom;
 }
 
-.data-table th.sortable {
+/* Credential triage builds its own header cells but takes its sort state from
+   the same helper, so the affordance is spelled out for both tables. */
+.data-table th.sortable,
+.lab-creds-table th.sortable {
   cursor: pointer;
   user-select: none;
 }
-.data-table th.sortable:hover {
+.data-table th.sortable:hover,
+.lab-creds-table th.sortable:hover {
   background: var(--bg-tertiary);
 }
-.data-table th.sortable:focus-visible {
+.data-table th.sortable:focus-visible,
+.lab-creds-table th.sortable:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.data-table th.sortable::after {
+.data-table th.sortable::after,
+.lab-creds-table th.sortable::after {
   content: '';
   display: inline-block;
   width: 0;
@@ -3157,12 +3163,14 @@ body {
   border-top: 4px solid var(--text-muted);
   opacity: 0.3;
 }
-.data-table th.sortable.sort-asc::after {
+.data-table th.sortable.sort-asc::after,
+.lab-creds-table th.sortable.sort-asc::after {
   border-top: none;
   border-bottom: 4px solid var(--accent);
   opacity: 1;
 }
-.data-table th.sortable.sort-desc::after {
+.data-table th.sortable.sort-desc::after,
+.lab-creds-table th.sortable.sort-desc::after {
   border-top: 4px solid var(--accent);
   opacity: 1;
 }
