@@ -94,7 +94,9 @@ function detectStructuredPii(text) {
     return d.length >= 13 && d.length <= 19 && isLuhnValid(d);
   } });
   const ibanCount = countMatches(value.replace(/(?<=[A-Z0-9])[ ]+(?=[A-Z0-9])/g, ''), IBAN_REGEX, { filter: (m) => ibanMod97Valid(m) });
-  const cryptoAddrCount = countMatches(value, ETH_ADDRESS_REGEX) + countMatches(value, BTC_ADDRESS_REGEX);
+  const btcMatches = String(value || '').match(BTC_ADDRESS_REGEX) || [];
+  const cryptoAddrCount = countMatches(value, ETH_ADDRESS_REGEX)
+    + btcMatches.filter(isValidBitcoinAddress).length;
   const seedPhrase = detectSeedPhrase(value);
   const nationalIds = detectNationalIds(value);
 
