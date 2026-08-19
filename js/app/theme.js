@@ -32,7 +32,6 @@ function applyTheme(themeToggle, theme, { persist = true } = {}) {
   themeToggle.textContent = isDark ? 'Light' : 'Dark';
   themeToggle.title = nextActionLabel;
   themeToggle.setAttribute('aria-label', nextActionLabel);
-  themeToggle.setAttribute('aria-pressed', String(isDark));
 
   if (persist) {
     writeStoredTheme(isDark ? 'dark' : 'light');
@@ -42,6 +41,10 @@ function applyTheme(themeToggle, theme, { persist = true } = {}) {
 export function initThemeToggle() {
   const themeToggle = document.getElementById('themeToggle');
   if (!themeToggle) return;
+
+  // Both labels name the action rather than the theme in effect, so the button
+  // carries no pressed state to contradict them.
+  themeToggle.removeAttribute('aria-pressed');
 
   // theme-bootstrap.js sets data-theme before CSS applies; this just brings the toggle button label into agreement.
   const stored = readStoredTheme();
