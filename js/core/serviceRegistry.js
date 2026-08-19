@@ -52,14 +52,33 @@ function findServiceDefinition(value, definitions) {
   return null;
 }
 
-function findStoreServiceByPath(pathText) {
-  const byPattern = findServiceDefinition(pathText, STORE_SERVICE_DEFINITIONS);
-  if (byPattern) return byPattern;
+function findDefinitionInSegments(pathText, definitions) {
+  const segments = normaliseServiceText(pathText).split('/').filter(Boolean);
 
+  // Deepest segment first: the folder actually holding the data outranks
+  // everything above it, so an archive root named after the wallets it contains
+  // or a grouping folder the stealer chose never overrides the leaf.
+  for (let index = segments.length - 1; index >= 0; index--) {
+    const match = definitions.find(
+      (definition) => definition.patterns.some((pattern) => pattern.test(segments[index])),
+    );
+    if (match) return match;
+  }
+
+  return null;
+}
+
+function findStoreServiceByPath(pathText) {
   const normalisedPath = normaliseServiceText(pathText);
-  return STORE_SERVICE_DEFINITIONS.find(
+
+  // An extension id is exact identification; a folder name is only the label
+  // the stealer picked, and those labels routinely disagree with the contents.
+  const byExtensionId = STORE_SERVICE_DEFINITIONS.find(
     (definition) => definition.extensionIds && definition.extensionIds.some((id) => normalisedPath.includes(id)),
-  ) || null;
+  );
+  if (byExtensionId) return byExtensionId;
+
+  return findDefinitionInSegments(pathText, STORE_SERVICE_DEFINITIONS);
 }
 
 function decodeJwtPayload(token) {
