@@ -1128,13 +1128,16 @@ function initCredentials() {
     renderPasswordsPage(passwordsSearch?.value || '');
   });
 
-  // Click-to-reveal individual masked passwords
-  document.getElementById('passwordsContent')?.addEventListener('click', (e) => {
+  // Reveal one masked password: click it, or focus it with the arrow keys and
+  // press Enter or Space.
+  const revealPassword = (e) => {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
     const cell = e.target.closest('.password-cell.masked');
     if (!cell) return;
-    // The click is spent on the reveal; without this the cell-copy handler sees
+    // The event is spent on the reveal; without this the cell-copy handler sees
     // an unmasked cell a moment later and puts the password on the clipboard.
     e.stopPropagation();
+    if (e.type === 'keydown') e.preventDefault();
     const tr = cell.closest('tr');
     if (!tr) return;
     const tbody = tr.closest('tbody');
@@ -1149,42 +1152,46 @@ function initCredentials() {
       setTimeout(() => {
         if (hidePasswords && cell.classList.contains('revealed')) {
           cell.textContent = maskValue(realValue);
-          cell.title = 'Click to reveal';
+          cell.title = REVEAL_HINT;
           cell.classList.remove('revealed');
           cell.classList.add('masked');
         }
       }, 5000);
     }
-  });
+  };
+
+  const passwordsContent = document.getElementById('passwordsContent');
+  passwordsContent?.addEventListener('click', revealPassword);
+  passwordsContent?.addEventListener('keydown', revealPassword);
 
   const cookiesSearch = document.getElementById('cookiesSearch');
   const cookiesValidOnly = document.getElementById('cookiesValidOnly');
   const cookiesSessionOnly = document.getElementById('cookiesSessionOnly');
-  const updateCookies = createDebounced(() => {
-    renderCookiesPage(
-      cookiesValidOnly?.checked || false,
-      cookiesSessionOnly?.checked || false,
-      cookiesSearch?.value || ''
-    );
-  });
+  const cookiesHideValuesCb = document.getElementById('cookiesHideValues');
+  const renderCookies = () => renderCookiesPage(
+    cookiesValidOnly?.checked || false,
+    cookiesSessionOnly?.checked || false,
+    cookiesSearch?.value || ''
+  );
+  const updateCookies = createDebounced(renderCookies);
 
   cookiesSearch?.addEventListener('input', updateCookies);
   cookiesValidOnly?.addEventListener('change', updateCookies);
   cookiesSessionOnly?.addEventListener('change', updateCookies);
+  cookiesHideValuesCb?.addEventListener('change', () => {
+    hideCookieValues = cookiesHideValuesCb.checked;
+    renderCookies();
+  });
 
   bindTableSort('passwordsContent', passwordsSort, () => renderPasswordsPage(passwordsSearch?.value || ''));
-  bindTableSort('cookiesContent', cookiesSort, () => renderCookiesPage(
-    cookiesValidOnly?.checked || false,
-    cookiesSessionOnly?.checked || false,
-    cookiesSearch?.value || ''
-  ));
+  bindTableSort('cookiesContent', cookiesSort, renderCookies);
 
   on('analysis:capture', ({ date }) => {
     const loaded = cookiesData.captureDate;
     if ((loaded ? loaded.getTime() : null) === (date ? date.getTime() : null)) return;
     applyCaptureDate(date);
     if (document.getElementById('pageCookies')?.classList.contains('active')) {
-      renderCookiesPage(cookiesValidOnly?.checked || false, cookiesSessionOnly?.checked || false, cookiesSearch?.value || '');
+      renderCookies();
     }
   });
 
@@ -1210,7 +1217,7 @@ function initCredentials() {
     load: [loadPasswordsData, loadCookiesData, loadAutofillsData, loadNotesData],
     render: {
       passwords: () => renderPasswordsPage(passwordsSearch?.value || ''),
-      cookies: () => renderCookiesPage(cookiesValidOnly?.checked || false, cookiesSessionOnly?.checked || false, cookiesSearch?.value || ''),
+      cookies: renderCookies,
       autofills: () => renderAutofillsPage(autofillsSearch?.value || ''),
       notes: () => renderNotesPage(notesSearch?.value || ''),
     },
