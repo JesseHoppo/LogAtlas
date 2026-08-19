@@ -851,13 +851,47 @@ function renderPage(pageId, searchQuery = '') {
   content.innerHTML = html;
 }
 
+function csvShape(page, columns) {
+  const reads = columns.map(({ column }) => column.csvValue || column.value);
+  return {
+    headers: columns.map(({ column }) => column.csv),
+    row: (entry) => reads.map((read) => read(entry)),
+  };
+}
+
+// The export writes the rows the table is showing, in the order it is showing
+// them, and says so in the file name: a CSV that silently holds a subset is
+// evidence with a hole in it. Columns the dataset never filled are left out of
+// both, so the file matches the table it came from.
 function exportCsv(pageId) {
-  const { data, csv } = pages[pageId];
-  if (data.entries.length === 0) return;
-  downloadCsvRows(csv.file, csv.headers, data.entries.map(csv.row));
+  const page = pages[pageId];
+  const noun = page.nounPlural || `${page.noun}s`;
+  const total = page.data.entries.length;
+  if (total === 0) {
+    showNotification(`No ${noun} to download.`, 'error');
+    return;
+  }
+  if (page.filtered.length === 0) {
+    showNotification(`No ${noun} match the current search.`, 'error');
+    return;
+  }
+  const { headers, row } = csvShape(page, keptColumns(page).filter(({ column }) => column.csv));
+  const name = page.filtered.length < total ? page.csvFile.replace(/\.csv$/, '-filtered.csv') : page.csvFile;
+  downloadCsvRows(name, headers, page.filtered.map(row));
 }
 
 // Module interface
+
+// The full shape of each page's export, before any per-dataset column is
+// dropped: the packaged report writes every case to the same schema, so it
+// cannot narrow its columns to one case's contents the way the on-screen
+// export does.
+export const CSV_SPECS = Object.freeze(Object.fromEntries(
+  Object.entries(pages).map(([pageId, page]) => {
+    const columns = page.columns.filter((column) => column.csv).map((column) => ({ column }));
+    return [pageId, Object.freeze({ file: page.csvFile, ...csvShape(page, columns) })];
+  })
+));
 
 export function loadAll(fileTree, rootName) {
   return Promise.all([
