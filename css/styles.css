@@ -4251,11 +4251,15 @@ body {
 .modal-shortcuts {
   max-width: 400px;
 }
+/* The list is built from the bindings table, so it grows with the app; capping
+   it keeps the Close button on screen rather than off the bottom of the modal. */
 .shortcuts-list {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   margin: 1rem 0;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 .shortcut-row {
   display: flex;
