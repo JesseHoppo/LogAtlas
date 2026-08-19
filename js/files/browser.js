@@ -264,39 +264,56 @@ function renderItemBadges(item, badgeClass, nestedLabel) {
   return html;
 }
 
+function emptyStateHtml() {
+  const message = state.filterText
+    ? `No files match "${escapeHtml(state.filterText)}"`
+    : 'This folder is empty';
+  return `<div class="empty-folder">` +
+    `<div class="empty-folder-icon">--</div><div>${message}</div></div>`;
+}
+
 // Grid/list views share markup; they differ only by class prefix, the nested-archive
 // label, and badges-vs-meta ordering. Wrapper/back classes don't derive cleanly from
 // the child prefix, so they're passed explicitly.
 
 function renderItems(items, { prefix, itemClass, backClass, nestedLabel, badgesBeforeMeta }) {
   let html = '';
+  // Roving tab stop: one row is in the tab order, arrows move between the rest.
+  let tabStopTaken = false;
 
   if (state.currentPath.length > 0) {
-    html += `<div class="${backClass}" data-action="back" role="button" tabindex="0" aria-label="Go up one folder">` +
+    tabStopTaken = true;
+    html += `<div class="${backClass}" data-action="back" role="option" tabindex="0" aria-label="Go up one folder">` +
       `<div class="${prefix}-icon">&larr;</div>` +
       `<div class="${prefix}-name">..</div>` +
       `<div class="${prefix}-meta">Go back</div></div>`;
   }
 
-  if (items.length === 0 && state.currentPath.length === 0) {
-    return `<div class="empty-folder">` +
-      `<div class="empty-folder-icon">--</div><div>No files found</div></div>`;
+  if (items.length === 0) {
+    return html + emptyStateHtml();
   }
 
   for (const item of items) {
     const isDir = item.type === 'directory';
     const icon = getFileIcon(item.name, isDir, item.isArchive);
     const key = itemKey(item.name);
-    const checked = selectedFiles.has(key) ? 'checked' : '';
-    const selectedClass = selectedFiles.has(key) ? ' selected' : '';
+    const selected = selectedFiles.has(key);
+    const checked = selected ? 'checked' : '';
+    const selectedClass = selected ? ' selected' : '';
     const verb = isDir ? `Open folder ${item.name}` : `Preview ${item.name}`;
+    const tabIndex = tabStopTaken ? -1 : 0;
+    tabStopTaken = true;
 
     html += `<div class="${itemClass}${selectedClass}" data-name="${escapeHtml(item.name)}" ` +
       `data-path="${escapeHtml(key)}" ` +
-      `data-folder="${isDir}" data-size="${item.size}" role="button" tabindex="0" aria-label="${escapeHtml(verb)}">`;
+      `data-folder="${isDir}" data-size="${item.size}" role="option" ` +
+      `${isDir ? '' : `aria-selected="${selected}" `}` +
+      `tabindex="${tabIndex}" aria-label="${escapeHtml(verb)}">`;
 
     if (!isDir) {
-      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-label="Select ${escapeHtml(item.name)}">`;
+      // The row carries the selected state for assistive tech; the box is the
+      // mouse target for it, so it stays out of the accessibility tree.
+      html += `<input type="checkbox" class="file-select-cb" ${checked} tabindex="-1" aria-hidden="true">`;
     }
 
     html += `<div class="${prefix}-icon">${icon}</div>` +
@@ -365,33 +382,73 @@ function onItemClick(e) {
     const el = e.target.closest('[data-path]');
     if (el) {
       e.stopPropagation();
-      toggleSelection(el.dataset.path);
+      if (e.shiftKey) extendSelectionTo(e.currentTarget, el.dataset.path);
+      else toggleSelection(el.dataset.path);
     }
     return;
   }
 
   const el = e.target.closest('[data-action="back"], [data-name]');
   if (!el) return;
+  // Shift takes a run of files rather than opening the one under the pointer.
+  if (e.shiftKey && el.hasAttribute('aria-selected')) {
+    extendSelectionTo(e.currentTarget, el.dataset.path);
+    return;
+  }
   activateItem(el);
 }
 
-function focusableSiblings(container) {
-  return Array.from(container.querySelectorAll('[role="button"][tabindex="0"]'));
+function rowsIn(container) {
+  return Array.from(container.querySelectorAll('[role="option"]'));
+}
+
+function setTabStop(container, el) {
+  for (const row of rowsIn(container)) {
+    row.tabIndex = row === el ? 0 : -1;
+  }
+}
+
+function onItemFocusIn(e) {
+  const el = e.target.closest('[role="option"]');
+  if (el) setTabStop(e.currentTarget, el);
 }
 
 function onItemKeyDown(e) {
   const el = e.target.closest('[data-action="back"], [data-name]');
-  if (!el || el.getAttribute('role') !== 'button') return;
+  if (!el || el.getAttribute('role') !== 'option') return;
 
-  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+  if (e.key === 'Enter') {
     e.preventDefault();
     activateItem(el);
     return;
   }
 
+  // Space selects where selection is possible; on folders and the back tile
+  // there is nothing to select, so it keeps its old meaning.
+  if (e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault();
+    if (el.hasAttribute('aria-selected')) toggleSelection(el.dataset.path);
+    else activateItem(el);
+    return;
+  }
+
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+    e.preventDefault();
+    toggleSelectAll();
+    return;
+  }
+
+  // Escape only means the selection while there is one; otherwise it belongs to
+  // whatever else on the page wants it.
+  if (e.key === 'Escape' && selectedFiles.size > 0) {
+    e.preventDefault();
+    clearSelection();
+    return;
+  }
+
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'Home' && e.key !== 'End') return;
 
-  const items = focusableSiblings(e.currentTarget);
+  const items = rowsIn(e.currentTarget);
   const idx = items.indexOf(el);
   if (idx < 0) return;
 
@@ -641,6 +698,8 @@ function initBrowser() {
   elFileList.addEventListener('click', onItemClick);
   elFileGrid.addEventListener('keydown', onItemKeyDown);
   elFileList.addEventListener('keydown', onItemKeyDown);
+  elFileGrid.addEventListener('focusin', onItemFocusIn);
+  elFileList.addEventListener('focusin', onItemFocusIn);
 
   document.getElementById('gridViewBtn').addEventListener('click', () => setViewMode('grid'));
   document.getElementById('listViewBtn').addEventListener('click', () => setViewMode('list'));
