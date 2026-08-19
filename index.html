@@ -321,41 +321,42 @@
           <div class="preview-body" id="previewBody"></div>
         </div>
       </div>
-      <div class="modal-overlay" id="passwordModal" role="dialog" aria-modal="true" aria-label="Password required">
+      <div class="modal-overlay" id="passwordModal" role="dialog" aria-label="Password required">
         <div class="modal">
-          <h3>Password Required</h3>
-          <p>This archive is encrypted:<br><span class="modal-file" id="encryptedFileName">&mdash;</span></p>
+          <h3>Password required</h3>
+          <p>Encrypted:<br><span class="modal-file" id="encryptedFileName">&mdash;</span></p>
           <div class="password-input-group">
             <input type="password" class="password-input" id="passwordInput" placeholder="Enter password..." autocomplete="off" aria-label="Archive password">
             <button class="toggle-password" id="togglePassword" type="button" aria-label="Show password" title="Show password">Show</button>
           </div>
-          <div class="password-error" id="passwordError" role="alert">Incorrect password. Please try again.</div>
+          <div class="password-error" id="passwordError" role="alert">Incorrect password.</div>
           <label class="remember-password">
             <input type="checkbox" id="rememberPassword" checked>
-            Use this password for other encrypted files in this archive
+            Reuse for other encrypted files here
           </label>
           <div class="modal-actions">
-            <button class="modal-btn modal-btn-cancel" id="skipPassword">Skip File</button>
+            <button class="modal-btn modal-btn-cancel" id="skipPassword">Skip file</button>
             <button class="modal-btn modal-btn-submit" id="submitPassword">Unlock</button>
           </div>
         </div>
       </div>
-      <div class="modal-overlay" id="fileTypeModal" role="dialog" aria-modal="true" aria-label="Select file type">
+      <div class="modal-overlay" id="fileTypeModal" role="dialog" aria-label="Select file type">
         <div class="modal modal-filetype">
-          <h3>Select File Type</h3>
-          <p>Unable to auto-detect file type for:<br>
+          <h3>File type</h3>
+          <p>Could not detect the type of<br>
             <span class="modal-file" id="fileTypeFileName">&mdash;</span>
           </p>
           <div class="filetype-options" id="fileTypeOptions"></div>
           <div class="filetype-pending hidden" id="fileTypePending">
-            <span id="fileTypePendingCount">0</span> more file(s) pending
+            <span id="fileTypePendingCount">0</span> more pending
+            <button class="modal-btn modal-btn-cancel" type="button" id="fileTypeSkipRest">Skip the rest</button>
           </div>
         </div>
       </div>
-      <div class="modal-overlay" id="pasteTextModal" role="dialog" aria-modal="true" aria-label="Paste text">
+      <div class="modal-overlay" id="pasteTextModal" role="dialog" aria-label="Paste text">
         <div class="modal modal-paste-text">
-          <h3>Paste Text</h3>
-          <p>Paste content and select a type.</p>
+          <h3>Paste text</h3>
+          <p></p>
           <div class="paste-name-group">
             <label for="pasteTextName">Name</label>
             <input type="text" id="pasteTextName" class="paste-text-name" placeholder="Pasted Text" autocomplete="off">
