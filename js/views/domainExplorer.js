@@ -1,21 +1,37 @@
 import { on } from '../core/state.js';
 import { escapeHtml } from '../core/utils.js';
-import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
+import { bindDebouncedInput, bindTableSort, createTableSort, datasetSummary, downloadCsvRows, maskValue } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData, getBookmarksData } from '../pages/browser.js';
 import { getDownloadsData, getDomainDetectionsData } from '../pages/activity.js';
 import { extractDomain, extractBaseDomain } from '../core/shared.js';
-import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
+import { AD_TRACKER_DOMAINS, FIELD_PATTERNS } from '../core/definitions/patterns.js';
 
 const PAGE_SIZE = 100;
 const SAMPLE = 25;
-const SUSPICIOUS_MIN_VALID = 10;
+const EMPTY_CELL = '<span class="cell-empty">\u2014</span>';
 
 let domainList = [];
 let domainFiltered = [];
 let domainShown = 0;
 let expandedDomain = null;
 let domainIndexBuilt = false;
+// Clicking a header sorts by that column; cycling back through it returns the
+// table to the artefact-count ranking, which is the order the page exists to
+// show. "Other" is one column over two sources, so it sorts on their sum.
+const RANK_CAPTION = 'Ordered by total artefacts across all seven sources.';
+
+const domainSort = createTableSort({
+  domain: (d) => d.domain,
+  credentials: (d) => d.credentials,
+  cookies: (d) => d.cookies,
+  history: (d) => d.history,
+  bookmarks: (d) => d.bookmarks,
+  downloads: (d) => d.downloads,
+  other: (d) => d.detections + d.notes,
+  subdomains: (d) => d.subdomains,
+});
+
 const DOMAIN_PAGE_INPUTS = {
   passwords: 'passwordsSearch',
   cookies: 'cookiesSearch',
@@ -227,11 +243,8 @@ function hasDomainSourceData() {
 }
 
 function domainRowBuilder(item) {
-  const suspiciousBadge = item.suspicious
-    ? ` <span class="domain-suspicious-badge" title="All ${item.cookies} cookies valid — possible attacker/test host" style="font-family:var(--font-mono);font-size:0.55rem;font-weight:600;text-transform:uppercase;padding:0.05rem 0.3rem;border-radius:3px;background:rgba(220,38,38,0.1);color:var(--error)">suspicious</span>`
-    : '';
-  return `<tr class="domain-row${item.suspicious ? ' domain-row-suspicious' : ''}" data-domain="${escapeHtml(item.domain)}">
-    <td class="domain-name-cell"><span class="domain-expand-icon">&#9656;</span> ${escapeHtml(item.domain)}${suspiciousBadge}</td>
+  return `<tr class="domain-row" tabindex="0" aria-expanded="false" data-domain="${escapeHtml(item.domain)}">
+    <td class="domain-name-cell" title="${escapeHtml(item.domain)}"><span class="domain-expand-icon">&#9656;</span> ${escapeHtml(item.domain)}</td>
     <td>${item.credentials}</td>
     <td>${item.cookies}</td>
     <td>${item.history}</td>
@@ -464,6 +477,46 @@ function openDomainArtifactPage(pageName, searchQuery) {
   }
 }
 
+function toggleDomainRow(row) {
+  const domain = row?.dataset.domain;
+  if (!domain) return;
+
+  const wasExpanded = expandedDomain === domain;
+
+  if (expandedDomain) {
+    const prevRow = document.querySelector(`.domain-row[data-domain="${CSS.escape(expandedDomain)}"]`);
+    if (prevRow) {
+      prevRow.classList.remove('domain-row-expanded');
+      prevRow.setAttribute('aria-expanded', 'false');
+      const icon = prevRow.querySelector('.domain-expand-icon');
+      if (icon) icon.innerHTML = '&#9656;';
+      const detailRow = prevRow.nextElementSibling;
+      if (detailRow && detailRow.classList.contains('domain-detail-row')) {
+        detailRow.remove();
+      }
+    }
+    expandedDomain = null;
+  }
+
+  if (wasExpanded) return;
+
+  expandedDomain = domain;
+  row.classList.add('domain-row-expanded');
+  row.setAttribute('aria-expanded', 'true');
+  const icon = row.querySelector('.domain-expand-icon');
+  if (icon) icon.innerHTML = '&#9662;';
+
+  const item = domainFiltered.find(d => d.domain === domain);
+  if (!item || !item._data) return;
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'domain-detail-row';
+  const td = document.createElement('td');
+  td.setAttribute('colspan', '8');
+  td.innerHTML = renderDomainDetail(item._data, domain);
+  detailTr.appendChild(td);
+  row.after(detailTr);
+}
+
 function exportDomainsCSV() {
   ensureDomainIndex();
   if (!domainList || domainList.length === 0) return;
@@ -500,50 +553,35 @@ function initDomainExplorer() {
       return;
     }
 
+    toggleDomainRow(e.target.closest('.domain-row'));
+  });
+
+  document.getElementById('domainsContent')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    // Controls inside the row — the copy button the cells carry, the open-page
+    // links — answer their own keystrokes. Swallowing those would toggle the
+    // row instead of doing what the focused control says it does.
+    if (e.target.closest('button, a, input, select, textarea')) return;
     const row = e.target.closest('.domain-row');
     if (!row) return;
-    const domain = row.dataset.domain;
-    if (!domain) return;
-
-    const wasExpanded = expandedDomain === domain;
-
-    // Collapse previous
-    if (expandedDomain) {
-      const prevRow = document.querySelector(`.domain-row[data-domain="${CSS.escape(expandedDomain)}"]`);
-      if (prevRow) {
-        prevRow.classList.remove('domain-row-expanded');
-        const icon = prevRow.querySelector('.domain-expand-icon');
-        if (icon) icon.innerHTML = '&#9656;';
-        const detailRow = prevRow.nextElementSibling;
-        if (detailRow && detailRow.classList.contains('domain-detail-row')) {
-          detailRow.remove();
-        }
-      }
-      expandedDomain = null;
-    }
-
-    if (!wasExpanded) {
-      expandedDomain = domain;
-      row.classList.add('domain-row-expanded');
-      const icon = row.querySelector('.domain-expand-icon');
-      if (icon) icon.innerHTML = '&#9662;';
-
-      const item = domainFiltered.find(d => d.domain === domain);
-      if (item && item._data) {
-        const detailTr = document.createElement('tr');
-        detailTr.className = 'domain-detail-row';
-        const td = document.createElement('td');
-        td.setAttribute('colspan', '8');
-        td.innerHTML = renderDomainDetail(item._data, domain);
-        detailTr.appendChild(td);
-        row.after(detailTr);
-      }
-    }
+    e.preventDefault();
+    toggleDomainRow(row);
   });
+
+  bindTableSort('domainsContent', domainSort, () => renderDomainsPage(searchInput?.value || ''));
 
   on('data:loaded', () => {
     domainIndexBuilt = false;
     document.getElementById('navDomains').disabled = !hasDomainSourceData();
+  });
+
+  // The index copies each cookie's validity, and the capture instant re-judges
+  // every one of them, so an index built before it lands has to go.
+  on('analysis:capture', () => {
+    domainIndexBuilt = false;
+    if (!document.getElementById('pageDomains')?.classList.contains('active')) return;
+    ensureDomainIndex();
+    renderDomainsPage(searchInput?.value || '');
   });
 
   on('page:domains', () => {
