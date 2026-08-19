@@ -308,14 +308,24 @@ function renderBarList(container, items, maxItems = 10) {
   const maxCount = top[0].count;
   container.innerHTML = top.map(item => {
     const pct = Math.round((item.count / maxCount) * 100);
-    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeHtml(item.value)}: ${item.count}"`;
+    const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeHtml(item.value)}: ${item.count.toLocaleString()}"`;
     return `<div class="dash-bar-row" ${aria}>
       <div class="dash-bar-fill" style="width:${pct}%"></div>
       <span class="dash-bar-label">${escapeHtml(item.value)}</span>
-      <span class="dash-bar-count">${item.count}</span>
+      <span class="dash-bar-count">${item.count.toLocaleString()}</span>
     </div>`;
   }).join('');
 }
+
+// Every bucket a cookie can land in. All four are drawn, so the segments of a
+// row sum to the count printed beside it. "Session" is a live state too, hence
+// the qualifier — it reads as the opposite of "Valid" otherwise.
+const COOKIE_BUCKETS = [
+  ['valid', 'Valid'],
+  ['expired', 'Expired'],
+  ['session', 'Session (no expiry)'],
+  ['unknown', 'Unparseable expiry'],
+];
 
 function renderCookieBarList(container, items, maxItems = 10) {
   if (items.length === 0) {
@@ -324,19 +334,31 @@ function renderCookieBarList(container, items, maxItems = 10) {
   }
   const top = items.slice(0, maxItems);
   const maxCount = top[0].count;
+  const present = COOKIE_BUCKETS.filter(([key]) => top.some((item) => (item[key] || 0) > 0));
 
-  let html = '<div class="dash-bar-legend"><span class="dash-bar-legend-item"><span class="dash-bar-legend-swatch dash-bar-legend-valid"></span>Valid</span><span class="dash-bar-legend-item"><span class="dash-bar-legend-swatch dash-bar-legend-expired"></span>Expired</span></div>';
+  let html = `<div class="dash-bar-legend">${present.map(([key, label]) =>
+    `<span class="dash-bar-legend-item"><span class="dash-bar-legend-swatch dash-bar-legend-${key}"></span>${label}</span>`
+  ).join('')}</div>`;
 
   html += top.map(item => {
-    const validPct = Math.round((item.valid / maxCount) * 100);
-    const expiredPct = Math.round((item.expired / maxCount) * 100);
-    const ariaLabel = `${item.value}: ${item.count} cookies (${item.valid} valid, ${item.expired} expired)`;
+    let offset = 0;
+    const fills = COOKIE_BUCKETS.map(([key]) => {
+      const n = item[key] || 0;
+      if (n <= 0) return '';
+      const left = offset;
+      const width = (n / maxCount) * 100;
+      offset += width;
+      return `<div class="dash-bar-fill dash-bar-fill-${key}" style="left:${left.toFixed(2)}%; width:${width.toFixed(2)}%"></div>`;
+    }).join('');
+    const breakdown = COOKIE_BUCKETS
+      .filter(([key]) => (item[key] || 0) > 0)
+      .map(([key, label]) => `${(item[key] || 0).toLocaleString()} ${label.toLowerCase()}`);
+    const ariaLabel = `${item.value}: ${countLabel(item.count, 'cookie')}${breakdown.length > 0 ? ` — ${breakdown.join(', ')}` : ''}`;
     const aria = `role="meter" aria-valuenow="${item.count}" aria-valuemin="0" aria-valuemax="${maxCount}" aria-label="${escapeHtml(ariaLabel)}"`;
     return `<div class="dash-bar-row dash-bar-row-stacked" ${aria}>
-      <div class="dash-bar-fill dash-bar-fill-valid" style="width:${validPct}%"></div>
-      <div class="dash-bar-fill dash-bar-fill-expired" style="width:${expiredPct}%; left:${validPct}%"></div>
+      ${fills}
       <span class="dash-bar-label">${escapeHtml(item.value)}</span>
-      <span class="dash-bar-count">${item.count}</span>
+      <span class="dash-bar-count">${item.count.toLocaleString()}</span>
     </div>`;
   }).join('');
 
