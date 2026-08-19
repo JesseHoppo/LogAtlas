@@ -314,11 +314,17 @@ function renderDomainDetail(data, baseDomain) {
   }
 
   if (data.historyCount > 0) {
-    html += '<div class="domain-detail-section"><div class="domain-detail-title">History (' + data.historyCount + ')</div>';
-    html += '<table class="domain-detail-table"><thead><tr><th>URL</th><th>Title</th><th>Visits</th></tr></thead><tbody>';
+    // Visits is a column only when the log recorded counts at all; most record
+    // none, and an invented number reads as a finding about the victim.
+    const withVisits = !!getHistoryData()?.hasVisitCounts;
+    html += '<div class="domain-detail-section"><div class="domain-detail-title">History (' + data.historyCount.toLocaleString() + ')</div>';
+    html += `<table class="domain-detail-table"><thead><tr><th tabindex="0">URL</th><th tabindex="0">Title</th>${withVisits ? '<th tabindex="0">Visits</th>' : ''}</tr></thead><tbody>`;
     const showHistory = data.history.slice(0, 20);
     for (const h of showHistory) {
-      html += `<tr><td title="${escapeHtml(h.url)}">${escapeHtml(h.url)}</td><td>${escapeHtml(h.title)}</td><td>${h.visitCount}</td></tr>`;
+      const visitsCell = withVisits
+        ? `<td>${h.visitCount == null ? EMPTY_CELL : h.visitCount.toLocaleString()}</td>`
+        : '';
+      html += `<tr><td title="${escapeHtml(h.url)}">${escapeHtml(h.url)}</td><td>${escapeHtml(h.title)}</td>${visitsCell}</tr>`;
     }
     html += '</tbody></table>';
     html += buildDomainSectionFooter('history', query('history'), data.historyCount, showHistory.length, 'history');
