@@ -1204,21 +1204,59 @@ export function initDashboard() {
     }
 
     section.classList.remove('hidden');
-    let html = data.synthesized
-      ? '<div class="dash-section-subtitle">Synthesised from credential and cookie hosts (no domain-detect file present).</div>'
-      : '';
-    for (const [label, entries] of Object.entries(data.categories)) {
-      const domains = entries.map((e) => {
+
+    // Re-listing every classified host made this a second, worse Domain
+    // Explorer. What the Overview owes the analyst is the handful that change
+    // the case, and a way through to the rest.
+    const hosts = new Set();
+    for (const entries of Object.values(data.categories)) {
+      for (const entry of entries) hosts.add(entry.domain);
+    }
+    const notable = NOTABLE_DETECTION_LABELS
+      .map((label) => [label, data.categories[label]])
+      .filter(([, entries]) => entries?.length > 0)
+      .slice(0, DOMAIN_DETECT_CATEGORIES);
+
+    const source = data.synthesized
+      ? `${countLabel(hosts.size, 'host')} classified from the credential and cookie sets`
+      : `${countLabel(hosts.size, 'host')} on the detection list shipped with the log`;
+    // A clean negative only means something if it names what was looked for,
+    // and it is a statement about these hosts, not about the whole case.
+    const scope = notable.length > 0
+      ? 'notable categories only'
+      : `none of them in ${joinNaturalList(NOTABLE_DETECTION_LABELS, 'or')}`;
+
+    let html = `<div class="dash-section-subtitle">${escapeHtml(`${source} — ${scope}.`)}</div>`;
+    for (const [label, entries] of notable) {
+      // A detect file lists the same host once per section it was hit in, which
+      // reads as a repeated row here. One host, its hits added up.
+      const merged = new Map();
+      for (const entry of entries) {
+        const held = merged.get(entry.domain);
+        if (held) held.count += entry.count;
+        else merged.set(entry.domain, { ...entry });
+      }
+      const ranked = [...merged.values()].sort((a, b) => b.count - a.count);
+      const shown = ranked.slice(0, DOMAIN_DETECT_PER_CATEGORY);
+      const rest = ranked.length - shown.length;
+      const domains = shown.map((e) => {
         const tag = e.label && e.label.toLowerCase() !== String(label).toLowerCase()
           ? ` <span class="dash-domain-tag">${escapeHtml(e.label)}</span>`
           : '';
-        return `${escapeHtml(e.domain)} (${e.count})${tag}`;
+        return `${escapeHtml(e.domain)} (${e.count.toLocaleString()})${tag}`;
       }).join(', ');
+      const more = rest > 0 ? `<span class="dash-kv-more">+${rest.toLocaleString()}</span>` : '';
       html += `<div class="dash-kv-row">
       <span class="dash-kv-key">${escapeHtml(label)}</span>
-      <span class="dash-kv-value">${domains}</span>
+      <span class="dash-kv-value">${domains}${more}</span>
     </div>`;
     }
+
+    // A log that shipped its own detect file has a page holding it verbatim,
+    // operator labels and all; a synthesised set only exists in the Explorer.
+    html += data.synthesized
+      ? '<button class="verdict-card-link" data-nav="domains">Every host in Domain explorer &rarr;</button>'
+      : '<button class="verdict-card-link" data-nav="detections domains">The full detection list &rarr;</button>';
     body.innerHTML = html;
   });
 
