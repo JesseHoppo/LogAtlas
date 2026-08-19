@@ -1121,7 +1121,13 @@ body {
   z-index: 10;
 }
 
+/* Ancestor segments are buttons so the path can be walked from the keyboard;
+   the current segment is a span. Buttons take neither the container's font nor
+   its background, so both are spelled out here. */
 .breadcrumb-item {
+  font: inherit;
+  border: 0;
+  background: none;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0.2rem 0.4rem;
