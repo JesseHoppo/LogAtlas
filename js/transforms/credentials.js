@@ -548,7 +548,8 @@ export function parseFileZillaSiteManager(xmlText) {
 
 // Cookie parser
 
-export const COOKIE_HEADERS = ['Domain', 'SubDomain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
+// `Subdomains` is the Netscape include-subdomains flag, not a subdomain name.
+export const COOKIE_HEADERS = ['Domain', 'Subdomains', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
 export const JSON_COOKIE_HEADERS = ['Domain', 'Path', 'Secure', 'Expiration', 'Name', 'Value'];
 
 function parseGoogleRestoreTokens(lines) {
