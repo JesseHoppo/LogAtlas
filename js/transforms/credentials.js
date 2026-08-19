@@ -112,14 +112,19 @@ function findCredentialSeparator(line, afterProtocolStart) {
     return colonAfterPath >= 0 ? afterProtocolStart + slashPos + colonAfterPath : null;
   }
 
-  if (atPos >= 0) {
-    const colonAfterAt = afterProtocol.slice(atPos + 1).indexOf(':');
-    return colonAfterAt >= 0 ? afterProtocolStart + atPos + 1 + colonAfterAt : null;
-  }
-
   const colonPositions = [];
   for (let i = 0; i < afterProtocol.length; i++) {
     if (afterProtocol[i] === ':') colonPositions.push(i);
+  }
+
+  // `user@host:pass` puts the `@` inside the authority, so the separator is the
+  // colon after it. But `site.com:jane@example.com:pw` also has an `@` — after
+  // the first colon, where it is part of the username. Taking the userinfo
+  // reading there dropped every combolist line whose username is an email and
+  // whose site has no path.
+  if (atPos >= 0 && (colonPositions.length === 0 || atPos < colonPositions[0])) {
+    const colonAfterAt = afterProtocol.slice(atPos + 1).indexOf(':');
+    return colonAfterAt >= 0 ? afterProtocolStart + atPos + 1 + colonAfterAt : null;
   }
 
   if (colonPositions.length < 2) return null;
