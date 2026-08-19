@@ -206,20 +206,24 @@ function getSelectedEntries() {
 
 // Breadcrumb
 
+// Ancestors are buttons so the path can be walked from the keyboard. The
+// segment the user is already on is a span: focusing it would offer a stop
+// that does nothing.
+function breadcrumbSegment(label, pathStr, isCurrent) {
+  if (isCurrent) {
+    return `<span class="breadcrumb-item current" aria-current="page">${escapeHtml(label)}</span>`;
+  }
+  return `<button type="button" class="breadcrumb-item" ` +
+    `data-path="${escapeHtml(pathStr)}">${escapeHtml(label)}</button>`;
+}
+
 function renderBreadcrumb() {
   const parts = state.currentPath;
-  let html = '';
-
-  const rootClass = parts.length === 0 ? 'current' : '';
-  html += `<div class="breadcrumb-item ${rootClass}" data-path="">` +
-    `${escapeHtml(state.rootZipName)}</div>`;
+  let html = breadcrumbSegment(state.rootZipName, '', parts.length === 0);
 
   for (let i = 0; i < parts.length; i++) {
-    const isLast = i === parts.length - 1;
-    const pathStr = parts.slice(0, i + 1).join('/');
     html += `<span class="breadcrumb-sep">\u203A</span>`;
-    html += `<div class="breadcrumb-item ${isLast ? 'current' : ''}" ` +
-      `data-path="${escapeHtml(pathStr)}">${escapeHtml(parts[i])}</div>`;
+    html += breadcrumbSegment(parts[i], parts.slice(0, i + 1).join('/'), i === parts.length - 1);
   }
 
   elBreadcrumb.innerHTML = html;
