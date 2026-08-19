@@ -482,40 +482,60 @@ function buildLogSummaryHtml(data) {
     const ck = data.cookStats;
     let sessionNote = '';
     if (ck.sessionTokens > 0) {
-      sessionNote = `<p style="margin-top:0.5rem;font-size:0.8rem;"><strong>${ck.sessionTokens}</strong> identified session token${ck.sessionTokens !== 1 ? 's' : ''}`;
+      sessionNote = `<p class="session-note"><strong>${countLabel(ck.sessionTokens, 'identified session token')}</strong>`;
       if (ck.liveSessionTokens > 0) {
-        sessionNote += ` (<strong style="color:#dc2626">${ck.liveSessionTokens} live at capture</strong>)`;
+        sessionNote += ` (<strong class="risk">${ck.liveSessionTokens.toLocaleString()} live at capture</strong>)`;
       }
       sessionNote += `</p>`;
     }
     sections += `<section>
-      <h2>Cookie Summary</h2>
+      <h2>Cookie summary</h2>
       <div class="stat-row">
-        <div class="stat"><span class="stat-num">${ck.total.toLocaleString()}</span> total cookies</div>
-        <div class="stat"><span class="stat-num valid">${ck.valid.toLocaleString()}</span> valid at capture</div>
-        <div class="stat"><span class="stat-num expired">${ck.expired.toLocaleString()}</span> expired</div>
-        <div class="stat"><span class="stat-num">${ck.session.toLocaleString()}</span> no expiry</div>
-        ${ck.unknown > 0 ? `<div class="stat"><span class="stat-num">${ck.unknown.toLocaleString()}</span> unparseable expiry</div>` : ''}
-        ${ck.noDomain > 0 ? `<div class="stat"><span class="stat-num">${ck.noDomain.toLocaleString()}</span> of which carried no domain</div>` : ''}
-        <div class="stat"><span class="stat-num">${ck.fileCount}</span> source file(s)</div>
+        ${stat(ck.total, 'cookie in total', 'cookies in total')}
+        ${stat(ck.valid, 'valid at capture', 'valid at capture', 'valid')}
+        ${stat(ck.expired, 'expired', 'expired', 'expired')}
+        ${stat(ck.session, 'no expiry', 'no expiry')}
+        ${ck.unknown > 0 ? stat(ck.unknown, 'unparseable expiry', 'unparseable expiry') : ''}
+        ${stat(ck.fileCount, 'source file')}
       </div>
       ${sessionNote}
-      <h3>Top Cookie Domains</h3>
-      ${domainTable(ck.topDomains)}
+      ${ck.noDomain > 0 ? `<p class="note">No domain was recorded for ${countLabel(ck.noDomain, 'cookie')}; those rows sit inside the four states above rather than beside them.</p>` : ''}
+      <h3>Top cookie domains</h3>
+      ${domainTable(ck.topDomains, 'Cookies')}
+    </section>`;
+  }
+
+  if (data.domainsOfInterest) {
+    const di = data.domainsOfInterest;
+    sections += `<section>
+      <h2>Domains of interest</h2>
+      ${di.unavailable ? '<p class="note">The bundled domain reference lists had not finished loading when this report was written, so no host could be categorised.</p>' : `<p class="note">Every credential and cookie host that the bundled domain reference lists place in a government, military, banking, finance, remote-access or dynamic-DNS category. Read from ${countLabel(di.credDomains, 'distinct credential domain')} and ${countLabel(di.cookieDomains, 'distinct cookie domain')}; a host absent from the lists carries no category and is not shown.</p>
+      <table><thead><tr><th>Domain</th><th>Category</th><th>Accounts</th><th>Cookies</th></tr></thead><tbody>${
+        di.rows.map(row => `<tr><td>${e(row.domain)}</td><td>${e(getCategoryLabel(row.key))}</td><td>${row.accounts.toLocaleString()}</td><td>${row.cookies.toLocaleString()}</td></tr>`).join('')
+      }</tbody></table>`}
     </section>`;
   }
 
   if (data.autoStats) {
     const af = data.autoStats;
-    let detail = '';
-    if (af.emails.length > 0) detail += `<p><strong>Emails:</strong> ${af.emails.map(e).join(', ')}</p>`;
-    if (af.phones.length > 0) detail += `<p><strong>Phone Numbers:</strong> ${af.phones.map(e).join(', ')}</p>`;
-    if (af.names.length > 0) detail += `<p><strong>Names:</strong> ${af.names.map(e).join(', ')}</p>`;
+    const lists = [
+      ['Emails', af.emails, 'email'],
+      ['Phone numbers', af.phones, 'phone number'],
+      ['Names', af.names, 'name'],
+      ['Addresses', af.addresses, 'address', 'addresses'],
+    ].filter(([, list]) => list.total > 0);
+    const detail = lists.map(([label, list]) => {
+      const shown = list.sample.length < list.total
+        ? ` &mdash; first ${list.sample.length} of ${list.total.toLocaleString()}`
+        : '';
+      return `<p><strong>${label}${shown}:</strong> ${list.sample.map(e).join(', ')}</p>`;
+    }).join('');
     sections += `<section>
-      <h2>Autofill Summary</h2>
+      <h2>Autofill summary</h2>
       <div class="stat-row">
-        <div class="stat"><span class="stat-num">${af.total}</span> total entries</div>
-        <div class="stat"><span class="stat-num">${af.fileCount}</span> source file(s)</div>
+        ${stat(af.total, 'entry in total', 'entries in total')}
+        ${lists.map(([, list, singular, plural]) => stat(list.total, singular, plural)).join('')}
+        ${stat(af.fileCount, 'source file')}
       </div>
       ${detail}
     </section>`;
