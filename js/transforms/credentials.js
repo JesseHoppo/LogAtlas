@@ -221,6 +221,7 @@ function applyPasswordFallbackHeaders(parsed, format) {
     return {
       headers: ['URL', 'Username', 'Password'],
       rows: parsed.rows,
+      raggedRows: parsed.raggedRows || 0,
     };
   }
 
@@ -240,7 +241,7 @@ function applyPasswordFallbackHeaders(parsed, format) {
 
   const headers = parsed.headers.slice();
   headers[passIdx] = 'Password';
-  return { headers, rows: parsed.rows };
+  return { headers, rows: parsed.rows, raggedRows: parsed.raggedRows || 0 };
 }
 
 // Secrets are near-unique down a column; flags and paths repeat. Keeps the
@@ -262,7 +263,7 @@ function finaliseAutofillDataset(parsed) {
     .map(row => [(row[fieldIdx] || '').trim(), (row[valueIdx] || '').trim()])
     .filter(([name, value]) => name && value);
 
-  return rows.length > 0 ? { headers: ['Field', 'Value'], rows } : null;
+  return rows.length > 0 ? { headers: ['Field', 'Value'], rows, raggedRows: parsed.raggedRows || 0 } : null;
 }
 
 const AUTOFILL_BLOCK_MAX_LINES = 6;

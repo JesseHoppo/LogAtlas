@@ -408,21 +408,36 @@ export function parseDelimited(text, format) {
   }
 
   const rows = [];
+  let raggedRows = 0;
   for (let i = startIdx; i < allLines.length; i++) {
     const fields = splitFn(allLines[i]);
+    if (fields.length > columns) {
+      raggedRows++;
+      foldOverflow(fields, columns, delimiter);
+    }
     rows.push(keepIndices.map(idx => (fields[idx] ?? '').trim()));
   }
 
-  return { headers, rows };
+  return { headers, rows, raggedRows };
+}
+
+// Widest row in the leading sample. The manual mapper has to offer a role
+// dropdown for every column the parse will emit, so the preview and the parse
+// both take the width from here instead of each measuring its own slice.
+export function maxColumnCount(text, delimiter, trimLines) {
+  const splitFn = makeSplitFn(delimiter);
+  const lines = splitLines(text, trimLines !== false).slice(0, 50);
+  if (lines.length === 0) return 0;
+  return Math.max(...lines.map(l => splitFn(l).length));
 }
 
 export function parseWithConfig(text, config) {
-  const { delimiter, hasHeaderRow, columnMap } = config;
+  const { delimiter, hasHeaderRow, columnMap, trimLines } = config;
   const splitFn = makeSplitFn(delimiter);
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  const lines = splitLines(text, trimLines !== false);
   if (lines.length === 0) return null;
 
-  const sampleCols = Math.max(...lines.slice(0, 50).map(l => splitFn(l).length));
+  const sampleCols = maxColumnCount(text, delimiter, trimLines);
   // The mapper may have keyed columns off a wider preview sample than the first
   // 50 lines yield, so honour every explicitly mapped index too.
   const mappedKeys = Object.keys(columnMap || {}).map(Number).filter(n => Number.isInteger(n) && n >= 0);
@@ -484,5 +499,5 @@ export function finaliseCredentialDataset(parsed) {
   });
 
   if (rows.length === 0) return null;
-  return { headers: parsed.headers, rows };
+  return { headers: parsed.headers, rows, raggedRows: parsed.raggedRows || 0 };
 }
