@@ -320,13 +320,13 @@ function revokeAllBlobUrls() {
   activeBlobUrls = [];
 }
 
-// Type label for the Set Type button
+// Type label for the Set type button
 
 function updateTypeButton() {
   if (!elSetTypeBtn) return;
   const types = getNodeFileTypes(currentNode);
   if (types.length === 0) {
-    elSetTypeBtn.textContent = 'Set Type';
+    elSetTypeBtn.textContent = 'Set type';
     elSetTypeBtn.title = '';
     elSetTypeBtn.className = 'preview-btn preview-type-btn';
     return;
@@ -743,7 +743,7 @@ function addTransformButton(prominent) {
 
 function addCSVViewButtons() {
   clearTransformButtons();
-  elDownloadBtn.textContent = 'Download Original';
+  elDownloadBtn.textContent = 'Download original';
 }
 
 // View switching
@@ -869,7 +869,7 @@ async function showPreview(name, size, pathSegments) {
   }
 
   if (node.size > MAX_PREVIEW_SIZE) {
-    elBody.innerHTML = renderError(`File is too large to preview (${formatBytes(node.size)}). Maximum preview size is ${formatBytes(MAX_PREVIEW_SIZE)}. Use the download button instead.`);
+    elBody.innerHTML = renderError(`Too large to preview (${formatBytes(node.size)}; limit ${formatBytes(MAX_PREVIEW_SIZE)}). Download it instead.`);
     return;
   }
 

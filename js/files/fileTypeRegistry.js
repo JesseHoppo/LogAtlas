@@ -6,15 +6,15 @@ const FILE_TYPE_DEFINITIONS = Object.freeze([
   { type: 'autofill', hint: '_autofillHint', label: 'Autofill', shortcutKey: '3', transformable: true, columnMappable: true, badgeClass: 'autofill-file' },
   { type: 'history', hint: '_historyHint', label: 'History', shortcutKey: '4', transformable: true, columnMappable: true, badgeClass: 'history-file' },
   { type: 'bookmarks', hint: '_bookmarkHint', label: 'Bookmarks', transformable: true },
-  { type: 'browsermeta', hint: '_browserMetadataHint', label: 'Browser Metadata', transformable: true },
-  { type: 'sysinfo', hint: '_sysInfoHint', label: 'System Info', shortcutKey: '5', transformable: true },
+  { type: 'browsermeta', hint: '_browserMetadataHint', label: 'Browser metadata', transformable: true },
+  { type: 'sysinfo', hint: '_sysInfoHint', label: 'System info', shortcutKey: '5', transformable: true },
   { type: 'downloads', hint: '_downloadHint', label: 'Downloads', shortcutKey: '6', transformable: true },
-  { type: 'cards', hint: '_creditCardHint', label: 'Credit Cards', shortcutKey: '7', transformable: true },
+  { type: 'cards', hint: '_creditCardHint', label: 'Credit cards', shortcutKey: '7', transformable: true },
   { type: 'clipboard', hint: '_clipboardHint', label: 'Clipboard', shortcutKey: '8', transformable: true },
   { type: 'notes', hint: '_notesHint', label: 'Notes' },
-  { type: 'grabbed', hint: '_grabbedFileHint', label: 'Grabbed Files' },
+  { type: 'grabbed', hint: '_grabbedFileHint', label: 'Grabbed files' },
   { type: 'detections', hint: '_domainDetectHint', label: 'Detections', shortcutKey: '9', transformable: true },
-  { type: 'tokens', hint: '_accountTokenHint', label: 'Account Tokens', transformable: true },
+  { type: 'tokens', hint: '_accountTokenHint', label: 'Account tokens', transformable: true },
   { type: 'services', hint: '_serviceArtifactHint', label: 'Services', transformable: true },
   { type: 'wallets', hint: '_cryptoWalletHint', label: 'Wallets', transformable: true },
   { type: 'software', hint: '_softwareFileHint', label: 'Software', supportsPaste: true },
@@ -24,10 +24,10 @@ const FILE_TYPE_DEFINITIONS = Object.freeze([
 // Hints detection sets that aren't a file type the user can pick. They still
 // steer analysis, so each gets a label and a badge rather than acting invisibly.
 const ADDITIONAL_HINT_DEFINITIONS = Object.freeze([
-  { hint: '_browserPluginHint', label: 'Browser Plugin' },
+  { hint: '_browserPluginHint', label: 'Browser plugin' },
   { hint: '_messengerHint', label: 'Messenger' },
   { hint: '_creditsFileHint', label: 'Credits' },
-  { hint: '_ftpCredentialHint', label: 'FTP Credentials' },
+  { hint: '_ftpCredentialHint', label: 'FTP credentials' },
   { hint: '_keylogHint', label: 'Keylog' },
 ]);
 const ADDITIONAL_HINT_KEYS = Object.freeze(ADDITIONAL_HINT_DEFINITIONS.map(({ hint }) => hint));
@@ -76,7 +76,7 @@ function getNodeHintBadges(node) {
 }
 
 function getFileTypeLabel(type) {
-  return getFileTypeDefinition(type)?.label || 'Set Type';
+  return getFileTypeDefinition(type)?.label || 'Set type';
 }
 
 function isTransformableFileType(type) {
@@ -125,7 +125,7 @@ function getPickerOptions({ includeOther = false, includeRemove = false, support
   if (includeRemove) {
     options.push({
       type: 'none',
-      label: 'Remove Label',
+      label: 'Remove label',
     });
   }
 
