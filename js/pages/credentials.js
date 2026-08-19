@@ -400,6 +400,7 @@ async function loadCookiesData(fileTree, rootName) {
   const nameIdx = headers.findIndex(h => FIELD_PATTERNS.cookieName.test(h));
   const domainIdx = headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
   const pathIdx = headers.findIndex(h => /^path$/i.test(h));
+  cookieValueIdx = cookieValueIndex(headers);
   const captureDate = getCaptureContext().date;
   const seenCookies = new Map();
 
@@ -649,8 +650,15 @@ function buildCredentialFootprintHtml() {
 
 function cookieRowBuilder({ row, validity, sessionType }) {
   let html = '<tr>';
-  for (const cell of row) {
-    html += `<td title="${escapeHtml(cell)}">${escapeHtml(cell)}</td>`;
+  for (let i = 0; i < row.length; i++) {
+    // The title carries the masked string too: a raw token in an attribute is
+    // still legible on hover and still lands on the clipboard on a cell click.
+    if (hideCookieValues && i === cookieValueIdx) {
+      const masked = maskValue(row[i]);
+      html += `<td class="masked" title="${escapeHtml(masked)}">${escapeHtml(masked)}</td>`;
+      continue;
+    }
+    html += `<td title="${escapeHtml(row[i])}">${escapeHtml(row[i])}</td>`;
   }
   html += `<td><span class="validity-badge validity-badge-${validity.status}">${escapeHtml(validity.label)}</span></td>`;
   if (sessionType === 'auth' || sessionType === 'session') {
@@ -1102,8 +1110,10 @@ function resetCredentials() {
   autofillsSort.reset();
   notesSort.reset();
   hidePasswords = true;
+  hideCookieValues = true;
   passwordColumnIdx = -1;
   passwordUrlIdx = -1;
+  cookieValueIdx = -1;
   passwordShowService = false;
   passwordHiddenCols = new Set();
   passwordConstantNotes = [];
@@ -1231,6 +1241,7 @@ function initCredentials() {
       if (cookiesValidOnly) cookiesValidOnly.checked = false;
       if (cookiesSessionOnly) cookiesSessionOnly.checked = false;
       if (passwordsHideCb) passwordsHideCb.checked = true;
+      if (cookiesHideValuesCb) cookiesHideValuesCb.checked = true;
     },
     navIds: {
       passwords: () => passwordsData.rows.length === 0 && (passwordsData.failedFiles || []).length === 0,

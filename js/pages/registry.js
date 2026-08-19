@@ -30,13 +30,14 @@ const DATA_PAGE_DEFINITIONS = Object.freeze([
     searchPlaceholder: 'Search cookies...',
     searchLabel: 'Search cookies',
     filters: [
+      { id: 'cookiesHideValues', label: 'Hide values', checked: true },
       { id: 'cookiesValidOnly', label: 'Valid only' },
       { id: 'cookiesSessionOnly', label: 'Session tokens' },
     ],
     exportId: 'exportCookiesCsv',
     statsId: 'cookiesStats',
     contentId: 'cookiesContent',
-    emptyText: 'No cookie data available.',
+    emptyText: 'No cookies.',
   },
   {
     name: 'autofills',
