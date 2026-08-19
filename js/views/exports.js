@@ -660,7 +660,15 @@ function exportLogSummary() {
 
   const blob = new Blob([html], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
+  // A managed browser with popups blocked returns null here, and the report
+  // would otherwise be reported as opened and then lost.
+  const win = window.open(url, '_blank');
+  if (!win) {
+    URL.revokeObjectURL(url);
+    downloadBlob(html, 'log_summary.html', 'text/html');
+    notify('Popup blocked, so the log summary was downloaded instead. Open it and use browser Print to save as PDF.', 'info');
+    return;
+  }
   setTimeout(() => URL.revokeObjectURL(url), 60000);
   notify('Log summary opened in new tab. Use browser Print to save as PDF.');
 }
