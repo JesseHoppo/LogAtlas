@@ -404,6 +404,12 @@ const DATA_PAGE_NAV_IDS_BY_NAME = Object.freeze(
       .map(({ name, navId }) => [name, navId])
   )
 );
+// The shell below is drawn with this string in place before any archive is
+// opened, and the page modules put it back when a case turns out to hold
+// nothing. Both read it from here so the two cannot say different things.
+const DATA_PAGE_EMPTY_TEXT = Object.freeze(
+  Object.fromEntries(DATA_PAGE_DEFINITIONS.map(({ name, emptyText }) => [name, emptyText]))
+);
 
 function renderFilter(filter) {
   const checkedAttr = filter.checked ? ' checked' : '';
@@ -471,6 +477,7 @@ export {
   DATA_PAGE_NAMES,
   DATA_PAGE_CONTENT_IDS_BY_NAME,
   DATA_PAGE_NAV_IDS_BY_NAME,
+  DATA_PAGE_EMPTY_TEXT,
   renderSidebarDataNav,
   renderDataPageShells,
 };
