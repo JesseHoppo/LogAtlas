@@ -194,9 +194,16 @@ export function getUniqueChildName(parent, desiredName) {
   return uniqueName;
 }
 
+// Wrong-password retries before the archive is given up on.
+const PASSWORD_ATTEMPT_LIMIT = 5;
+
+// zip.js says "password", libarchive says "passphrase", and nothing wider than
+// those two counts: "invalid" is also how libarchive reports a corrupt file
+// ("Invalid or unsupported format"), which would send the retry loop round
+// forever on an archive that has no password to get wrong.
 function isInvalidPasswordError(error) {
   const message = String(error?.message || '').toLowerCase();
-  return message.includes('password') || message.includes('invalid');
+  return message.includes('password') || message.includes('passphrase');
 }
 
 async function readZipEntryData(entry, label, initialPassword = null) {
