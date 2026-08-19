@@ -1,7 +1,7 @@
 import { JWT_SCAN_REGEX } from './definitions/patterns.js';
 
 const GENERAL_SERVICE_DEFINITIONS = Object.freeze([
-  { label: 'Google', patterns: [/googleaccounts/i, /googletokens?/i, /restore_[^/]+\.txt$/i] },
+  { label: 'Google', patterns: [/googleaccounts/i, /googletokens?/i, /restore_(?:google[\s_-]*)?chrome[^/]*\.txt$/i] },
   { label: 'Discord', patterns: [/discord/i] },
   { label: 'Steam', patterns: [/steam/i] },
   { label: 'Facebook', patterns: [/fbfastcheck/i, /facebook/i, /token_eaab/i] },
@@ -102,11 +102,14 @@ function decodeJwtPayload(token) {
 }
 
 function inferServiceFromPath(pathText) {
-  return findServiceDefinition(pathText, GENERAL_SERVICE_DEFINITIONS)?.label || '';
+  return findDefinitionInSegments(pathText, GENERAL_SERVICE_DEFINITIONS)?.label || '';
 }
 
+// Only kinds that name their vendor outright belong here. A restore token is
+// whatever the browser signs into — every Chromium browser writes one, and only
+// Chrome's is a Google account — so its vendor comes from the path or browser.
 const TOKEN_TYPE_SERVICE = [
-  { service: 'Google', patterns: [/google/i, /restore[\s_-]*token/i, /oauth/i] },
+  { service: 'Google', patterns: [/google/i] },
   { service: 'Facebook', patterns: [/facebook/i] },
   { service: 'Discord', patterns: [/discord/i] },
   { service: 'Steam', patterns: [/steam/i] },
