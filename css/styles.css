@@ -1169,6 +1169,11 @@ body {
 .file-grid.active {
   display: grid;
 }
+/* A message, not a tile: it spans the row instead of taking one 130px cell
+   beside the "up one folder" tile. */
+.file-grid .empty-folder {
+  grid-column: 1 / -1;
+}
 
 .file-item {
   position: relative;
