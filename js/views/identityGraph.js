@@ -503,23 +503,24 @@ function renderIdentityPage(searchQuery = '') {
   }
 
   const filterCaption = identityActiveEmail
-    ? `<div class="data-table-caption">Accounts for <strong>${escapeHtml(identityActiveEmail)}</strong> <button class="identity-clear-filter" type="button">show all</button></div>`
+    ? `<div class="data-table-caption">Accounts for <strong>${escapeHtml(identityActiveEmail)}</strong> <button class="identity-clear-filter" type="button">Show all</button></div>`
     : '';
 
   if (accounts.length > 0) {
     const dash = '<span class="cell-empty">\u2014</span>';
-    let tableHtml = filterCaption + '<div class="data-table-container"><table class="data-table">';
-    tableHtml += '<thead><tr><th>Domain</th><th>Usernames</th><th>Session</th><th>Emails</th><th>Tokens</th></tr></thead><tbody>';
-    for (const acct of accounts) {
+    const rankCaption = accountsSort.order === 'none' ? `<div class="data-table-caption">${RANK_CAPTION}</div>` : '';
+    let tableHtml = filterCaption + rankCaption + '<div class="data-table-container"><table class="data-table">';
+    tableHtml += `<thead><tr>${accountsSort.th('service', 'Service')}${accountsSort.th('usernames', 'Usernames')}${accountsSort.th('session', 'Session')}${accountsSort.th('emails', 'Emails')}${accountsSort.th('tokens', 'Tokens')}</tr></thead><tbody>`;
+    for (const acct of accountsSort.apply(accounts)) {
       const sessionHtml = acct.hasLiveSession ? '<span class="identity-session-badge">live at capture</span>' : dash;
-      const usernames = acct.usernames && acct.usernames.length > 0 ? acct.usernames.join(', ') : '';
-      const emails = acct.emails.length > 0 ? acct.emails.join(', ') : '';
+      const usernames = acct.usernames || [];
+      const emails = acct.emails || [];
       const tokens = [acct.tokenServices.join(', '), acct.accountIds.join(', ')].filter(Boolean).join(' \u00B7 ');
       tableHtml += `<tr>
         <td><span class="identity-account-domain">${escapeHtml(acct.domain)}</span></td>
-        <td title="${escapeHtml(usernames)}">${usernames ? escapeHtml(usernames) : dash}</td>
+        <td title="${escapeHtml(usernames.join(', '))}">${usernames.length ? escapeHtml(capList(usernames)) : dash}</td>
         <td>${sessionHtml}</td>
-        <td title="${escapeHtml(emails)}">${emails ? escapeHtml(emails) : dash}</td>
+        <td title="${escapeHtml(emails.join(', '))}">${emails.length ? escapeHtml(capList(emails)) : dash}</td>
         <td title="${escapeHtml(tokens)}">${tokens ? escapeHtml(tokens) : dash}</td>
       </tr>`;
     }
@@ -570,6 +571,7 @@ function initIdentityPage() {
 
   const search = document.getElementById('identitySearch');
   bindDebouncedInput(search, (value) => renderIdentityPage(value));
+  bindTableSort('identityContent', accountsSort, () => renderIdentityPage(search?.value || ''));
 
   // Identities index: select an email to filter the accounts table to it.
   document.getElementById('identityPrimary')?.addEventListener('click', (event) => {
@@ -603,6 +605,7 @@ function initIdentityPage() {
     identityData = null;
     identityActiveEmail = null;
     identityShowAllEmails = false;
+    accountsSort.reset();
     document.getElementById('navIdentity').disabled = true;
     const searchEl = document.getElementById('identitySearch');
     if (searchEl) searchEl.value = '';
