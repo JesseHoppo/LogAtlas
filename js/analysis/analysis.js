@@ -373,6 +373,10 @@ async function analyseCookies(nodes, captureDate = null) {
   let totalNoDomain = 0;
   let sessionTokens = 0;
   let validSessionTokens = 0;
+  // Live at capture is what was open; live with its value out is what can be
+  // replayed. Bulk decryption failure empties whole cookie sets, so the two
+  // diverge and only the second is grounds for an escalation.
+  let replayableSessionTokens = 0;
   let trackingTokens = 0;
   let validTrackingTokens = 0;
 
@@ -406,6 +410,22 @@ async function analyseCookies(nodes, captureDate = null) {
           : 'unknown';
         totals[bucket]++;
 
+        // A row whose file carried no domain column still names a session
+        // token, and the cookies page counts it, so classify before the
+        // per-domain roll-up drops it.
+        const sessionType = classifyCookie(cookieName, domain);
+        if (sessionType === 'auth' || sessionType === 'session') {
+          sessionTokens++;
+          if (isLiveSessionToken({ sessionType, validity })) {
+            validSessionTokens++;
+            const value = columnMap.value >= 0 ? (row[columnMap.value] || '') : '';
+            if (hasReplayableValue({ value })) replayableSessionTokens++;
+          }
+        } else if (sessionType === 'tracking') {
+          trackingTokens++;
+          if (isLiveSessionToken({ sessionType: 'session', validity })) validTrackingTokens++;
+        }
+
         if (!domain) { totalNoDomain++; continue; }
 
         if (!domainStats[domain]) {
@@ -413,15 +433,6 @@ async function analyseCookies(nodes, captureDate = null) {
         }
         domainStats[domain].total++;
         domainStats[domain][bucket]++;
-
-        const sessionType = classifyCookie(cookieName, domain);
-        if (sessionType === 'auth' || sessionType === 'session') {
-          sessionTokens++;
-          if (isLiveSessionToken({ sessionType, validity })) validSessionTokens++;
-        } else if (sessionType === 'tracking') {
-          trackingTokens++;
-          if (isLiveSessionToken({ sessionType: 'session', validity })) validTrackingTokens++;
-        }
       }
     } catch {
       // skip
@@ -470,6 +481,7 @@ async function analyseCookies(nodes, captureDate = null) {
     topDomains,
     sessionTokens,
     validSessionTokens,
+    replayableSessionTokens,
     trackingTokens,
     validTrackingTokens,
   });
