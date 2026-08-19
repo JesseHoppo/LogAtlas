@@ -430,10 +430,10 @@ function renderIdentityPage(searchQuery = '') {
   const emailMapEl = document.getElementById('identityEmailMap');
 
   if (!identityData) {
-    summary.textContent = 'No identity data available.';
+    summary.textContent = 'No identity data.';
     statsEl.innerHTML = '';
     primaryEl.innerHTML = '';
-    contentEl.innerHTML = '<div class="no-data">No identity data available.</div>';
+    contentEl.innerHTML = '<div class="no-data">No identity data.</div>';
     emailMapEl.innerHTML = '';
     identityActiveEmail = null;
     return;

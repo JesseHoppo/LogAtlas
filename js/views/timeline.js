@@ -499,11 +499,11 @@ function renderTimelinePage(searchQuery = '') {
   const summary = document.getElementById('timelineSummary');
 
   if (timelineEvents.length === 0) {
-    summary.textContent = 'No timeline data could be reconstructed from this archive.';
+    summary.textContent = 'No timeline data.';
     document.getElementById('timelineStats').innerHTML = '';
     document.getElementById('timelineFilters').innerHTML = '';
     document.getElementById('timelineVisual').innerHTML = '';
-    document.getElementById('timelineContent').innerHTML = '<div class="no-data">No timestamp data found in cookies, history, system info, or file metadata.</div>';
+    document.getElementById('timelineContent').innerHTML = '<div class="no-data">No timestamps in cookies, history, system info or file metadata.</div>';
     return;
   }
 

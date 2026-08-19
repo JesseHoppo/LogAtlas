@@ -110,7 +110,7 @@ function hasAnyDataset(datasets) {
 function exportObfuscatedCredentials() {
   const data = getPasswordsData();
   if (!data || data.rows.length === 0) {
-    notify('No credential data available to export.', 'error');
+    notify('No credential data to download.', 'error');
     return;
   }
 
@@ -455,7 +455,7 @@ function buildLogSummaryHtml(data) {
 
   if (data.sysinfoEntries) {
     sections += `<section>
-      <h2>System Information</h2>
+      <h2>System information</h2>
       <table><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody>${
         Object.entries(data.sysinfoEntries).map(([k, v]) =>
           `<tr><td>${e(k)}</td><td>${e(v)}</td></tr>`
@@ -614,7 +614,7 @@ function buildLogSummaryHtml(data) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Log Summary - ${e(data.archiveName)}</title>
+<title>Log summary - ${e(data.archiveName)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1d23; background: #f5f6f8; padding: 2rem; line-height: 1.5; }
