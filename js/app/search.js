@@ -115,12 +115,15 @@ function highlightLine(line, lowerQuery) {
 
 function buildResultHtml(match, idx, lowerQuery) {
   let html = `<div class="search-result-item">
-      <div class="search-result-path search-result-clickable" data-result-idx="${idx}">${escapeHtml(cleanDisplayPath(match.path))}</div>`;
+      <div class="search-result-path search-result-clickable" role="button" tabindex="0" data-result-idx="${idx}">${escapeHtml(cleanDisplayPath(match.path))}</div>`;
 
   if (match.contentMatches.length > 0) {
     html += '<div class="search-result-lines">';
     for (const cm of match.contentMatches) {
       html += `<div class="search-result-line"><span class="search-result-linenum">${cm.lineNum}</span>${highlightLine(cm.line.trim(), lowerQuery)}</div>`;
+    }
+    if (match.totalMatches > match.contentMatches.length) {
+      html += `<div class="search-result-line"><span class="search-result-linenum">…</span>showing ${match.contentMatches.length.toLocaleString()} of ${countLabel(match.totalMatches, 'matching line')} — open the file for the rest</div>`;
     }
     html += '</div>';
   }
@@ -309,15 +312,7 @@ export function initSearch(navigateToPage) {
     renderMoreResults();
   }
 
-  searchResults.addEventListener('click', (e) => {
-    if (e.target.closest('.data-show-more')) {
-      renderMoreResults();
-      return;
-    }
-
-    const row = e.target.closest('.search-result-clickable');
-    if (!row) return;
-
+  function openResult(row) {
     const match = currentMatches[parseInt(row.dataset.resultIdx, 10)];
     if (!match) return;
 
@@ -328,6 +323,26 @@ export function initSearch(navigateToPage) {
     navigateToPage('browser');
 
     emitPreview(match.node, segments);
+  }
+
+  searchResults.addEventListener('click', (e) => {
+    if (e.target.closest('.data-show-more')) {
+      renderMoreResults();
+      return;
+    }
+
+    const row = e.target.closest('.search-result-clickable');
+    if (row) openResult(row);
+  });
+
+  // The pager is a real button and raises its own click from the keyboard;
+  // only the result rows need the key handling.
+  searchResults.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.search-result-clickable');
+    if (!row) return;
+    e.preventDefault();
+    openResult(row);
   });
 
   globalSearchBtn.addEventListener('click', () => {
