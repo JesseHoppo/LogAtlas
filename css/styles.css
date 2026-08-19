@@ -988,6 +988,10 @@ body {
 .verdict-card-link:hover {
   text-decoration: underline;
 }
+/* The card already spaces its children; the row's own margin doubles the gap. */
+.verdict-card .dash-chip-row {
+  margin-bottom: 0;
+}
 
 .dash-chip-row {
   display: flex;
