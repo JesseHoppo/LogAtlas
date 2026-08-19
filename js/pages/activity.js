@@ -13,14 +13,19 @@ import {
   collectHintedNodes,
   decodeBufferWithFallback,
   extractDomain,
+  inferBrowserFromPath,
   truncateText,
   parseNodeCached,
   parseTimestampValue,
+  showNotification,
 } from '../core/shared.js';
 import {
+  countLabel,
+  datasetSummary,
   PAGE_SIZE,
   buildShowMoreButton,
   buildRowsHtml,
+  buildNoMatchesHtml,
   bindDebouncedInput,
   formatOptionalDate,
   openSourcePreview,
@@ -357,7 +362,7 @@ async function loadDownloadsData(fileTree, rootName) {
   const entries = [];
   let fileCount = 0;
 
-  for (const { node } of nodes) {
+  for (const { node, path } of nodes) {
     try {
       const content = await loadFileContent(node);
       if (!content) continue;
@@ -370,6 +375,11 @@ async function loadDownloadsData(fileTree, rootName) {
       const fileIdx = parsed.headers.findIndex(h => /^(?:file(?:\s*path)?|filename|path|download(?:\s*path)?)$/i.test(h));
       const urlIdx = parsed.headers.findIndex(h => /^(?:source\s*url|url|download\s*url)$/i.test(h));
       const sizeIdx = parsed.headers.findIndex(h => /^(?:file\s*size|size|bytes|received\s*bytes|recived\s*bytes)$/i.test(h));
+      const browserIdx = parsed.headers.findIndex(h => /^browser$/i.test(h));
+      // Only a pooled dump names the browser per row; a per-browser dump names
+      // it in the file name. `Chrome_Default[9a1f].txt` joins the two with an
+      // underscore, a word character, so the name is separated before matching.
+      const pathBrowser = inferBrowserFromPath(String(path || node.name).replace(/_/g, ' '));
 
       for (const row of parsed.rows) {
         const filePath = (fileIdx >= 0 ? row[fileIdx] : row[0]) || '';
@@ -377,6 +387,7 @@ async function loadDownloadsData(fileTree, rootName) {
         const sizeInfo = parseDownloadSize(sizeIdx >= 0 ? row[sizeIdx] : '');
         const domain = extractDomain(sourceUrl) || '';
         const extension = extractDownloadExtension(filePath, sourceUrl);
+        const rowBrowser = browserIdx >= 0 ? (row[browserIdx] || '').trim() : '';
 
         if (!filePath && !sourceUrl) continue;
         entries.push({
@@ -387,6 +398,7 @@ async function loadDownloadsData(fileTree, rootName) {
           fileSizeDisplay: sizeInfo.display,
           domain,
           extension,
+          browser: rowBrowser || pathBrowser,
         });
       }
     } catch {
