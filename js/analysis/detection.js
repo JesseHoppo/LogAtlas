@@ -279,4 +279,4 @@ function reconcileAggregatePasswordFiles(tree) {
   }
 }
 
-export { applyDetectionHints, applyContentDetectionHints, reconcileAggregatePasswordFiles };
+export { applyDetectionHints, applyContentDetectionHints, isLikelySystemInfoFile, reconcileAggregatePasswordFiles };

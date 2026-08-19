@@ -2,6 +2,7 @@
 
 import { SIGNAL_WEIGHTS as W, SIGNATURES, CONFIDENCE_THRESHOLDS } from '../core/definitions/signatures.js';
 import { FILE_TYPE_PATTERNS } from '../core/definitions/fileTypes.js';
+import { isLikelySystemInfoFile } from './detection.js';
 
 // Signals shared across many families — credential/cookie/screenshot dumps and
 // negation-based layout tests. They don't distinguish one family from another,
@@ -203,7 +204,7 @@ function collectContext(node, basePath, ctx) {
     } else {
       ctx.files.push(relPath);
 
-      if (child._sysInfoHint || FILE_TYPE_PATTERNS.sysinfo.filePatterns.some(rx => rx.test(child.name))) {
+      if (child._sysInfoHint || isLikelySystemInfoFile(child.name, '', relPath)) {
         ctx.sysinfoNodes.push(child);
       }
 
