@@ -1,6 +1,7 @@
 // Paste text modal -- lets user paste raw text and pick a file type.
 
 import { renderFileTypeOptions } from './fileTypeRegistry.js';
+import { openModal, closeModal } from '../core/modal.js';
 
 let pasteResolver = null;
 let pasteCounter = 0;
@@ -10,25 +11,37 @@ let elModal;
 let elTextArea;
 let elNameInput;
 let elTypeOptions;
+let elDestination;
 
-function openPasteModal() {
+// `destination` is null with no case open, the folder the text will be filed
+// under when one is, and '' when it lands beside the files already there.
+function destinationText(destination) {
+  if (destination === null || destination === undefined) return '';
+  if (!destination) return 'Added to the open case.';
+  return `Added to the open case under "${destination}".`;
+}
+
+function openPasteModal({ destination = null } = {}) {
   return new Promise((resolve) => {
+    // Reopening while an earlier open is unanswered cancels it; overwriting the
+    // resolver instead would leave that promise hanging forever.
+    if (pasteResolver) closePasteModal(null);
     pasteResolver = resolve;
     elNameInput.value = 'Pasted Text ' + (pasteCounter + 1);
     elTextArea.value = '';
     selectedType = 'credentials';
+    if (elDestination) elDestination.textContent = destinationText(destination);
 
     for (const btn of elTypeOptions.querySelectorAll('.filetype-option')) {
       btn.classList.toggle('active', btn.dataset.type === selectedType);
     }
 
-    elModal.classList.add('visible');
-    elTextArea.focus();
+    openModal(elModal, { onDismiss: () => closePasteModal(null), initialFocus: elTextArea });
   });
 }
 
 function closePasteModal(result) {
-  elModal.classList.remove('visible');
+  closeModal(elModal);
   if (pasteResolver) {
     pasteResolver(result);
     pasteResolver = null;
@@ -40,6 +53,7 @@ function initPasteText() {
   elTextArea = document.getElementById('pasteTextArea');
   elNameInput = document.getElementById('pasteTextName');
   elTypeOptions = document.getElementById('pasteTypeOptions');
+  elDestination = elModal.querySelector('.modal > p');
   const submitButton = document.getElementById('pasteTextSubmit');
   const cancelButton = document.getElementById('pasteTextCancel');
   renderFileTypeOptions(elTypeOptions, {
@@ -69,14 +83,6 @@ function initPasteText() {
 
   elModal.addEventListener('click', (e) => {
     if (e.target === elModal) closePasteModal(null);
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (!elModal.classList.contains('visible')) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      closePasteModal(null);
-    }
   });
 }
 
