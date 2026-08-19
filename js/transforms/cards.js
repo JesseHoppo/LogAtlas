@@ -148,7 +148,7 @@ function mapCreditCardRowsByContent(parsed) {
         continue;
       }
       if (/^\d{1,4}$/.test(cell)) {
-        numericCandidates.push(cell);
+        numericCandidates.push({ value: cell, index: i });
         continue;
       }
       if (!nameOnCard && /[A-Za-z]/.test(cell)) {
@@ -156,17 +156,18 @@ function mapCreditCardRowsByContent(parsed) {
       }
     }
 
-    let chosenMonth = '';
-    let chosenYear = '';
+    let chosenMonth = null;
+    let chosenYear = null;
     if (!expiration) {
-      chosenMonth = numericCandidates.find(cell => /^(?:0?[1-9]|1[0-2])$/.test(cell)) || '';
-      chosenYear = numericCandidates.find(cell => cell !== chosenMonth && /^(?:\d{2}|\d{4})$/.test(cell)) || '';
-      expiration = buildExpirationValue(chosenMonth, chosenYear);
+      chosenMonth = numericCandidates.find(c => /^(?:0?[1-9]|1[0-2])$/.test(c.value)) || null;
+      chosenYear = numericCandidates.find(c => c !== chosenMonth && /^(?:\d{2}|\d{4})$/.test(c.value)) || null;
+      expiration = buildExpirationValue(chosenMonth?.value || '', chosenYear?.value || '');
     }
 
     if (!cvc) {
-      const used = new Set([chosenMonth, chosenYear].filter(Boolean));
-      cvc = numericCandidates.find(cell => !used.has(cell) && /^\d{3,4}$/.test(cell)) || '';
+      const used = new Set([chosenMonth, chosenYear].filter(Boolean).map(c => c.index));
+      const candidate = numericCandidates.find(c => !used.has(c.index) && /^\d{3,4}$/.test(c.value));
+      cvc = candidate?.value || '';
     }
 
     if (!cardNumber && !nameOnCard && !expiration && !cvc && !filePath) continue;
