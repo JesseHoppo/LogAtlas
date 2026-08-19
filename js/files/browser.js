@@ -598,11 +598,11 @@ async function exportSelectedZip() {
   if (result.passwordProtect) {
     zipPassword = randomPassword(16);
 
-    const pwOverlay = document.createElement('div');
-    pwOverlay.className = 'modal-overlay visible';
-    pwOverlay.innerHTML = `
+    let settlePw;
+    const pwAnswered = new Promise((resolve) => { settlePw = resolve; });
+    const pwModal = openTransientModal(`
       <div class="modal">
-        <h3>ZIP Password</h3>
+        <h3>ZIP password</h3>
         <p>Copy this password before proceeding.</p>
         <div class="export-password-display">
           <code class="export-password-value">${escapeHtml(zipPassword)}</code>
@@ -610,76 +610,74 @@ async function exportSelectedZip() {
         </div>
         <div class="modal-actions">
           <button class="modal-btn modal-btn-cancel" id="selPwCancel">Cancel</button>
-          <button class="modal-btn modal-btn-submit" id="selPwProceed">Continue</button>
+          <button class="modal-btn modal-btn-submit" id="selPwProceed">Download ZIP</button>
         </div>
       </div>
-    `;
-    document.body.appendChild(pwOverlay);
+    `, { onDismiss: () => settlePw(false) });
+    if (!pwModal) return;
 
-    pwOverlay.querySelector('#selPwCopy').addEventListener('click', async () => {
+    pwModal.overlay.querySelector('#selPwCopy').addEventListener('click', async () => {
       const ok = await copyToClipboard(zipPassword);
-      const btn = pwOverlay.querySelector('#selPwCopy');
+      const btn = pwModal.overlay.querySelector('#selPwCopy');
       btn.textContent = ok ? 'Copied' : 'Failed';
       setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
     });
-
-    const proceed = await new Promise((resolve) => {
-      pwOverlay.querySelector('#selPwCancel').addEventListener('click', () => {
-        pwOverlay.remove(); resolve(false);
-      });
-      pwOverlay.querySelector('#selPwProceed').addEventListener('click', () => {
-        pwOverlay.remove(); resolve(true);
-      });
-      pwOverlay.addEventListener('click', (ev) => {
-        if (ev.target === pwOverlay) { pwOverlay.remove(); resolve(false); }
-      });
+    pwModal.overlay.querySelector('#selPwCancel').addEventListener('click', () => {
+      pwModal.close(); settlePw(false);
+    });
+    pwModal.overlay.querySelector('#selPwProceed').addEventListener('click', () => {
+      pwModal.close(); settlePw(true);
     });
 
-    if (!proceed) return;
+    if (!await pwAnswered) return;
   }
+
+  const omitted = [];
 
   try {
     const blobWriter = new zip.BlobWriter('application/zip');
     const writerOpts = zipPassword ? { password: zipPassword } : {};
     const writer = new zip.ZipWriter(blobWriter, writerOpts);
+    const used = new Set();
 
-    for (const entry of entries) {
+    for (const { node, name, path } of entries) {
       try {
-        const { node, path } = entry;
         const content = await loadFileContent(node);
-        if (!content) continue;
-
-        if (result.applyTransforms) {
-          const parsed = parseStructuredFile({
-            node,
-            content,
-            fileName: node.name || '',
-            sourcePath: path.join('/'),
-            allowUntypedFallback: true,
-          });
-          const csv = parsed && parsed.rows.length > 0 ? toCSV(parsed) : '';
-          if (csv) {
-            const csvBlob = new Blob([csv], { type: 'text/csv' });
-            const baseName = node.name.replace(/\.[^.]+$/, '');
-            await writer.add(baseName + '.csv', new zip.BlobReader(csvBlob));
-          } else {
-            const blob = new Blob([content]);
-            await writer.add(node.name, new zip.BlobReader(blob));
-          }
-        } else {
-          const blob = new Blob([content]);
-          await writer.add(node.name, new zip.BlobReader(blob));
+        if (!content) {
+          omitted.push(name);
+          continue;
         }
+
+        // The original bytes always go in. A CSV is an extra reading of the
+        // file, never a replacement for the evidence itself.
+        await writer.add(uniqueEntryName(name, used), new zip.BlobReader(new Blob([content])));
+        if (!result.applyTransforms) continue;
+
+        const parsed = parseStructuredFile({
+          node,
+          content,
+          fileName: name,
+          sourcePath: path.join('/'),
+        });
+        if (!parsed || parsed.rows.length === 0) continue;
+        const csv = toCSV(parsed);
+        if (!csv) continue;
+
+        const csvBlob = new Blob([csv], { type: 'text/csv' });
+        await writer.add(uniqueEntryName(`${name}.csv`, used), new zip.BlobReader(csvBlob));
       } catch {
-        // skip files that fail
+        omitted.push(name);
       }
     }
 
     await writer.close();
     const zipBlob = await blobWriter.getData();
     downloadBlob(zipBlob, 'selected_files.zip', 'application/zip');
+    if (omitted.length > 0) {
+      showNotification(`${countLabel(omitted.length, 'file')} could not be read and ${omitted.length === 1 ? 'is' : 'are'} missing from the ZIP: ${describeList(omitted)}`, 'error');
+    }
   } catch (err) {
-    showNotification(`Failed to export ZIP: ${err.message}`, 'error');
+    showNotification(`Failed to generate ZIP: ${err.message}`, 'error');
   }
 }
 
