@@ -186,6 +186,11 @@ function extractCookieEvents(cookiesData, captureTime) {
 function extractHistoryEvents(historyData) {
   if (!historyData || historyData.entries.length === 0) return [];
 
+  // Every other band on this axis is an absolute instant. A visit time only
+  // joins them once its frame is resolved; until then it is a wall clock in an
+  // unknown zone, and the day it lands on is said to be the log's, not UTC.
+  const framed = historyData.clock?.offsetMinutes != null;
+
   const dated = [];
   for (const entry of historyData.entries) {
     const d = entry.lastVisitDate;
@@ -196,15 +201,21 @@ function extractHistoryEvents(historyData) {
 
   if (dated.length === 0) return [];
 
+  // History files come out of the browser ordered by url id, not by time, so a
+  // day's rows arrive shuffled. The bucket keeps the day's real span rather
+  // than whichever visit happened to be parsed first.
   const dayMap = {};
   for (const entry of dated) {
     const key = dateKey(entry._date);
     if (!dayMap[key]) {
-      dayMap[key] = { date: entry._date, domains: {}, count: 0 };
+      dayMap[key] = { first: entry._date, last: entry._date, domains: {}, count: 0 };
     }
-    dayMap[key].count++;
+    const day = dayMap[key];
+    day.count++;
+    if (entry._date < day.first) day.first = entry._date;
+    if (entry._date > day.last) day.last = entry._date;
     const domain = baseDomainFromUrl(entry.url) || 'unknown';
-    dayMap[key].domains[domain] = (dayMap[key].domains[domain] || 0) + 1;
+    day.domains[domain] = (day.domains[domain] || 0) + 1;
   }
 
   const events = [];
@@ -215,35 +226,36 @@ function extractHistoryEvents(historyData) {
       .map(([d]) => d);
 
     events.push({
-      time: day.date,
+      time: day.first,
+      endTime: day.last,
+      dayLevel: true,
       category: 'history',
-      title: `${day.count} site${day.count !== 1 ? 's' : ''} visited`,
-      detail: topDomains.join(', '),
+      title: `${countLabel(day.count, 'site')} visited`,
+      detail: framed ? topDomains.join(', ') : `${topDomains.join(', ')} - log clock, zone unresolved`,
     });
   }
 
   return events;
 }
 
-function extractModifiedEvents(data, category, limit, pickTitle, pickDetail) {
+function extractModifiedEvents(data, category, bucket, pickTitle, pickDetail) {
   if (!data || !data.entries || !data.entries.length) return [];
   return data.entries
     .filter(e => isPlausibleCaptureDate(e.modifiedDate))
     .sort((a, b) => b.modifiedDate - a.modifiedDate)
-    .slice(0, limit)
-    .map(e => ({ time: e.modifiedDate, category, title: pickTitle(e), detail: pickDetail(e) }));
+    .map(e => ({ time: e.modifiedDate, category, bucket, title: pickTitle(e), detail: pickDetail(e) }));
 }
 
 function extractNoteEvents(notesData) {
-  return extractModifiedEvents(notesData, 'notes', 12, e => e.title, e => e.indicators);
+  return extractModifiedEvents(notesData, 'notes', 'notes', e => e.title, e => e.indicators);
 }
 
 function extractGrabbedFileEvents(grabbedData) {
-  return extractModifiedEvents(grabbedData, 'file', 12, e => e.name, e => e.relativePath);
+  return extractModifiedEvents(grabbedData, 'file', 'grabbed', e => e.name, e => e.relativePath);
 }
 
 function extractScreenshotEvents(screenshotsData) {
-  return extractModifiedEvents(screenshotsData, 'screenshots', 8, e => e.name,
+  return extractModifiedEvents(screenshotsData, 'screenshots', 'screenshots', e => e.name,
     e => (e.width && e.height ? `${e.width}x${e.height}` : e.sizeDisplay));
 }
 
@@ -305,6 +317,8 @@ function renderStats(events) {
     const t = ev.time.getTime();
     if (t < earliest) earliest = t;
     if (t > latest && t <= now) latest = t;
+    const end = ev.endTime ? ev.endTime.getTime() : t;
+    if (end > latest && end <= now) latest = end;
   }
   if (latest === -Infinity && earliest !== Infinity) latest = earliest;
 
@@ -429,7 +443,7 @@ function renderChronology(events) {
     html += `<div class="timeline-event-header">`;
     html += `<span class="timeline-event-badge ${info.badgeClass}">${info.label}</span>`;
     html += `<span class="timeline-event-title">${escapeHtml(ev.title)}</span>`;
-    html += `<span class="timeline-event-time">${formatDateTimeLabel(ev.time)}</span>`;
+    html += `<span class="timeline-event-time">${eventTimeLabel(ev)}</span>`;
     html += `</div>`;
     if (ev.detail) {
       html += `<div class="timeline-event-detail">${escapeHtml(ev.detail)}</div>`;
@@ -438,6 +452,12 @@ function renderChronology(events) {
   }
 
   html += '</div>';
+
+  const withheld = Object.entries(hidden).map(([bucket, count]) => countLabel(count, BUCKET_NOUNS[bucket]));
+  if (withheld.length) {
+    html += `<div class="timeline-note">Showing the most recent only - ${withheld.join(', ')} not listed. Search and the CSV export cover every event.</div>`;
+  }
+
   el.innerHTML = html;
 }
 
@@ -501,8 +521,9 @@ function exportTimelineCSV() {
   const searchInput = document.getElementById('timelineSearch');
   const filteredEvents = getFilteredTimelineEvents(searchInput?.value || '');
   if (filteredEvents.length === 0) return;
-  downloadCsvRows('timeline.csv', ['Timestamp', 'Category', 'Event', 'Detail'], filteredEvents.map((event) => [
+  downloadCsvRows('timeline.csv', ['Timestamp', 'End', 'Category', 'Event', 'Detail'], filteredEvents.map((event) => [
     event.time.toISOString(),
+    event.endTime ? event.endTime.toISOString() : '',
     CATEGORIES[event.category]?.label || event.category,
     event.title,
     event.detail || '',
