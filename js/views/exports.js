@@ -677,13 +677,10 @@ function exportLogSummary() {
 
 function showPasswordModal(password) {
   return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay visible';
-    overlay.id = 'exportPasswordModal';
-    overlay.innerHTML = `
+    const modal = openTransientModal(`
       <div class="modal">
-        <h3>Parsed Data Password</h3>
-        <p>The ZIP file will be encrypted with this password. Copy it before proceeding.</p>
+        <h3>ZIP password</h3>
+        <p>Copy it before continuing. It is shown once.</p>
         <div class="export-password-display">
           <code class="export-password-value">${escapeHtml(password)}</code>
           <button class="export-password-copy" id="exportPwCopy">Copy</button>
@@ -693,8 +690,9 @@ function showPasswordModal(password) {
           <button class="modal-btn modal-btn-submit" id="exportPwProceed">Download ZIP</button>
         </div>
       </div>
-    `;
-    document.body.appendChild(overlay);
+    `, { onDismiss: () => resolve(false) });
+    if (!modal) { resolve(false); return; }
+    const { overlay, close } = modal;
 
     overlay.querySelector('#exportPwCopy').addEventListener('click', async () => {
       const ok = await copyToClipboard(password);
