@@ -42,6 +42,7 @@ import {
   downloadCsvRows,
   shapeCookiesCsv,
   shapeNotesCsv,
+  sessionTypeLabel,
   createTableSort,
   bindTableSort,
 } from './shared.js';
@@ -146,6 +147,19 @@ function foldCookieDuplicate(target, duplicate, pathIdx) {
     if (!target[i]) target[i] = value;
     else if (i === pathIdx && !target[i].split('; ').includes(value)) target[i] += `; ${value}`;
   }
+}
+
+// The Value column sits at a different index depending on whether the set
+// carries a subdomain flag, so it is resolved from the headers, never assumed.
+function cookieValueIndex(headers) {
+  return (headers || []).findIndex(h => /^value$/i.test(h));
+}
+
+// Status and Type are rendered columns, so a search has to reach them. Both are
+// short derived strings; joining them per row beats caching a second copy of
+// every cookie value.
+function cookieDerivedText({ validity, sessionType }) {
+  return `${validity?.label || ''} ${sessionTypeLabel(sessionType)}`.toLowerCase();
 }
 
 function normaliseCookieRow(row, columnMap, includeSubDomain) {
@@ -408,20 +422,28 @@ async function loadCookiesData(fileTree, rootName) {
     headers,
   }));
 
-  cookiesData = { rows, headers, fileCount, captureDate, stats: summariseCookieRows(rows) };
+  cookiesData = { rows, headers, fileCount, captureDate, stats: summariseCookieRows(rows, headers) };
 }
 
-function summariseCookieRows(rows) {
-  let valid = 0, expired = 0, browserSession = 0, auth = 0, session = 0, liveSession = 0;
+// `liveSession` is every token that would still have logged someone in;
+// `liveNoValue` is the part of it whose value never made it out of the browser.
+// Bulk decryption failure empties the column for whole cookie sets at a time, so
+// those rows evidence a logged-in account but hand over nothing replayable.
+function summariseCookieRows(rows, headers) {
+  const valueIdx = cookieValueIndex(headers);
+  let valid = 0, expired = 0, browserSession = 0, auth = 0, session = 0, liveSession = 0, liveNoValue = 0;
   for (const r of rows) {
     if (r.validity.status === 'valid') valid++;
     else if (r.validity.status === 'expired') expired++;
     else if (r.validity.status === 'session') browserSession++;
     if (r.sessionType === 'auth') auth++;
     else if (r.sessionType === 'session') session++;
-    if (isLiveSessionToken(r)) liveSession++;
+    if (isLiveSessionToken(r)) {
+      liveSession++;
+      if (!hasReplayableValue({ value: valueIdx >= 0 ? r.row[valueIdx] : '' })) liveNoValue++;
+    }
   }
-  return { valid, expired, browserSession, sessionTokens: auth + session, liveSession };
+  return { valid, expired, browserSession, sessionTokens: auth + session, liveSession, liveNoValue };
 }
 
 // Expiry is judged against the case's capture instant. The page loaders and the
@@ -436,7 +458,7 @@ function applyCaptureDate(captureDate) {
   for (const entry of rows) {
     entry.validity = checkCookieValidity(expiresIdx >= 0 ? entry.row[expiresIdx] : null, captureDate);
   }
-  cookiesData.stats = summariseCookieRows(rows);
+  cookiesData.stats = summariseCookieRows(rows, headers);
 }
 
 async function loadAutofillsData(fileTree, rootName) {
@@ -792,57 +814,54 @@ function renderCookiesPage(validOnly = false, sessionOnly = false, searchQuery =
   if (sessionOnly) filtered = filtered.filter(r => r.sessionType === 'auth' || r.sessionType === 'session');
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
-    filtered = filtered.filter(r => r.row.some(cell => cell.toLowerCase().includes(q)));
+    filtered = filtered.filter(r =>
+      r.row.some(cell => cell.toLowerCase().includes(q)) || cookieDerivedText(r).includes(q)
+    );
   }
 
   cookiesFiltered = cookiesSort.apply(filtered);
   cookiesShown = Math.min(PAGE_SIZE, filtered.length);
 
   const filterActive = validOnly || sessionOnly || !!searchQuery;
-  const cached = cookiesData.stats || { valid: 0, expired: 0, browserSession: 0, sessionTokens: 0, liveSession: 0 };
-  let validCount, expiredCount, browserSessionCount, totalSessionTokens, liveSessionCount;
-  if (filterActive) {
-    validCount = filtered.filter(r => r.validity.status === 'valid').length;
-    expiredCount = filtered.filter(r => r.validity.status === 'expired').length;
-    browserSessionCount = filtered.filter(r => r.validity.status === 'session').length;
-    totalSessionTokens = filtered.filter(r => r.sessionType === 'auth' || r.sessionType === 'session').length;
-    liveSessionCount = filtered.filter(isLiveSessionToken).length;
-  } else {
-    validCount = cached.valid;
-    expiredCount = cached.expired;
-    browserSessionCount = cached.browserSession;
-    totalSessionTokens = cached.sessionTokens;
-    liveSessionCount = cached.liveSession;
-  }
+  const cached = cookiesData.stats || { valid: 0, expired: 0, browserSession: 0, sessionTokens: 0, liveSession: 0, liveNoValue: 0 };
+  const shown = filterActive ? summariseCookieRows(filtered, cookiesData.headers) : cached;
+  const replayable = shown.liveSession - shown.liveNoValue;
 
   const totalCookies = cookiesData.rows.length;
-  const showingFiltered = filtered.length !== totalCookies;
-  summary.textContent = showingFiltered
-    ? `Showing ${filtered.length.toLocaleString()} of ${totalCookies.toLocaleString()} cookies from ${cookiesData.fileCount} file(s)`
-    : `${totalCookies.toLocaleString()} cookies from ${cookiesData.fileCount} file(s)`;
+  summary.textContent = datasetSummary({ shown: filtered.length, total: totalCookies, singular: 'cookie', fileCount: cookiesData.fileCount });
 
   addAdjustColumnsBtn(summary, '_cookieFileHint', 'cookies');
 
+  if (cookiesFiltered.length === 0) {
+    stats.innerHTML = '';
+    content.innerHTML = buildNoMatchesHtml('cookies');
+    return;
+  }
+
   stats.innerHTML = `
     <div class="data-page-stat">
-      <div class="data-page-stat-value cookie-valid">${validCount.toLocaleString()}</div>
+      <div class="data-page-stat-value cookie-valid">${shown.valid.toLocaleString()}</div>
       <div class="data-page-stat-label">Valid</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value cookie-expired">${expiredCount.toLocaleString()}</div>
+      <div class="data-page-stat-value cookie-expired">${shown.expired.toLocaleString()}</div>
       <div class="data-page-stat-label">Expired</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value cookie-session">${browserSessionCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">Browser Session</div>
+      <div class="data-page-stat-value cookie-session">${shown.browserSession.toLocaleString()}</div>
+      <div class="data-page-stat-label">Browser session</div>
     </div>
     <div class="data-page-stat">
-      <div class="data-page-stat-value cookie-auth">${totalSessionTokens.toLocaleString()}</div>
-      <div class="data-page-stat-label">Session Tokens</div>
+      <div class="data-page-stat-value cookie-auth">${shown.sessionTokens.toLocaleString()}</div>
+      <div class="data-page-stat-label">Session tokens</div>
     </div>
-    ${liveSessionCount > 0 ? `<div class="data-page-stat" title="Session tokens live at capture: unexpired, or browser-session cookies carrying no expiry.">
-      <div class="data-page-stat-value cookie-auth-valid">${liveSessionCount.toLocaleString()}</div>
-      <div class="data-page-stat-label">Live Sessions</div>
+    ${shown.liveSession > 0 ? `<div class="data-page-stat" title="Session tokens live at capture — unexpired, or browser-session cookies carrying no expiry — whose value was captured, so they could be replayed.">
+      <div class="data-page-stat-value cookie-auth-valid">${replayable.toLocaleString()}</div>
+      <div class="data-page-stat-label">Live sessions</div>
+    </div>` : ''}
+    ${shown.liveNoValue > 0 ? `<div class="data-page-stat" title="Live session tokens whose value was not captured: evidence the account was logged in, but nothing that can be replayed.">
+      <div class="data-page-stat-value">${shown.liveNoValue.toLocaleString()}</div>
+      <div class="data-page-stat-label">Live, no value</div>
     </div>` : ''}
   `;
 
