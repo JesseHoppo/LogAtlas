@@ -1,13 +1,13 @@
 import { state, on } from '../core/state.js';
 import { escapeHtml } from '../core/utils.js';
-import { bindDebouncedInput, buildShowMoreButton, buildRowsHtml, downloadCsvRows, formatDateTimeLabel, PAGE_SIZE } from '../pages/shared.js';
+import { bindDebouncedInput, bindTableSort, buildShowMoreButton, buildRowsHtml, captureProvenance, countLabel, createTableSort, downloadCsvRows, formatInstantLabel, trimRootPath, PAGE_SIZE } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData, getAutofillsData, getNotesData } from '../pages/credentials.js';
 import { getHistoryData, getBookmarksData } from '../pages/browser.js';
 import { getDownloadsData, getClipboardData } from '../pages/activity.js';
 import { getAccountTokensData } from '../pages/assets.js';
 import { buildCredentialCurrentnessModel } from '../analysis/credentialCurrentness.js';
 import { FIELD_PATTERNS } from '../core/definitions/patterns.js';
-import { getCategoryLabel } from '../core/domainCategories.js';
+import { getCategoryLabel, getCategorySource, isGenericCategory, SITE_CATEGORY_PRIORITY } from '../core/domainCategories.js';
 
 let currentnessModel = null;
 let currentnessFiltered = [];
@@ -15,26 +15,56 @@ let currentnessShown = 0;
 let sysinfoEntries = null;
 let capture = null;
 let currentnessActiveFilter = 'all';
+let credentialsAnalysis = null;
 
 const CURRENTNESS_FILTERS = [
-  { key: 'all', label: 'All Rows', predicate: () => true },
-  { key: 'priority', label: 'Priority Queue', predicate: (row) => row.isPriority },
+  { key: 'all', label: 'All rows', predicate: () => true },
+  { key: 'priority', label: 'Priority queue', predicate: (row) => row.isPriority },
+  { key: 'sensitive', label: 'Sensitive sites', predicate: (row) => !!row.categories?.includes('sensitive') },
   { key: 'uncategorised', label: 'Uncategorised', predicate: (row) => row.categoryKey === 'unknown' },
-  { key: 'active', label: 'Likely Current', predicate: (row) => row.bucket === 'likely-current' },
-  { key: 'aligned', label: 'Corroborated Employer', predicate: (row) => row.identityFitKey === 'aligned-corroborated' || row.identityFitKey === 'corroborated' },
-  { key: 'legacy', label: 'Legacy Employer', predicate: (row) => row.dispositionKey === 'legacy-employer' },
-  { key: 'orphaned', label: 'Orphaned Corporate', predicate: (row) => row.identityFitKey === 'orphaned' },
-  { key: 'corp-on-consumer', label: 'Corp Email on Consumer Site', predicate: (row) => row.dispositionKey === 'corp-on-consumer' },
+  { key: 'active', label: 'Likely current', predicate: (row) => row.bucket === 'likely-current' },
+  { key: 'aligned', label: 'Corroborated employer', predicate: (row) => row.identityFitKey === 'aligned-corroborated' || row.identityFitKey === 'corroborated' },
+  { key: 'legacy', label: 'Legacy employer', predicate: (row) => row.dispositionKey === 'legacy-employer' },
+  { key: 'orphaned', label: 'Orphaned corporate', predicate: (row) => row.identityFitKey === 'orphaned' },
+  { key: 'corp-on-consumer', label: 'Corp email on consumer site', predicate: (row) => row.dispositionKey === 'corp-on-consumer' },
   { key: 'app', label: 'App-stored', predicate: (row) => row.isAppCredential },
-  { key: 'personal', label: 'Personal Email', predicate: (row) => row.identityFitKey === 'public' },
+  { key: 'personal', label: 'Personal email', predicate: (row) => row.identityFitKey === 'public' },
 ];
 
-// Order categories by analyst usefulness: "unknown" first (priority bucket),
-// then specific consumer categories, popular last (broadest/least informative).
-const CATEGORY_BREAKDOWN_ORDER = [
-  'unknown', 'bank', 'socialMedia', 'searchEngine', 'aiAssistant',
-  'airline', 'news', 'university', 'retailer', 'popular',
-];
+// Some categories come from a list under data/site-domains/, others from a
+// domain-suffix rule. The classifier names the one that matched; this stands in
+// for the handful of keys it has no single source for.
+const CATEGORY_SOURCE_NOTE = 'Matched a domain reference list or suffix rule';
+
+// The classifier's escalation, and the reason these four keep a badge while the
+// broad "people use this site" categories lose theirs.
+const SENSITIVE_CATEGORY_NOTE = 'Sensitive site: government, military, banking or finance';
+
+// Candidate statuses ordered by how bad the news is; the tone is the only
+// severity signal the model publishes.
+const CANDIDATE_TONE_ORDER = ['success', 'accent', 'warning', 'danger'];
+
+// Clicking a header sorts by that column; clicking back through the cycle
+// returns the table to the ranking the engine published, which is the ordering
+// the page exists to show.
+const RANK_CAPTION = 'Ordered by triage rank: live access first, then confidence score.';
+
+const currentnessSort = createTableSort({
+  site: (row) => row.siteHost || row.siteDomain,
+  user: (row) => row.username,
+  score: (row) => row.score,
+  triage: (row) => row.displayLabel || row.dispositionLabel || row.bucketLabel,
+});
+
+// The shared sorter renders a bare header cell; these columns carry their width
+// and their small-screen behaviour as classes, so the markup is assembled here
+// from the same sort state.
+function labTh(key, label, columnClass) {
+  const active = currentnessSort.key === key && currentnessSort.order !== 'none';
+  const classes = ['sortable', columnClass, active ? `sort-${currentnessSort.order}` : ''].filter(Boolean).join(' ');
+  const aria = active ? (currentnessSort.order === 'asc' ? 'ascending' : 'descending') : 'none';
+  return `<th class="${classes}" data-sort-key="${key}" tabindex="0" aria-sort="${aria}">${escapeHtml(label)}</th>`;
+}
 
 function getCredentialIndex(headers, matcher) {
   return headers.findIndex((header) => matcher.test(header));
@@ -125,12 +155,18 @@ function getCurrentnessFilterDefinition(key) {
   return CURRENTNESS_FILTERS.find((entry) => entry.key === key) || CURRENTNESS_FILTERS[0];
 }
 
+// The search box narrows the case; the chips narrow the search. Keeping the two
+// passes separate lets the chip counts and the category strip describe the same
+// set the table is drawn from.
+function applySearch(rows, searchQuery = '') {
+  const q = searchQuery.trim().toLowerCase();
+  if (!q) return rows || [];
+  return (rows || []).filter((row) => buildSearchText(row).includes(q));
+}
+
 function applyCurrentnessFilters(rows, searchQuery = '') {
   const filterDef = getCurrentnessFilterDefinition(currentnessActiveFilter);
-  const baseRows = (rows || []).filter((row) => filterDef.predicate(row));
-  const q = searchQuery.trim().toLowerCase();
-  if (!q) return baseRows;
-  return baseRows.filter((row) => buildSearchText(row).includes(q));
+  return currentnessSort.apply(applySearch(rows, searchQuery).filter((row) => filterDef.predicate(row)));
 }
 
 function buildSearchText(row) {
@@ -425,30 +461,32 @@ function renderCurrentnessPage(searchQuery = '') {
   if (statsEl) statsEl.innerHTML = '';
 
   if (!currentnessModel || currentnessModel.rows.length === 0) {
-    summaryEl.textContent = 'No credential currentness data available';
+    summaryEl.textContent = 'No credential currentness data.';
     renderCurrentnessMeta(null);
-    contentEl.innerHTML = '<div class="no-data">No credential currentness data available.</div>';
+    contentEl.innerHTML = '<div class="no-data">No scored credentials.</div>';
     return;
   }
 
   const summary = currentnessModel.summary;
   const activeFilter = getCurrentnessFilterDefinition(currentnessActiveFilter);
-  currentnessFiltered = applyCurrentnessFilters(currentnessModel.rows, searchQuery);
+  const searched = applySearch(currentnessModel.rows, searchQuery);
+  currentnessFiltered = currentnessSort.apply(searched.filter((row) => activeFilter.predicate(row)));
   currentnessShown = Math.min(PAGE_SIZE, currentnessFiltered.length);
   const filterText = activeFilter.key !== 'all' ? ` · ${activeFilter.label}` : '';
   summaryEl.textContent = currentnessFiltered.length !== currentnessModel.rows.length
     ? `${currentnessFiltered.length.toLocaleString()} of ${currentnessModel.rows.length.toLocaleString()} ranked rows${filterText}`
     : `${currentnessModel.rows.length.toLocaleString()} ranked rows${filterText}`;
 
-  renderCurrentnessMeta(summary, currentnessModel.rows);
+  renderCurrentnessMeta(summary, searched);
 
   if (currentnessFiltered.length === 0) {
     contentEl.innerHTML = '<div class="no-data">No credential rows match the current search and analyst filters.</div>';
     return;
   }
 
-  let html = '<div class="data-table-container"><table class="lab-creds-table">';
-  html += '<thead><tr><th class="lab-col-site">Site</th><th class="lab-col-user">User</th><th class="lab-col-score">Status</th><th class="lab-col-disp">Triage</th><th class="lab-col-bar">Signals</th></tr></thead><tbody>';
+  let html = currentnessSort.order === 'none' ? `<div class="data-table-caption">${RANK_CAPTION}</div>` : '';
+  html += '<div class="data-table-container"><table class="lab-creds-table">';
+  html += `<thead><tr>${labTh('site', 'Site', 'lab-col-site')}${labTh('user', 'User', 'lab-col-user')}${labTh('score', 'Score', 'lab-col-score')}${labTh('triage', 'Triage', 'lab-col-disp')}<th class="lab-col-bar">Signals</th></tr></thead><tbody>`;
   html += buildRowsHtml(currentnessRowBuilder, currentnessFiltered, 0, currentnessShown);
   html += '</tbody></table></div>';
 
@@ -532,6 +570,7 @@ function initCurrentnessLab() {
   }
 
   bindDebouncedInput(searchInput, (value) => renderCurrentnessPage(value));
+  bindTableSort(contentEl, currentnessSort, () => renderCurrentnessPage(searchInput?.value || ''));
 
   metaEl?.addEventListener('click', (event) => {
     const btn = event.target.closest('.lab-chip');
@@ -627,6 +666,7 @@ function initCurrentnessLab() {
     currentnessFiltered = [];
     currentnessShown = 0;
     currentnessActiveFilter = 'all';
+    currentnessSort.reset();
     document.getElementById('navCurrentnessLab').disabled = true;
     const metaEl = document.getElementById('currentnessLabMeta');
     if (metaEl) metaEl.innerHTML = '';
