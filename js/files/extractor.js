@@ -1,11 +1,9 @@
 // Archive extraction
 
-import { state, emit, setLoading, addError, setRememberedPassword } from '../core/state.js';
+import { state, on, emit, setLoading, addError, setRememberedPassword } from '../core/state.js';
 import {
   isZipFile,
   isArchiveFile,
-  isPreviewable,
-  isTextFile,
   isJunkFile,
   isMacOSMetadata,
   looksLikeText,
@@ -34,38 +32,61 @@ const SNIFF_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
 const RETAINED_CONTENT_MAX_BYTES = 2 * 1024 * 1024;
 const ONE_SHOT_HINTS = ['_cryptoWalletHint', '_screenshotHint', '_grabbedFileHint'];
 
-let _bytesUsed = 0;
-let _entriesUsed = 0;
-let _budgetReported = false;
+// A run walking a 900 MB archive is still going when the analyst clears the case
+// and drops the next one. Every run carries the generation it began in, and a
+// reset retires it: the abandoned walk stops where it is instead of spending the
+// new case's budget and publishing its tree over the live one.
+let _generation = 0;
+on('reset', () => { _generation += 1; });
 
-function resetExtractionBudget() {
-  _bytesUsed = 0;
-  _entriesUsed = 0;
-  _budgetReported = false;
+// Byte and entry accumulators for one case. `extractFile` opens a case, and so
+// does the first `addFilesToTree` of a container; the add-more and paste drops
+// that follow keep filling the same budget, so the cap spans every drop that
+// builds one container rather than a single call. `reported` is a latch, cleared
+// per drop so each one can surface an overflow error once.
+function createBudget() {
+  return { bytes: 0, entries: 0, reported: false, generation: _generation };
 }
 
-// Latch only: byte/entry accumulators stay session-global to bound total
-// main-thread memory, but each top-level archive gets a fresh overflow error.
-function resetBudgetReport() {
-  _budgetReported = false;
+let _caseBudget = createBudget();
+
+function abandoned(budget) {
+  return budget.generation !== _generation;
 }
 
-function withinBudget(extraBytes) {
-  if (_entriesUsed >= LIMITS.maxEntries) return false;
-  if (_bytesUsed + (extraBytes || 0) > LIMITS.maxDecompressedBytes) return false;
+function withinBudget(budget, extraBytes) {
+  if (budget.entries >= LIMITS.maxEntries) return false;
+  if (budget.bytes + (extraBytes || 0) > LIMITS.maxDecompressedBytes) return false;
   return true;
 }
 
-function reportBudgetExceeded(path) {
-  if (_budgetReported) return;
-  _budgetReported = true;
+function reportBudgetExceeded(budget, path) {
+  if (budget.reported) return;
+  budget.reported = true;
   addError(`Extraction limit reached (${Math.round(LIMITS.maxDecompressedBytes / (1024 * 1024))} MB / ${LIMITS.maxEntries} entries); remaining contents left unexpanded near: ${path}`);
 }
 
-function reportArchiveRefused(path, bytes, entries) {
-  if (_budgetReported) return;
-  _budgetReported = true;
+function reportArchiveRefused(budget, path, bytes, entries) {
+  if (budget.reported) return;
+  budget.reported = true;
   addError(`Archive declares ${Math.round(bytes / (1024 * 1024))} MB across ${entries} entries, past the extraction limit (${Math.round(LIMITS.maxDecompressedBytes / (1024 * 1024))} MB / ${LIMITS.maxEntries}); left unexpanded: ${path}`);
+}
+
+// libarchive lists an encrypted 7z or RAR but cannot decrypt either one, so a
+// passphrase is only worth asking for when the bytes are something it can open.
+// The name is no help — a `.7z` that is really a zip decrypts fine — so the
+// magic decides.
+const SEVEN_ZIP_MAGIC = [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c];
+const RAR_MAGIC = [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07];
+
+async function supportsDecryption(file) {
+  try {
+    const head = new Uint8Array(await file.slice(0, 6).arrayBuffer());
+    const matches = (magic) => magic.every((byte, i) => head[i] === byte);
+    return !matches(SEVEN_ZIP_MAGIC) && !matches(RAR_MAGIC);
+  } catch (_) {
+    return true;
+  }
 }
 
 // Lazy-load libarchive so it doesn't break the ZIP path if it fails
@@ -284,7 +305,7 @@ function retainsContent(node, byteLength) {
 }
 
 // Recursive: descends into nested archives.
-async function extractIntoTree(root, zipData, basePath, depth) {
+async function extractIntoTree(root, zipData, basePath, depth, budget) {
   if (depth > MAX_DEPTH) {
     addError(`Max depth exceeded at: ${basePath}`);
     return;
@@ -312,12 +333,12 @@ async function extractIntoTree(root, zipData, basePath, depth) {
       }
 
       const entryBytes = entry.uncompressedSize || 0;
-      if (!withinBudget(entryBytes)) {
-        reportBudgetExceeded(basePath + '/' + entry.filename);
+      if (!withinBudget(budget, entryBytes)) {
+        reportBudgetExceeded(budget, basePath + '/' + entry.filename);
         break;
       }
-      _bytesUsed += entryBytes;
-      _entriesUsed += 1;
+      budget.bytes += entryBytes;
+      budget.entries += 1;
 
       const isZip = isZipFile(leafName);
       const isArchive = isArchiveFile(leafName);
@@ -362,13 +383,13 @@ async function extractIntoTree(root, zipData, basePath, depth) {
           node.type = 'directory';
           node.isArchive = true;
           node.isNestedArchive = true;
-          if (!node.children) node.children = {};
+          if (!node.children) node.children = Object.create(null);
 
           if (isZip) {
-            await extractIntoTree(node, nestedData.buffer, fullPath, depth + 1);
+            await extractIntoTree(node, nestedData.buffer, fullPath, depth + 1, budget);
           } else {
             const nestedFile = new File([nestedData], leafName);
-            await extractArchiveIntoTree(node, nestedFile, fullPath, depth + 1, password);
+            await extractArchiveIntoTree(node, nestedFile, fullPath, depth + 1, budget, password);
           }
         } catch (err) {
           addError(`Failed to extract nested archive: ${fullPath} - ${err.message}`);
@@ -406,17 +427,18 @@ function declaredTotals(obj, totals) {
   return totals;
 }
 
-async function walkExtractedFiles(obj, depth, root, parentPath, counts) {
+async function walkExtractedFiles(obj, depth, root, parentPath, counts, budget) {
   for (const key of Object.keys(obj)) {
+    if (abandoned(budget)) return counts;
     const value = obj[key];
     if (isMacOSMetadata(key) || isJunkFile(key.toLowerCase())) { counts.filtered += 1; continue; }
 
     const segments = parentPath.concat(key);
 
     if (isEntryLeaf(value)) {
-      if (!withinBudget(value.size || 0)) { reportBudgetExceeded(segments.join('/')); counts.unexpanded += 1; continue; }
-      _bytesUsed += value.size || 0;
-      _entriesUsed += 1;
+      if (!withinBudget(budget, value.size || 0)) { reportBudgetExceeded(budget, segments.join('/')); counts.unexpanded += 1; continue; }
+      budget.bytes += value.size || 0;
+      budget.entries += 1;
 
       const isArchive = isArchiveFile(key);
       const nodeData = {
@@ -435,41 +457,62 @@ async function walkExtractedFiles(obj, depth, root, parentPath, counts) {
       };
 
       const fileNode = insertPath(root, segments, nodeData);
+      if (!fileNode) { counts.filtered += 1; continue; }
       const parentDir = segments.length >= 2 ? segments[segments.length - 2] : '';
       const detected = applyDetectionHints(fileNode, key, parentDir, segments.join('/'));
-      if (!detected && fileNode._blobContent) {
+      if (wantsContentSniff(detected, key) && fileNode._blobContent) {
         await sniffBlobContent(fileNode, fileNode._blobContent);
       }
       counts.files += 1;
     } else if (value && typeof value === 'object') {
-      if (!withinBudget(0)) { reportBudgetExceeded(segments.join('/')); counts.unexpanded += 1; continue; }
-      _entriesUsed += 1;
-      insertPath(root, segments, { type: 'directory', depth });
-      await walkExtractedFiles(value, depth + 1, root, segments, counts);
+      if (!withinBudget(budget, 0)) { reportBudgetExceeded(budget, segments.join('/')); counts.unexpanded += 1; continue; }
+      budget.entries += 1;
+      if (!insertPath(root, segments, { type: 'directory', depth })) { counts.filtered += 1; continue; }
+      await walkExtractedFiles(value, depth + 1, root, segments, counts, budget);
     }
   }
 
   return counts;
 }
 
-async function extractArchiveIntoTree(root, file, basePath, depth, parentPassword = null) {
+async function extractArchiveIntoTree(root, file, basePath, depth, budget, parentPassword = null) {
   if (depth > MAX_DEPTH) {
     addError(`Max depth exceeded at: ${basePath}`);
     return;
   }
 
-  const Archive = await getArchive();
+  // The wasm build is fetched on first use and can fail on its own; letting that
+  // out of here would abandon the whole drop over one member.
+  let Archive;
+  try {
+    Archive = await getArchive();
+  } catch (err) {
+    addError(`Archive support failed to load: ${basePath} - ${err.message}`);
+    return;
+  }
+
   let invalidPassword = false;
+  let encrypted = false;
+  let decryptable = true;
+  let attempts = 0;
 
   // Password retry loop: re-open on each iteration since the archive object
-  // isn't reusable after a failed extract.
-  while (true) {
+  // isn't reusable after a failed extract. Bounded, so a file that fails the
+  // same way every time ends with an error rather than a spinning tab.
+  while (attempts < PASSWORD_ATTEMPT_LIMIT) {
+    if (abandoned(budget)) return;
+    attempts += 1;
     let archive = null;
     try {
       archive = await Archive.open(file);
       const hasEncrypted = await archive.hasEncryptedData();
+      encrypted = hasEncrypted;
 
-      if (hasEncrypted) {
+      if (hasEncrypted) decryptable = await supportsDecryption(file);
+
+      // Whatever sits outside the encrypted members is still worth having, so
+      // an archive nothing can decrypt is read rather than skipped.
+      if (hasEncrypted && decryptable) {
         // Carry the parent archive's password into the first attempt so a nested
         // archive inside an encrypted zip opens without re-prompting.
         let password = invalidPassword ? null : (parentPassword || state.rememberedPassword);
@@ -491,28 +534,32 @@ async function extractArchiveIntoTree(root, file, basePath, depth, parentPasswor
       // budget has to be settled against the declared sizes first; a bomb is
       // refused here instead of being caught after it has already been inflated.
       const declared = declaredTotals(await archive.getFilesObject(), { bytes: 0, entries: 0 });
-      if (!withinBudget(declared.bytes) || _entriesUsed + declared.entries > LIMITS.maxEntries) {
-        reportArchiveRefused(basePath, declared.bytes, declared.entries);
+      if (!withinBudget(budget, declared.bytes) || budget.entries + declared.entries > LIMITS.maxEntries) {
+        reportArchiveRefused(budget, basePath, declared.bytes, declared.entries);
         try { await archive.close?.(); } catch (_) { /* ignore */ }
         return;
       }
 
       const extracted = await archive.extractFiles();
-      const counts = await walkExtractedFiles(extracted, depth, root, [], { files: 0, filtered: 0, unexpanded: 0 });
+      const counts = await walkExtractedFiles(extracted, depth, root, [], { files: 0, filtered: 0, unexpanded: 0 }, budget);
       // An archive holding nothing but OS metadata is empty, not broken, and the
       // budget stop has already reported itself.
       if (counts.files === 0 && counts.unexpanded === 0) {
-        if (hasEncrypted) {
+        if (hasEncrypted && !decryptable) {
+          addError(`Encrypted archive left unopened: ${basePath} - 7z and RAR encryption cannot be decrypted here; unpack it outside the browser`);
+        } else if (hasEncrypted) {
           addError(`No files could be decrypted from: ${basePath} - wrong password or unsupported encryption`);
         } else if (counts.filtered === 0) {
           addError(`Archive contained no readable files: ${basePath}`);
         }
       }
-      await extractNestedArchives(root, basePath, depth);
+      await extractNestedArchives(root, basePath, depth, budget);
       return;
     } catch (err) {
       try { await archive?.close?.(); } catch (_) { /* ignore */ }
-      if (isInvalidPasswordError(err)) {
+      // Only an archive that actually carries encrypted data can have the wrong
+      // password; anything else is a broken file.
+      if (encrypted && decryptable && isInvalidPasswordError(err)) {
         invalidPassword = true;
         setRememberedPassword(null);
         continue;
@@ -521,15 +568,18 @@ async function extractArchiveIntoTree(root, file, basePath, depth, parentPasswor
       return;
     }
   }
+
+  addError(`Could not decrypt: ${basePath} - wrong password`);
 }
 
 // Recurse into nested archives
-async function extractNestedArchives(root, basePath, depth) {
+async function extractNestedArchives(root, basePath, depth, budget) {
   if (!root.children) return;
 
   for (const child of Object.values(root.children)) {
+    if (abandoned(budget)) return;
     if (child.type === 'directory') {
-      await extractNestedArchives(child, basePath + '/' + child.name, depth);
+      await extractNestedArchives(child, basePath + '/' + child.name, depth, budget);
       continue;
     }
 
@@ -543,15 +593,15 @@ async function extractNestedArchives(root, basePath, depth) {
       child.type = 'directory';
       child.isArchive = true;
       child.isNestedArchive = true;
-      if (!child.children) child.children = {};
+      if (!child.children) child.children = Object.create(null);
 
       const nestedPath = basePath + '/' + child.name;
 
       if (isZipFile(child.name)) {
         const arrayBuffer = await nestedFile.arrayBuffer();
-        await extractIntoTree(child, arrayBuffer, nestedPath, depth + 1);
+        await extractIntoTree(child, arrayBuffer, nestedPath, depth + 1, budget);
       } else {
-        await extractArchiveIntoTree(child, nestedFile, nestedPath, depth + 1);
+        await extractArchiveIntoTree(child, nestedFile, nestedPath, depth + 1, budget);
       }
     } catch (err) {
       addError(`Failed to extract nested archive: ${child.name} - ${err.message}`);
@@ -605,16 +655,19 @@ async function extractFile(file) {
   state.rootZipName = file.name;
   state.sourceFile = file;
   setLoading('Reading archive...');
-  resetExtractionBudget();
+  _caseBudget = createBudget();
+  const budget = _caseBudget;
 
   const root = createNode(file.name, { type: 'directory', depth: 0 });
 
   if (isZipFile(file.name)) {
     const arrayBuffer = await file.arrayBuffer();
-    await extractIntoTree(root, arrayBuffer, file.name, 0);
+    await extractIntoTree(root, arrayBuffer, file.name, 0, budget);
   } else {
-    await extractArchiveIntoTree(root, file, file.name, 0);
+    await extractArchiveIntoTree(root, file, file.name, 0, budget);
   }
+
+  if (abandoned(budget)) return;
 
   reconcileAggregatePasswordFiles(root);
   const collapsed = collapseSingleWrapper(root);
