@@ -72,13 +72,15 @@ function isLikelyBookmarkFile(name, parentDir, fullPath) {
 function isLikelyBrowserMetadataFile(name, parentDir, fullPath) {
   const bm = FILE_TYPE_PATTERNS.browserMetadata;
   const normalisedPath = normalisePath(fullPath);
-  if (/^debug\.txt$/i.test(name)) {
-    if (/(^|\/)(chrome|edge|firefox|opera|brave|vivaldi|chromium)\//i.test(normalisedPath)) return true;
-  } else if (bm.filePatterns.some(rx => rx.test(name))) {
-    return true;
-  }
+  if (bm.filePatterns.some(rx => rx.test(name))) return true;
   if (parentDir && bm.folderPatterns.some(rx => rx.test(parentDir)) && TEXT_EXTENSIONS.test(name)) return true;
   return bm.pathPatterns.some(rx => rx.test(normalisedPath));
+}
+
+function isLikelyStealerDebugFile(name, fullPath) {
+  const debug = FILE_TYPE_PATTERNS.stealerDebug;
+  if (!debug.filePatterns.some(rx => rx.test(name))) return false;
+  return debug.pathPatterns.some(rx => rx.test(normalisePath(fullPath)));
 }
 
 function isLikelyScreenshot(name) {
@@ -189,11 +191,12 @@ function applyDetectionHints(node, rawName, parentDir, fullPath = '') {
   if (isLikelyPasswordFilename(name, parentDir, fullPath)) { node._passwordFileHint = true; detected = true; }
   else if (isLikelyAggregatePasswordFile(name)) { node._passwordFileAggregateHint = true; detected = true; }
   if (isLikelyCookieFile(name, parentDir, fullPath)) { node._cookieFileHint = true; detected = true; }
-  if (isLikelySystemInfoFile(name, parentDir))     { node._sysInfoHint = true;      detected = true; }
+  if (isLikelySystemInfoFile(name, parentDir, fullPath)) { node._sysInfoHint = true; detected = true; }
   if (isLikelyAutofillFile(name, parentDir))       { node._autofillHint = true;     detected = true; }
   if (isLikelyHistoryFile(name, parentDir))        { node._historyHint = true;      detected = true; }
   if (isLikelyBookmarkFile(name, parentDir, fullPath)) { node._bookmarkHint = true; detected = true; }
   if (isLikelyBrowserMetadataFile(name, parentDir, fullPath)) { node._browserMetadataHint = true; detected = true; }
+  if (isLikelyStealerDebugFile(name, fullPath))    { node._stealerDebugHint = true; detected = true; }
   if (isLikelyScreenshot(name))                    { node._screenshotHint = true;   detected = true; }
   if (isLikelyCreditCardFile(name, parentDir))     { node._creditCardHint = true;   detected = true; }
   if (isLikelyDownloadFile(name, parentDir))       { node._downloadHint = true;     detected = true; }

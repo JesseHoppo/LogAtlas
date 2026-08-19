@@ -14,6 +14,7 @@ import {
   parseHistoryFile,
   parseBookmarkFile,
   parseBrowserMetadataFile,
+  parseStealerDebugFile,
   parseAccountTokenFile,
   parseServiceArtifactFile,
   parseDownloadFile,
@@ -1069,21 +1070,53 @@ async function analyseBrowserMetadata(nodes) {
   });
 }
 
-// Restore-token files hold bare opaque base64url blobs with no key:value
-// structure, so the keyed parser returns nothing. Recover them here.
-function parseBareTokenFile(text) {
-  const lines = stripLeadingNoiseLines(text).split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !isPromotionalNoiseLine(line));
-  if (lines.length === 0) return null;
-
-  const rows = [];
-  for (const line of lines) {
-    if (!/^[A-Za-z0-9_-]{40,}$/.test(line)) return null;
-    rows.push(['Restore Token', line, '', '']);
+// The stealer's own trace of its run, per browser. It says what the malware
+// did — which stores it opened, how many bytes it took, whether it finished —
+// and nothing about what the browser held.
+async function analyseStealerDebug(nodes) {
+  if (nodes.length === 0) {
+    emit('analysis:stealerDebug', null);
+    return;
   }
 
-  return rows.length > 0 ? { rows } : null;
+  const entries = [];
+  const codes = [];
+  let fileCount = 0;
+  let totalSteps = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const text = await decodeNodeText(node, path);
+      if (text == null) continue;
+      const parsed = parseNodeCached(node, 'stealerDebug', parseStealerDebugFile, text, null);
+      if (!parsed || parsed.rows.length === 0) continue;
+
+      fileCount++;
+      totalSteps += parsed.rows.length;
+      for (const row of parsed.rows) codes.push(row[1]);
+      entries.push({
+        source: path,
+        browser: inferBrowserFromPath(path || node.name) || 'Unknown browser',
+        steps: parsed.rows.length,
+        // `fin` is the last thing a completed run writes.
+        completed: parsed.rows[parsed.rows.length - 1][1].toLowerCase() === 'fin',
+      });
+    } catch {
+      // skip
+    }
+  }
+
+  if (fileCount === 0) {
+    emit('analysis:stealerDebug', null);
+    return;
+  }
+
+  emit('analysis:stealerDebug', {
+    fileCount,
+    totalSteps,
+    entries,
+    topCodes: topN(codes, 10),
+  });
 }
 
 async function analyseAccountTokens(nodes) {
@@ -1588,6 +1621,7 @@ async function runAnalysis(fileTree, rootName) {
     analyseNotes(buckets._notesHint),
     analyseBookmarks(buckets._bookmarkHint),
     analyseBrowserMetadata(buckets._browserMetadataHint),
+    analyseStealerDebug(buckets._stealerDebugHint),
     analyseAccountTokens(buckets._accountTokenHint),
     analyseServiceArtifacts(buckets._serviceArtifactHint, buckets._ftpCredentialHint),
     analyseWalletArtifacts(buckets._cryptoWalletHint),
