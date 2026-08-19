@@ -398,7 +398,11 @@ export const SIGNATURES = {
     ],
   },
 
+  // A log shop, not a stealer. Its banner is stamped over whatever family
+  // actually ran, so it is scored like any other signature but reported as the
+  // distributor rather than as the family.
   Ottoman: {
+    kind: 'reseller',
     selfId: [
       { pattern: /\(\s*O\s*\|\s*T\s*\|\s*T\s*\|\s*O\s*\|\s*M\s*\|\s*A\s*\|\s*N\s*\)/i, label: 'Self-ID: OTTOMAN banner' },
       { pattern: /ottoman\s*cl[oó]ud/i, label: 'Self-ID: OTTOMAN CLOUD' },
