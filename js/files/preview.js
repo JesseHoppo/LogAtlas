@@ -667,12 +667,12 @@ function renderCSVTable(parsed, showAll) {
 
   let html = '<div class="preview-csv-wrapper">';
   html += '<div class="preview-csv-stats">';
-  html += `<span>${totalRows} records / ${parsed.headers.length} columns`;
-  if (capped) html += ` / showing first ${ROW_CAP}`;
+  html += `<span>${totalRows.toLocaleString()} records / ${parsed.headers.length.toLocaleString()} columns`;
+  if (capped) html += ` / showing first ${ROW_CAP.toLocaleString()}`;
   html += '</span>';
   html += '<span class="preview-csv-controls">';
   html += '<button class="mapper-adjust-btn" id="csvAdjustColumns">Adjust columns\u2026</button>';
-  html += '<button class="mapper-adjust-btn" id="csvBackToText">Back to Text</button>';
+  html += '<button class="mapper-adjust-btn" id="csvBackToText">Back to text</button>';
   html += '<button class="mapper-adjust-btn" id="csvDownloadCsv">Download CSV</button>';
   html += '</span>';
   html += '</div>';

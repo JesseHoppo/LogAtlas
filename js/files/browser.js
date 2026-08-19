@@ -190,7 +190,7 @@ function renderItems(items, { prefix, itemClass, backClass, nestedLabel, badgesB
     let meta = '';
     if (isDir) {
       const count = countChildren(item);
-      meta = `<div class="${prefix}-meta">${count} item${count !== 1 ? 's' : ''}</div>`;
+      meta = `<div class="${prefix}-meta">${count.toLocaleString()} item${count !== 1 ? 's' : ''}</div>`;
     } else if (item.size > 0) {
       meta = `<div class="${prefix}-meta">${formatBytes(item.size)}</div>`;
     }

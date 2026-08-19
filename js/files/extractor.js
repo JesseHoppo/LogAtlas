@@ -317,9 +317,10 @@ async function extractIntoTree(root, zipData, basePath, depth, budget) {
     reader = new zip.ZipReader(new zip.BlobReader(blob));
     const entries = await reader.getEntries();
 
-    setLoading(`Extracting: ${basePath} (${entries.length} items)`);
+    setLoading(`Extracting: ${basePath} (${entries.length.toLocaleString()} item${entries.length === 1 ? '' : 's'})`);
 
     for (const entry of entries) {
+      if (abandoned(budget)) return;
       if (isMacOSMetadata(entry.filename)) continue;
       const leafName = entry.filename.split('/').filter(Boolean).pop();
       if (!leafName) continue;
