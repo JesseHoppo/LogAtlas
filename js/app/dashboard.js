@@ -565,22 +565,42 @@ const CCTLD_COUNTRY = {
   za: 'ZA', ng: 'NG', eg: 'EG', sa: 'SA', ae: 'AE', il: 'IL', ca: 'CA', us: 'US',
 };
 
-const CORPORATE_DOMAIN_RX = /(?:login\.microsoftonline\.com|accounts\.google\.com|sharepoint\.com|atlassian\.net|onelogin\.com|okta\.com)$/i;
+// Both domain lists have been rolled up to eTLD+1 before they get here, so the
+// hosts to match on are the base domains, not the sign-in hostnames. google.com
+// is deliberately absent: after the rollup it fires on every consumer account.
+const CORPORATE_DOMAIN_RX = /(?:microsoftonline\.com|sharepoint\.com|atlassian\.net|onelogin\.com|okta\.com)$/i;
 
-function dominantCcTld(domains) {
+// One foreign domain in a ranked list of thirty is not a geolocation signal.
+// A ccTLD only leads if it clears a floor, holds most of the ccTLD-bearing
+// domains, and takes a visible share of the whole ranked set.
+const CCTLD_MIN_DOMAINS = 3;
+const CCTLD_MIN_SHARE = 0.4;
+const CCTLD_MIN_RANKED_SHARE = 0.15;
+
+function leadingCcTld(domains) {
   const counts = {};
+  let ranked = 0;
   for (const d of domains) {
+    ranked++;
     const m = String(d || '').toLowerCase().match(/\.(co\.uk|[a-z]{2})$/);
-    if (!m) continue;
-    const tld = m[1];
-    if (!CCTLD_COUNTRY[tld]) continue;
-    counts[tld] = (counts[tld] || 0) + 1;
+    if (!m || !CCTLD_COUNTRY[m[1]]) continue;
+    counts[m[1]] = (counts[m[1]] || 0) + 1;
   }
+
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  return sorted.length ? sorted[0][0] : null;
+  if (sorted.length === 0) return null;
+  // A tie has no leader; object key order must not get to decide one.
+  if (sorted.length > 1 && sorted[1][1] === sorted[0][1]) return null;
+
+  const [tld, count] = sorted[0];
+  const bearing = sorted.reduce((sum, [, n]) => sum + n, 0);
+  if (count < CCTLD_MIN_DOMAINS) return null;
+  if (count / bearing < CCTLD_MIN_SHARE) return null;
+  if (count / ranked < CCTLD_MIN_RANKED_SHARE) return null;
+  return { tld, count, ranked };
 }
 
-function renderConsistencyChecks({ credentials, cookies, history, countryInfo }) {
+function renderConsistencyChecks({ credentials, cookies, history, countryInfo, capture }) {
   const section = document.getElementById('dashConsistency');
   const body = document.getElementById('dashConsistencyBody');
   if (!section || !body) return;
@@ -589,21 +609,28 @@ function renderConsistencyChecks({ credentials, cookies, history, countryInfo })
   const credDomains = (credentials?.topDomains || []).map(d => d.value);
   const histDomains = (history?.topDomains || []).map(d => d.value);
 
+  // Leads: a capture instant that cannot be right undermines every other line.
+  const captureConflict = captureBeforeHistory(capture);
+  if (captureConflict) checks.push(captureConflict);
+
   if (cookies?.totalCookies > 0 && parsedCredentialRows(credentials) === 0) {
-    checks.push({ text: 'Session cookies recovered but no credentials parsed — credential files may be encrypted, missing, or unparsed.', variant: 'warn' });
+    checks.push({ text: 'Cookies recovered, no credentials parsed — credential files may be encrypted or missing.', variant: 'warn' });
   }
 
-  const corpInHistory = histDomains.find(d => CORPORATE_DOMAIN_RX.test(d));
-  if (corpInHistory && !credDomains.some(d => CORPORATE_DOMAIN_RX.test(d))) {
+  // Matched per domain: another corporate host in the credential list says
+  // nothing about the one that is missing from it.
+  const credDomainSet = new Set(credDomains.map(d => String(d).toLowerCase()));
+  const corpInHistory = histDomains.find(d => CORPORATE_DOMAIN_RX.test(d) && !credDomainSet.has(String(d).toLowerCase()));
+  if (corpInHistory) {
     checks.push({ text: `Corporate SSO domain ${corpInHistory} appears in browsing history but not in recovered credentials.`, variant: 'warn' });
   }
 
-  const tld = dominantCcTld([...credDomains, ...histDomains]);
+  const lead = leadingCcTld([...credDomains, ...histDomains]);
   const victimCode = String(countryInfo?.value || '').trim().toUpperCase();
-  if (tld && victimCode.length === 2) {
-    const tldCountry = CCTLD_COUNTRY[tld];
+  if (lead && victimCode.length === 2) {
+    const tldCountry = CCTLD_COUNTRY[lead.tld];
     if (tldCountry && tldCountry !== victimCode) {
-      checks.push({ text: `Browsing/credential domains are predominantly .${tld} (${tldCountry}) but victim location resolves to ${victimCode}; verify geolocation.`, variant: 'warn' });
+      checks.push({ text: `${lead.count.toLocaleString()} of ${lead.ranked.toLocaleString()} top browsing/credential domains are .${lead.tld} (${tldCountry}) while victim location resolves to ${victimCode}; verify geolocation.`, variant: 'warn' });
     }
   }
 
