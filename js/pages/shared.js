@@ -621,6 +621,22 @@ export function downloadCsvRows(filename, headers, rows) {
   downloadBlob(buildCsvText(headers, rows), filename, 'text/csv');
 }
 
+// The export writes the rows the table is showing, in the order it is showing
+// them, and says so in the file name: a CSV that silently holds a subset is
+// evidence with a hole in it.
+export function exportRows({ file, noun, headers, entries, filtered, row = (entry) => entry }) {
+  if (entries.length === 0) {
+    showNotification(`No ${noun} to download.`, 'error');
+    return;
+  }
+  if (filtered.length === 0) {
+    showNotification(`No ${noun} match the current search and filters.`, 'error');
+    return;
+  }
+  const name = filtered.length < entries.length ? file.replace(/\.csv$/, '-filtered.csv') : file;
+  downloadCsvRows(name, headers, filtered.map(row));
+}
+
 export function sessionTypeLabel(t) {
   if (t === 'auth') return 'Auth';
   if (t === 'session') return 'Session';
