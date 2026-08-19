@@ -373,29 +373,45 @@ function resolveDomain(url) {
   }
 }
 
+// A bracketed IPv6 authority, the form a URL has to use for one.
+const IPV6_LITERAL_PATTERN = /^\[[0-9a-f:.]+\]$/i;
+
 // Reject single-label tokens (`macos`, `intranet`) that aren't IPs or known
 // local-network hosts; those carry no real domain.
 function isAcceptableHost(host) {
   if (!host) return false;
+  if (IPV6_LITERAL_PATTERN.test(host)) return true;
   if (host.includes('.')) return true;
   return isLocalNetworkHost(host);
 }
 
+// Suffixes under which anyone can register, so the label to their left is the
+// organisation. Whole-of-government second levels like `gouv.fr`, `admin.ch`
+// and `bund.de` belong to one organisation each and stay out — splitting on
+// them would scatter a single government across hundreds of rows.
 const MULTI_LEVEL_SUFFIXES = new Set([
   'gov.au', 'com.au', 'net.au', 'org.au', 'edu.au', 'asn.au', 'id.au',
   'vic.gov.au', 'nsw.gov.au', 'qld.gov.au', 'wa.gov.au', 'sa.gov.au',
   'tas.gov.au', 'act.gov.au', 'nt.gov.au',
-  'go.id', 'co.id', 'or.id', 'ac.id', 'web.id',
+  'go.id', 'co.id', 'or.id', 'ac.id', 'web.id', 'mil.id', 'sch.id',
   'go.th', 'co.th', 'ac.th', 'or.th',
-  'gob.ec', 'gob.mx', 'gob.pe', 'gob.cl', 'gob.ar',
-  'com.br', 'gov.br',
-  'co.uk', 'gov.uk', 'ac.uk', 'org.uk',
-  'co.jp', 'co.kr', 'co.za', 'co.nz',
+  'gob.ec', 'gob.mx', 'gob.pe', 'gob.cl', 'gob.ar', 'gob.ve', 'gob.bo',
+  'gob.do', 'gob.es', 'gob.gt', 'gob.hn', 'gob.ni', 'gob.pa', 'gob.sv',
+  'com.br', 'gov.br', 'mil.br',
+  'co.uk', 'gov.uk', 'ac.uk', 'org.uk', 'sch.uk', 'mil.uk',
+  'gc.ca', 'ab.ca', 'bc.ca', 'mb.ca', 'nb.ca', 'nl.ca', 'ns.ca', 'nt.ca',
+  'nu.ca', 'on.ca', 'pe.ca', 'qc.ca', 'sk.ca', 'yt.ca',
+  'co.jp', 'go.jp', 'co.kr', 'go.kr', 'mil.kr', 'co.za', 'co.nz', 'govt.nz',
+  'mil.nz', 'go.cr', 'go.ke', 'go.tz', 'go.ug', 'gob.cu', 'mil.co', 'mil.ar',
+  'mil.bd', 'mil.bo', 'mil.cl', 'mil.do', 'mil.ec', 'mil.jo', 'mil.my',
+  'mil.ng', 'mil.pe', 'mil.ph', 'mil.pl', 'mil.ve', 'mil.au', 'sch.ae',
+  'sch.gr', 'sch.ng', 'sch.qa', 'sch.sa', 'gouv.ci',
 ]);
 
 function extractBaseDomain(domain) {
   if (!domain) return domain;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return domain;
+  if (IPV6_LITERAL_PATTERN.test(domain)) return domain;
   if (domain === 'local-file') return domain;
   if (ANDROID_PACKAGE_PATTERN.test(domain)) return domain;
   const parts = domain.split('.');
@@ -434,6 +450,23 @@ function isLocalNetworkHost(host) {
   const h = String(host).trim().toLowerCase();
   if (!h) return false;
   if (ROUTER_HOSTNAMES.has(h)) return true;
+  const literal = h.match(/^\[([0-9a-f:.]+)\]$/i);
+  if (literal) {
+    const addr = literal[1];
+    if (addr === '::1') return true;
+    // fe80::/10 link-local and fc00::/7 unique-local: both ranges are pinned by
+    // the first group, which has to be written in full to land in them.
+    if (/^fe[89ab][0-9a-f]:/.test(addr)) return true;
+    if (/^f[cd][0-9a-f]{2}:/.test(addr)) return true;
+    // IPv4-mapped forms carry the v4 address in the last 32 bits; the URL
+    // parser rewrites `::ffff:192.168.0.1` to `::ffff:c0a8:1`, so accept both.
+    const mapped = addr.match(/^::ffff:(?:(\d{1,3}(?:\.\d{1,3}){3})|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/i);
+    if (!mapped) return false;
+    if (mapped[1]) return isLocalNetworkHost(mapped[1]);
+    const hi = parseInt(mapped[2], 16);
+    const lo = parseInt(mapped[3], 16);
+    return isLocalNetworkHost(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+  }
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (!m) return false;
   const o = m.slice(1).map(Number);
@@ -495,6 +528,7 @@ function isRankableDomain(domain) {
   if (!domain) return false;
   if (domain === 'local-file') return false;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return !isLocalNetworkHost(domain);
+  if (IPV6_LITERAL_PATTERN.test(domain)) return !isLocalNetworkHost(domain);
   if (isLocalNetworkHost(domain)) return false;
   if (ANDROID_PACKAGE_PATTERN.test(domain)) return true;
   return domain.includes('.');
