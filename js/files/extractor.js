@@ -233,10 +233,11 @@ async function readZipEntryData(entry, label, initialPassword = null) {
   }
 }
 
-// zip.js writer that keeps the leading `limit` bytes of an entry. Failing the
-// write past that window is what ends the transfer part-way: getData's `signal`
-// is only honoured once the entry has been inflated in full, while a writer that
-// stops accepting propagates back through the codec and closes the worker task.
+// zip.js writer that keeps the leading `limit` bytes of an entry and drops the
+// rest. Nothing here refuses a write, however far past the window it lands: a
+// writer that fails strands the codec task holding it, and the getData after it
+// never settles, so one oversized entry costs the whole archive. The entry is
+// inflated in full either way; SNIFF_MAX_ENTRY_BYTES is what keeps that cheap.
 function headSink(limit) {
   const chunks = [];
   let length = 0;
@@ -245,12 +246,10 @@ function headSink(limit) {
     writable: new WritableStream({
       write(chunk) {
         const room = limit - length;
-        if (room > 0) {
-          const part = chunk.length > room ? chunk.subarray(0, room) : chunk;
-          chunks.push(part);
-          length += part.length;
-        }
-        if (length >= limit) throw new Error('sniff window full');
+        if (room <= 0) return;
+        const part = chunk.length > room ? chunk.subarray(0, room) : chunk;
+        chunks.push(part);
+        length += part.length;
       },
     }),
     collect() {
@@ -268,8 +267,8 @@ function headSink(limit) {
 
 // Read without the password prompt loop: used for the content sniff, which must
 // never interrupt extraction to ask about a file nothing has claimed yet. A short
-// entry, a stopped one and an unreadable one all land here, and whatever arrived
-// is what gets sampled.
+// entry and an unreadable one both land here, and whatever arrived is what gets
+// sampled.
 async function readZipEntryHead(entry, password, limit) {
   const sink = headSink(limit);
 
