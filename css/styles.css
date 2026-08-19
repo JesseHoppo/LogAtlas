@@ -1373,7 +1373,9 @@ body {
 
 /* File selection */
 
-/* Grid view checkbox */
+/* Grid view checkbox. Faint rather than hidden: nothing else in the list says a
+   file can be picked, so the boxes have to be legible before the pointer or the
+   keyboard reaches a row. */
 .file-item .file-select-cb {
   position: absolute;
   top: 0.5rem;
@@ -1383,11 +1385,12 @@ body {
   cursor: pointer;
   accent-color: var(--accent);
   z-index: 2;
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity 0.1s ease;
   margin: 0;
 }
 .file-item:hover .file-select-cb,
+.file-item:focus-visible .file-select-cb,
 .file-item.selected .file-select-cb {
   opacity: 1;
 }
@@ -1399,11 +1402,12 @@ body {
   cursor: pointer;
   accent-color: var(--accent);
   flex-shrink: 0;
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity 0.1s ease;
   margin-right: 0.25rem;
 }
 .file-list-item:hover .file-select-cb,
+.file-list-item:focus-visible .file-select-cb,
 .file-list-item.selected .file-select-cb {
   opacity: 1;
 }
