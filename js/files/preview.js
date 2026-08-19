@@ -50,6 +50,7 @@ let currentParsedData = null;
 let activeBlobUrls = [];
 let previewRequestId = 0;
 let showingAllTextLines = false;
+let openerRowKey = null;
 
 let searchMatches = [];
 let currentMatchIndex = -1;
@@ -884,6 +885,7 @@ async function showPreview(name, size, pathSegments) {
   resetPreviewActions();
 
   currentFile = { name, size, path: pathSegments };
+  openerRowKey = [...pathSegments, name].join('/');
   currentContent = null;
   currentDecodedText = null;
   currentParsedData = null;
@@ -895,7 +897,7 @@ async function showPreview(name, size, pathSegments) {
   elTitleSize.textContent = formatBytes(size);
 
   elBody.innerHTML = renderLoading();
-  elOverlay.classList.add('visible');
+  openModal(elOverlay, { onDismiss: closePreview, labelledby: 'previewName' });
 
   const fullPath = [...pathSegments, name];
   const node = getNodeAtPath(fullPath);
@@ -969,9 +971,31 @@ async function showPreview(name, size, pathSegments) {
   }
 }
 
+// Closing hands focus back to the element that opened the preview, but a
+// re-analysis re-renders the browser while the preview is up and that element
+// is gone by then, leaving focus on the body. Rows are keyed by path, so the
+// row that replaced it can be found.
+function restoreOpenerFocus() {
+  const key = openerRowKey;
+  openerRowKey = null;
+  if (!key) return;
+  // Anything still focused outside the closing overlay was chosen deliberately
+  // — by modal.js handing focus back, or by the user — and is left alone.
+  const active = document.activeElement;
+  if (active && active !== document.body && !elOverlay.contains(active)) return;
+
+  for (const id of ['fileGrid', 'fileList']) {
+    const container = document.getElementById(id);
+    if (!container?.classList.contains('active')) continue;
+    container.querySelector(`[data-path="${CSS.escape(key)}"]`)?.focus();
+    return;
+  }
+}
+
 function closePreview() {
   previewRequestId += 1;
-  elOverlay.classList.remove('visible');
+  closeModal(elOverlay);
+  restoreOpenerFocus();
   revokeAllBlobUrls();
   clearTransformButtons();
   clearPreviewSearch();
@@ -1047,7 +1071,9 @@ function initPreview() {
       e.preventDefault();
       navigateMatch(e.shiftKey ? 'prev' : 'next');
     }
-    if (e.key === 'Escape') {
+    // A query in the box owns Escape; an empty box lets it close the preview.
+    if (e.key === 'Escape' && elSearchInput.value) {
+      e.stopPropagation();
       elSearchInput.value = '';
       performSearch('');
     }
