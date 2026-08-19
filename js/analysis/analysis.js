@@ -822,6 +822,10 @@ async function analyseNotes(nodes) {
 // Domain detect
 
 async function analyseDomainDetect(nodes, credCookieNodes = []) {
+  // Classifying before the lists land buckets every host as uncategorised. The
+  // load is memoised and already in flight from startup, so this only waits.
+  await loadDomainCategories();
+
   const categories = {};
   const entries = [];
   let fileCount = 0;
