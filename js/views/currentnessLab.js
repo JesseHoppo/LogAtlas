@@ -746,6 +746,10 @@ function initCurrentnessLab() {
 
   contentEl?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
+    // Controls inside the row — the copy button the cells carry — answer their
+    // own keystrokes. Swallowing those would toggle the row instead of doing
+    // what the focused control says it does.
+    if (event.target.closest('button, a, input, select, textarea')) return;
     const tr = event.target.closest('tr.lab-cred');
     if (!tr) return;
     event.preventDefault();
