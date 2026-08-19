@@ -1,13 +1,36 @@
 import { on, emit } from '../core/state.js';
-import { bindDebouncedInput, downloadCsvRows } from '../pages/shared.js';
+import { bindDebouncedInput, bindTableSort, countLabel, createTableSort, downloadCsvRows } from '../pages/shared.js';
 import { getPasswordsData, getCookiesData } from '../pages/credentials.js';
 import { getAccountTokensData } from '../pages/assets.js';
+import { collectCurrentnessInput } from './currentnessLab.js';
 import { credentialColumnIndices, extractBaseDomain, baseDomainFromUrl } from '../core/shared.js';
-import { isLiveSessionToken } from '../analysis/sessionCookies.js';
+import { deriveVictimCountry } from '../app/dashboard.js';
+import { isReplayableSessionToken } from '../analysis/sessionCookies.js';
+import { resolvePrimaryIdentity } from '../analysis/credentialCurrentness.js';
 import { escapeHtml } from '../core/utils.js';
 import { FIELD_PATTERNS, EMAIL_REGEX, IDENTITY_SYSINFO_KEYS } from '../core/definitions/patterns.js';
 
 const USER_SOURCE_LABEL = { sysinfo: 'system info', autofill: 'autofill', email: 'email', hostname: 'hostname', unknown: 'unknown' };
+
+// A readable head plus the count of what was left off. Forty usernames in one
+// cell is a comma run nobody reads; the full list stays on the cell's title.
+function capList(values, limit = 3) {
+  const list = values || [];
+  if (list.length === 0) return '';
+  return list.slice(0, limit).join(', ') + (list.length > limit ? ` +${list.length - limit} more` : '');
+}
+
+const accountsSort = createTableSort({
+  service: (account) => account.domain,
+  usernames: (account) => account.usernames.join(', '),
+  session: (account) => (account.hasLiveSession ? 1 : 0),
+  emails: (account) => account.emails.join(', '),
+  tokens: (account) => [...account.tokenServices, ...account.accountIds].join(', '),
+});
+
+// Clicking back through the sort cycle returns the table to this ordering, so
+// the caption has to name it.
+const RANK_CAPTION = 'Ordered by exposure: live sessions first, then stored passwords.';
 
 function classifyOS(raw) {
   const v = String(raw || '').toLowerCase();
@@ -48,12 +71,19 @@ function extractEmails(passwordsData, autofillEmails) {
 function buildCookieLookup(cookiesData) {
   const lookup = new Map();
   const domainIdx = cookiesData.headers.findIndex(h => FIELD_PATTERNS.cookieDomain.test(h));
+  const valueIdx = cookiesData.headers.findIndex(h => /^value$/i.test(h));
   for (const rowData of cookiesData.rows) {
     const host = (domainIdx >= 0 ? (rowData.row[domainIdx] || '') : '').replace(/^\./, '').toLowerCase();
     const domain = extractBaseDomain(host);
     if (!domain) continue;
     if (!lookup.has(domain)) lookup.set(domain, { hasLiveSession: false });
-    if (isLiveSessionToken(rowData)) lookup.get(domain).hasLiveSession = true;
+    // The badge says the account can be walked into, so it takes a token that
+    // was live *and* whose value survived: a decryption failure empties the
+    // value column wholesale, and those rows hand over nothing.
+    const value = valueIdx >= 0 ? rowData.row[valueIdx] : '';
+    if (isReplayableSessionToken({ ...rowData, value })) {
+      lookup.get(domain).hasLiveSession = true;
+    }
   }
   return lookup;
 }
