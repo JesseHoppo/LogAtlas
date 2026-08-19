@@ -227,6 +227,32 @@ export function initNavigation() {
     setSidebarOpen(!sidebar?.classList.contains('open'));
   });
 
+  // A tap outside closes it, the way a drawer does. The dimmer over the page is
+  // the sidebar's own ::after, so a tap on it reports the sidebar as its target:
+  // outside is measured against the panel's box, not against the target.
+  document.addEventListener('pointerdown', (event) => {
+    if (!drawer) return;
+    if (sidebarToggle?.contains(event.target)) return;
+    const box = sidebar.getBoundingClientRect();
+    const insidePanel = event.clientX >= box.left && event.clientX <= box.right
+      && event.clientY >= box.top && event.clientY <= box.bottom;
+    if (!insidePanel) setSidebarOpen(false);
+  });
+
+  // A drawer left open across a resize would trap focus in what is now the
+  // page's permanent nav.
+  window.addEventListener('resize', () => {
+    if (drawer && !isDrawerLayout()) setSidebarOpen(false);
+  });
+
+  on('data:loaded', refreshNavCounts);
+  on('nav:count', ({ page, count } = {}) => setNavCount(page, count));
+  on('reset', () => {
+    for (const button of sidebarNav.querySelectorAll('.sidebar-nav-item[data-count]')) {
+      applyNavCount(button, 0);
+    }
+  });
+
   const observer = new MutationObserver(refreshSidebarAvailability);
   observer.observe(sidebarNav, {
     subtree: true,
