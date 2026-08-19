@@ -309,12 +309,15 @@ function fingerprintStealer(ctx) {
   const strongCategoryCount = (c) => (c.sysinfoKey > 0 ? 1 : 0) + (c.sysinfoContent > 0 ? 1 : 0) +
     (c.folder > 0 ? 1 : 0) + (c.file > 0 ? 1 : 0) + (c.structure > 0 ? 1 : 0);
 
-  // A matched self-ID/banner dominates; next a keyed sysinfo match with corroborating
+  // A matched self-ID dominates; next a keyed sysinfo match with corroborating
   // categories (so a long optional signature list can't dilute it below a folder-only
   // score); then the proportional gate; raw evidence breaks ties within a band.
+  // Banner art is only text, and text travels — a reseller stamps it over someone
+  // else's log, a README or a pasted sample carries it with none of the family's
+  // own layout underneath — so it ranks on its weight like any other signal.
   const evidenceTier = (r) => {
     const c = r.matchedCounts;
-    if (r.selfIdMatched || c.asciiBanner > 0) return 3;
+    if (r.selfIdMatched) return 3;
     if (c.sysinfoFile > 0 && strongCategoryCount(c) >= 2) return 2;
     if (r.pct >= CONFIDENCE_THRESHOLDS.min) return 1;
     return 0;
@@ -349,7 +352,7 @@ function fingerprintStealer(ctx) {
     const hasSysinfoFile = c.sysinfoFile > 0;
 
     let confidence;
-    if (best.selfIdMatched || c.asciiBanner > 0) confidence = 'high';
+    if (best.selfIdMatched) confidence = 'high';
     else if (hasSysinfoFile && strongCats >= 2) confidence = 'high';
     else if (hasSysinfoFile || strongCats >= 2) confidence = 'medium';
     else if (best.pct >= CONFIDENCE_THRESHOLDS.high) confidence = 'high';
