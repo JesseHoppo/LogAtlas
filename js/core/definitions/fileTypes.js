@@ -1,5 +1,14 @@
 export const TEXT_EXTENSIONS = /\.(txt|tsv|csv|json)$/i;
 
+// Sysinfo names a victim's own document can plausibly carry. They stay in
+// `filePatterns` — at an archive root they are the system profile — but callers
+// holding path context reject them under a grabbed-files root, where the text
+// is the victim's note rather than anything the stealer wrote.
+const WEAK_SYSINFO_NAMES = [
+  /^info(?:rmation)?\.txt$/i,
+  /^system\.txt$/i,
+];
+
 export const FILE_TYPE_PATTERNS = {
   password: {
     patterns: [
@@ -56,15 +65,15 @@ export const FILE_TYPE_PATTERNS = {
       /^user[\s_-]*info(?:rmation)?\.txt$/i,
       /^system[\s_-]*info(?:rmation)?\.txt$/i,
       /^sysinfo\.txt$/i,
-      /^system\.txt$/i,
-      /^info(?:rmation)?\.txt$/i,
       /^_Information\.txt$/i,
       /^information\s*\[[^\]]+\]\.txt$/i,
       /^identification\.txt$/i,
       /^pc[\s_-]*info(?:rmation)?\.(?:txt|json)$/i,
       /^build[\s_-]*info\.txt$/i,
       /^environment\.txt$/i,
+      ...WEAK_SYSINFO_NAMES,
     ],
+    weakFilePatterns: WEAK_SYSINFO_NAMES,
     dirPatterns: [
       /^system$/i,
       /^information$/i,
