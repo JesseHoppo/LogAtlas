@@ -35,14 +35,14 @@ function exportFileListJson() {
 function exportAllCredentials() {
   const data = getPasswordsData();
   if (!data || data.rows.length === 0) {
-    showNotification('No credential data available to export.', 'error');
+    showNotification('No credential data to download.', 'error');
     return;
   }
 
   downloadCsvRows('all_credentials.csv', ['Source File', ...data.headers], data.rows.map(
     ({ row, source }) => [source, ...row]
   ));
-  showNotification(`Exported ${data.rows.length} credential rows from ${data.fileCount} file(s).`, 'info');
+  showNotification(`Downloaded ${countLabel(data.rows.length, 'credential row')} from ${countLabel(data.fileCount, 'distinct source file')}.`, 'info');
 }
 
 export function initFileExportActions() {
