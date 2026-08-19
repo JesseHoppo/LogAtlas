@@ -1265,11 +1265,17 @@ async function analyseDownloads(nodes) {
       if (!parsed || parsed.rows.length === 0) continue;
 
       parsedCount++;
-      totalDownloads += parsed.rows.length;
 
+      const fileIdx = parsed.headers.findIndex(h => /^(?:file(?:\s*path)?|filename|path|download(?:\s*path)?)$/i.test(h));
       const urlIdx = parsed.headers.findIndex(h => /url/i.test(h));
       for (const row of parsed.rows) {
+        const filePath = (fileIdx >= 0 ? (row[fileIdx] || '') : (row[0] || '')).trim();
         const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : (row[1] || '').trim();
+        // A row naming neither a file nor a source is padding the parser kept
+        // for column alignment; the downloads page discards it, so the headline
+        // count must too.
+        if (!filePath && !url) continue;
+        totalDownloads++;
         if (!url) continue;
         const base = baseDomainFromUrl(url);
         if (base && isRankableDomain(base)) allDomains.push(base);
