@@ -278,11 +278,14 @@ body {
   background: transparent;
 }
 
+/* Pinned above the scroller: the filter that decides what the list contains
+   has to stay reachable from anywhere in the list. */
 .sidebar-availability {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0 1rem 0.5rem;
+  margin: 0.75rem 1rem 0;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -306,8 +309,50 @@ body {
   color: var(--text-muted);
 }
 
+/* Only the long group carries a disclosure, so the control appears where it
+   has something to do. */
+.sidebar-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-weight: 400;
+}
+.sidebar-section-toggle:hover {
+  color: var(--text-secondary);
+}
+.sidebar-section-toggle::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex: none;
+  margin-bottom: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.sidebar-section-toggle[aria-expanded="true"]::after {
+  transform: rotate(45deg);
+}
+
+/* Collapsed, the group keeps whichever item is the current page: the sidebar
+   still has to say where you are. */
+.sidebar-section-collapsed .sidebar-nav-item:not(.active) {
+  display: none;
+}
+
 .sidebar-nav-item {
   display: block;
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   width: 100%;
   padding: 0.62rem 1.25rem;
   font-family: var(--font-ui);

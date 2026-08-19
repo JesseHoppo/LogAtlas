@@ -14,26 +14,27 @@
   <div class="app-layout">
     <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-controls="sidebar" aria-expanded="false">&#9776;</button>
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">Log Atlas <button class="theme-toggle" id="themeToggle" type="button" title="Switch to dark mode" aria-label="Switch to dark mode" aria-pressed="false">Dark</button></div>
-      <nav class="sidebar-nav" id="sidebarNav">
-        <label class="sidebar-availability hidden" id="sidebarAvailableToggleWrap">
-          <input type="checkbox" id="sidebarAvailableToggle" checked>
-          <span>Available Only</span>
-        </label>
-
+      <div class="sidebar-brand">Log Atlas <button class="theme-toggle" id="themeToggle" type="button" title="Switch to dark mode" aria-label="Switch to dark mode">Dark</button></div>
+      <label class="sidebar-availability hidden" id="sidebarAvailableToggleWrap">
+        <input type="checkbox" id="sidebarAvailableToggle" checked>
+        <span>Only with data</span>
+      </label>
+      <nav class="sidebar-nav" id="sidebarNav" aria-label="Pages">
         <div class="sidebar-section" data-section="triage">
           <div class="sidebar-section-label">Triage</div>
-          <button class="sidebar-nav-item active" data-page="overview">Overview</button>
+          <button class="sidebar-nav-item active" data-page="overview" aria-current="page">Overview</button>
           <div id="generatedTriageNav"></div>
           <button class="sidebar-nav-item" data-page="search" id="navSearch" disabled>Search</button>
           <div class="sidebar-divider"></div>
         </div>
 
         <div class="sidebar-section" data-section="evidence">
-          <div class="sidebar-section-label">Evidence</div>
-          <button class="sidebar-nav-item" data-page="sysinfo" id="navSysInfo" disabled>System Info</button>
-          <button class="sidebar-nav-item" data-page="browser" id="navBrowser" disabled>File Browser</button>
-          <div id="generatedEvidenceNav"></div>
+          <button class="sidebar-section-label sidebar-section-toggle" type="button" aria-expanded="true" aria-controls="sidebarEvidenceItems">Evidence</button>
+          <div id="sidebarEvidenceItems">
+            <button class="sidebar-nav-item" data-page="sysinfo" id="navSysInfo" disabled>System info</button>
+            <button class="sidebar-nav-item" data-page="browser" id="navBrowser" disabled>File browser</button>
+            <div id="generatedEvidenceNav"></div>
+          </div>
           <div class="sidebar-divider"></div>
         </div>
 
