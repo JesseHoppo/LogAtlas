@@ -1026,9 +1026,18 @@ function parseTimestampValue(value) {
 
   const isoLike = /^\d{4}-\d{2}-\d{2}[ T]/.test(str);
   const normalised = isoLike ? str.replace(' ', 'T') : str;
-  const native = new Date(normalised);
-  if (!isNaN(native.getTime()) && native.getUTCFullYear() > 1970 && native.getUTCFullYear() <= 9999) {
-    return native;
+  // Whatever legitimately reaches the native parser is an offset-bearing ISO
+  // string or an RFC-2822-style date with a month name. Bare numbers were
+  // rejected by the epoch branch on purpose: `Time: 1` from a field the stealer
+  // failed to fill is read by V8 as a year token in the analyst's own zone and
+  // comes back as a confident 2001-01-01, good enough to anchor a whole case.
+  // `.` stays out of the separator class so `-1.5` and `0.5` can't take the
+  // same route; dotted D.M.Y forms are already consumed above.
+  if (/[A-Za-z]{3}/.test(normalised) || /\d[-/]\d/.test(normalised)) {
+    const native = new Date(normalised);
+    if (!isNaN(native.getTime()) && native.getUTCFullYear() > 1970 && native.getUTCFullYear() <= 9999) {
+      return native;
+    }
   }
 
   const dMonY = str.match(/^(\d{1,2})\s+(\w{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s+([A-Za-z]{2,5}))?/);
