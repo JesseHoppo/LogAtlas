@@ -3688,6 +3688,11 @@ body {
   outline-offset: 2px;
 }
 
+.filetype-option.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
 .filetype-icon {
   font-weight: 600;
   font-size: 0.85rem;
@@ -3701,7 +3706,9 @@ body {
   font-family: var(--font-mono);
 }
 
-.filetype-option::after {
+/* Only the options a digit key reaches carry the badge; without the attribute
+   guard the rest paint an empty pill. */
+.filetype-option[data-key]::after {
   content: attr(data-key);
   position: absolute;
   right: 0.75rem;
@@ -3811,13 +3818,10 @@ body {
   padding: 0.45rem 0.75rem;
 }
 
+/* The paste modal lays its options out as inline chips and binds no digit keys,
+   so the badge would be both wrong and on top of the label. */
 .paste-type-options .filetype-option::after {
   display: none;
-}
-
-.paste-type-options .filetype-option.active {
-  background: var(--accent-dim);
-  border-color: var(--accent);
 }
 
 .paste-text-trigger {
