@@ -147,7 +147,6 @@ function normaliseCurrentnessInput() {
     clipboardEntries: getClipboardData()?.entries || [],
     sysinfoEntries,
     rootZipName: state.rootZipName || '',
-    sourceLastModified: state.sourceFile?.lastModified || null,
     captureContext: capture,
   };
 }
