@@ -41,6 +41,7 @@ import {
   getHistoryData,
   getBookmarksData,
   getBrowserMetadataData,
+  shapeHistoryCsv,
 } from '../pages/browser.js';
 import {
   getAccountTokensData,
@@ -787,9 +788,8 @@ async function exportParsedDataZip() {
     }
 
     if (history.entries.length > 0) {
-      await addCsvFile('history.csv', ['URL', 'Title', 'Visits', 'Last Visit'], history.entries.map(
-        ({ url, title, visitCount, lastVisit }) => [url, title, visitCount, lastVisit]
-      ));
+      const shaped = shapeHistoryCsv(history);
+      await addCsvFile('history.csv', shaped.headers, shaped.rows);
     }
 
     if (bookmarks.entries.length > 0) {
