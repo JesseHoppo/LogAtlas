@@ -335,6 +335,8 @@ function gatherReportData() {
     grabbedFiles,
     cards,
     screenshots,
+    software,
+    processes,
     credStats, cookStats, autoStats, histStats,
   };
 }
@@ -544,38 +546,49 @@ function buildLogSummaryHtml(data) {
   if (data.histStats) {
     const hs = data.histStats;
     sections += `<section>
-      <h2>Browsing History Summary</h2>
+      <h2>Browsing history summary</h2>
       <div class="stat-row">
-        <div class="stat"><span class="stat-num">${hs.total.toLocaleString()}</span> entries</div>
-        <div class="stat"><span class="stat-num">${hs.uniqueDomains.toLocaleString()}</span> unique domains</div>
-        <div class="stat"><span class="stat-num">${hs.fileCount}</span> source file(s)</div>
+        ${stat(hs.total, 'entry', 'entries')}
+        ${stat(hs.uniqueDomains, 'unique domain')}
+        ${stat(hs.fileCount, 'source file')}
       </div>
-      <h3>Top Visited Domains</h3>
-      ${domainTable(hs.topDomains)}
+      <h3>Top visited domains</h3>
+      ${domainTable(hs.topDomains, 'Visits')}
     </section>`;
   }
 
   const artifactSummary = [
     ['Bookmarks', data.bookmarks?.entries.length || 0],
     ['Notes', data.notes?.entries.length || 0],
-    ['Browser Metadata', data.browserMetadata?.entries.length || 0],
-    ['Account Tokens', data.accountTokens?.entries.length || 0],
-    ['Service Artifacts', data.serviceArtifacts?.entries.length || 0],
-    ['Wallet / Store Artifacts', data.wallets?.entries.length || 0],
+    ['Browser metadata', data.browserMetadata?.entries.length || 0],
+    ['Account tokens', data.accountTokens?.entries.length || 0],
+    ['Service artifacts', data.serviceArtifacts?.entries.length || 0],
+    ['Wallet / store artifacts', data.wallets?.entries.length || 0],
     ['Downloads', data.downloads?.entries.length || 0],
-    ['Domain Detections', data.detections?.entries.length || 0],
     ['Clipboard', data.clipboard?.entries.length || 0],
-    ['Grabbed Files', data.grabbedFiles?.entries.length || 0],
-    ['Credit Cards', data.cards?.entries.length || 0],
+    ['Grabbed files', data.grabbedFiles?.entries.length || 0],
+    ['Credit cards', data.cards?.entries.length || 0],
     ['Screenshots', data.screenshots?.entries.length || 0],
+    ['Installed software', data.software?.entries.length || 0],
+    ['Running processes', data.processes?.entries.length || 0],
   ].filter(([, count]) => count > 0);
 
-  if (artifactSummary.length > 0) {
+  // The log's own domain-detect file is its tally of the passwords and cookies
+  // it took, per host, under the operator's category names. Every host in it is
+  // already in the credential and cookie summaries above, so it is named here
+  // rather than reprinted as a second, differently-counted domain list.
+  const detectFiles = data.detections?.fileCount || 0;
+  const detectNote = detectFiles > 0
+    ? `<p class="note">The log ships its own domain-detect roll-up (${countLabel(detectFiles, 'file')}), tallying the hosts it took credentials and cookies from. Those hosts are summarised above and are not repeated.</p>`
+    : '';
+
+  if (artifactSummary.length > 0 || detectNote) {
     sections += `<section>
-      <h2>Additional Artifacts</h2>
-      <table><thead><tr><th>Artifact</th><th>Entries</th></tr></thead><tbody>${
+      <h2>Additional artifacts</h2>
+      ${artifactSummary.length > 0 ? `<table><thead><tr><th>Artifact</th><th>Entries</th></tr></thead><tbody>${
         artifactSummary.map(([label, count]) => `<tr><td>${e(label)}</td><td>${count.toLocaleString()}</td></tr>`).join('')
-      }</tbody></table>
+      }</tbody></table>` : ''}
+      ${detectNote}
     </section>`;
   }
 
