@@ -137,6 +137,7 @@ function buildCredStats(passwords) {
       accountsWithoutPasswords: analysed.accountsWithoutPasswords,
       savedSites: analysed.urlsWithoutCredentials,
       fileCount: analysed.fileCount,
+      unparsedFiles: analysed.failedFiles?.length || 0,
       topDomains: analysed.topDomains.map(({ value, count }) => [value, count]),
       localNetwork: analysed.localNetwork.map(({ value, count }) => [value, count]),
       onionDomains: analysed.onionCredentials,
@@ -451,24 +452,29 @@ function buildLogSummaryHtml(data) {
   if (data.credStats) {
     const cs = data.credStats;
     const credCounts = cs.rows !== undefined
-      ? `<div class="stat"><span class="stat-num">${cs.rows.toLocaleString()}</span> credential rows</div>`
+      ? stat(cs.rows, 'credential row')
       : [
-        `<div class="stat"><span class="stat-num">${cs.unique.toLocaleString()}</span> unique site + username + password</div>`,
-        `<div class="stat"><span class="stat-num">${cs.parsed.toLocaleString()}</span> parsed before dedupe</div>`,
-        cs.accountsWithoutPasswords > 0 ? `<div class="stat"><span class="stat-num">${cs.accountsWithoutPasswords.toLocaleString()}</span> accounts with no captured password</div>` : '',
-        cs.savedSites > 0 ? `<div class="stat"><span class="stat-num">${cs.savedSites.toLocaleString()}</span> saved sites with no credentials</div>` : '',
+        stat(cs.unique, 'credential unique by domain, username and password', 'credentials unique by domain, username and password'),
+        stat(cs.parsed, 'parsed before dedupe', 'parsed before dedupe'),
+        cs.accountsWithoutPasswords > 0 ? stat(cs.accountsWithoutPasswords, 'account with no captured password', 'accounts with no captured password') : '',
+        cs.savedSites > 0 ? stat(cs.savedSites, 'saved site with no credentials', 'saved sites with no credentials') : '',
       ].filter(Boolean).join('');
+    // Files holding the same rows in a second format are counted once, so this
+    // is smaller than the number of credential files in the tree.
+    const separateHosts = cs.onionDomains > 0 || cs.localNetwork?.length > 0;
     sections += `<section>
-      <h2>Credential Summary</h2>
+      <h2>Credential summary</h2>
       <div class="stat-row">
         ${credCounts}
-        <div class="stat"><span class="stat-num">${cs.fileCount}</span> source file(s)</div>
+        ${stat(cs.fileCount, 'distinct source file')}
       </div>
       <p class="note">Passwords are not included in this report.</p>
-      ${cs.onionDomains > 0 ? `<p class="note">${cs.onionDomains.toLocaleString()} credential domain(s) on the Tor network (.onion).</p>` : ''}
-      <h3>Top Credential Domains</h3>
-      ${domainTable(cs.topDomains)}
-      ${cs.localNetwork?.length ? `<h3>Local Network Hosts</h3>${domainTable(cs.localNetwork)}` : ''}
+      ${cs.unparsedFiles > 0 ? `<p class="note">Not counted above: ${countLabel(cs.unparsedFiles, 'further candidate file')} that yielded no credentials.</p>` : ''}
+      ${cs.onionDomains > 0 ? `<p class="note">${countLabel(cs.onionDomains, 'credential domain')} on the Tor network (.onion).</p>` : ''}
+      <h3>Top credential domains</h3>
+      ${domainTable(cs.topDomains, 'Accounts')}
+      ${separateHosts ? '<p class="note">Local network hosts and .onion domains are counted separately and are not in the table above.</p>' : ''}
+      ${cs.localNetwork?.length ? `<h3>Local network hosts</h3>${domainTable(cs.localNetwork, 'Accounts')}` : ''}
     </section>`;
   }
 
