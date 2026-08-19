@@ -106,7 +106,18 @@ function createNode(name, opts = {}) {
 // and a directory identically: an existing file on the way down is promoted to a
 // container (it keeps its payload), and a leaf landing on an occupied name is
 // stored beside it rather than replacing it.
+//
+// An entry named `a/` thirty thousand times over builds a tree deep enough to
+// overflow the stack in every walker that runs afterwards, which loses the whole
+// case to one 1 KB member. The deepest path in a real log runs to a dozen or so
+// segments, so anything past the cap is dropped here, where every caller is
+// covered at once; callers get null and skip the entry.
 function insertPath(root, pathSegments, nodeData) {
+  if (pathSegments.length > LIMITS.flattenMaxDepth) {
+    addError(`Skipped entry nested ${pathSegments.length} levels deep: ${abbreviatePath(pathSegments)}`);
+    return null;
+  }
+
   let current = root;
   for (let i = 0; i < pathSegments.length - 1; i++) {
     const seg = pathSegments[i];
@@ -136,6 +147,10 @@ function insertPath(root, pathSegments, nodeData) {
     }
   }
   return current.children ? current.children[leafName] : current;
+}
+
+function abbreviatePath(pathSegments) {
+  return pathSegments.slice(0, 2).concat('...', pathSegments[pathSegments.length - 1]).join('/');
 }
 
 export function getUniqueChildName(parent, desiredName) {
@@ -312,13 +327,13 @@ async function extractIntoTree(root, zipData, basePath, depth) {
         isArchive,
         isNestedArchive: isArchive,
         encrypted: entry.encrypted,
-        previewable: isPreviewable(leafName),
         lastModified: entry.lastModDate ? entry.lastModDate.getTime() : null,
         zipEntry: entry,
         password: entry.encrypted ? state.rememberedPassword : null,
       };
 
       const fileNode = insertPath(root, segments, nodeData);
+      if (!fileNode) continue;
       const parentDir = segments.length >= 2 ? segments[segments.length - 2] : '';
       const detected = applyDetectionHints(fileNode, leafName, parentDir, entry.filename);
 
