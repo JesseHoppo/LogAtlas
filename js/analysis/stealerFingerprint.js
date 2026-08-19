@@ -140,7 +140,7 @@ function scoreFamily(familyName, sig, ctx) {
 
   const selfIdMatched = matchedCounts.selfId > 0;
 
-  return { family: familyName, score, maxScore, matched, matchedCounts, selfIdMatched, osClass: sig.osClass || null, sysinfoFilename: ctx.sysinfoFilename || '' };
+  return { family: familyName, score, maxScore, matched, matchedCounts, selfIdMatched, osClass: sig.osClass || null, kind: sig.kind || 'family', sysinfoFilename: ctx.sysinfoFilename || '' };
 }
 
 // Platform reading. Windows logs list macOS SDK packages and macOS logs list
@@ -275,7 +275,7 @@ function scoreStructureOnly(familyName, sig, ctx) {
   if (sig.exclusions && sig.exclusions.some(rule => rule.test(signalState))) return null;
   if (sig.require && !sig.require(signalState)) return null;
 
-  return { family: familyName, score, maxScore, matched, distinctive, osClass: sig.osClass || null };
+  return { family: familyName, score, maxScore, matched, distinctive, osClass: sig.osClass || null, kind: sig.kind || 'family' };
 }
 
 function fingerprintStealer(ctx) {
@@ -336,14 +336,27 @@ function fingerprintStealer(ctx) {
   const osEligible = (r) => {
     if (!os.osClass) return true;
     if ((r.osClass === 'macos') === (os.osClass === 'macos')) return true;
-    return !os.keyed && (r.selfIdMatched || (r.matchedCounts && r.matchedCounts.asciiBanner > 0));
+    return !os.keyed && r.selfIdMatched;
   };
 
-  let best = results.find(osEligible);
+  // A log shop stamps its banner over whatever family actually ran, and that
+  // banner is a self-ID, so it outranked the real evidence: 25 of 122 corpus
+  // cases reported the reseller as the stealer. Rank families and resellers
+  // separately — with the reseller set aside, those 25 resolve to Vidar (9),
+  // RedLine (6), StealC (3) and Rhadamanthys (1) at high confidence.
+  const familyResults = results.filter(r => r.kind !== 'reseller');
+  const resellerResults = results.filter(r => r.kind === 'reseller');
+  // Only a shop that stamped its own name on the log gets named. Its sysinfo
+  // keys are generic enough to score on most cases, which is not evidence of
+  // anything.
+  const distributor = resellerResults
+    .find(r => r.selfIdMatched || r.matchedCounts?.asciiBanner > 0)?.family || null;
+
+  let best = familyResults.find(osEligible);
   if (!os.keyed && (!best || evidenceTier(best) < 1)) {
     // The veto picks between candidates. Unless the OS line itself contradicts
     // the family, it must not erase an identification the evidence supports.
-    best = results.find(r => evidenceTier(r) >= 2) || best;
+    best = familyResults.find(r => evidenceTier(r) >= 2) || best;
   }
 
   if (best && evidenceTier(best) >= 1) {
@@ -364,17 +377,19 @@ function fingerprintStealer(ctx) {
       confidence,
       score: Math.round(best.pct * 100) / 100,
       matchedSignals: best.matched,
+      distributor,
     };
   }
 
   // Structure-only fallback: no sysinfo/SELF_ID lined up, but folder + file
-  // layout may still betray a stealer family. Conservative threshold so
-  // a lone `Autofill/` folder doesn't fire.
+  // layout may still betray a stealer family. The layout has to be worth more
+  // than one folder before it names anything, so a lone `Autofill/` can't fire.
   const structureResults = [];
   for (const [family, sig] of Object.entries(SIGNATURES)) {
+    if (sig.kind === 'reseller') continue;
     const r = scoreStructureOnly(family, sig, ctx);
     if (!r || r.maxScore <= 0) continue;
-    if (r.score < W.FOLDER * 2 && r.score < W.STRUCTURE) continue;
+    if (r.score <= W.FOLDER) continue;
     r.pct = r.score / r.maxScore;
     structureResults.push(r);
   }
@@ -390,6 +405,7 @@ function fingerprintStealer(ctx) {
         score: Math.round(structBest.pct * 100) / 100,
         matchedSignals: structBest.matched,
         source: 'structure-only',
+        distributor,
       };
     }
     return {
@@ -398,6 +414,18 @@ function fingerprintStealer(ctx) {
       score: Math.round(structBest.pct * 100) / 100,
       matchedSignals: structBest.matched,
       source: 'structure-only',
+      distributor,
+    };
+  }
+
+  // Nothing but a reseller banner: name the shop, and say that is all it is.
+  if (distributor) {
+    return {
+      family: 'Unidentified',
+      confidence: 'low',
+      score: 0,
+      matchedSignals: resellerResults[0]?.matched || [],
+      distributor,
     };
   }
 
