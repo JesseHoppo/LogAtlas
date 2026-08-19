@@ -203,14 +203,14 @@ function parseNoteArtifact(text, fileName, sourcePath, lastModified = null) {
 
 function summariseNotes(entries) {
   const list = entries || [];
-  const urls = list.reduce((sum, entry) => sum + (entry.urls?.length || 0), 0);
-  const emails = list.reduce((sum, entry) => sum + (entry.emails?.length || 0), 0);
+  // Per-note uniques summed across notes: mentions, not case-wide distinct values.
+  const urls = list.reduce((sum, entry) => sum + (entry.urlTotal || 0), 0);
+  const emails = list.reduce((sum, entry) => sum + (entry.emailTotal || 0), 0);
   const credentialNotes = list.filter(entry => entry.credentialHints > 0).length;
   const walletNotes = list.filter(entry => entry.walletHints > 0).length;
   const structuredPiiNotes = list.filter(entry => entry.hasStructuredPii).length;
   const seedPhraseNotes = list.filter(entry => entry.structuredPii?.seedPhrase).length;
   return {
-    totalNotes: list.length,
     totalUrls: urls,
     totalEmails: emails,
     credentialNotes,
