@@ -1197,31 +1197,71 @@ function parseSysinfoDate(value, dayFirst) {
 // cannot predate it). `source` names the evidence and `detail` the sysinfo key
 // or archive name behind it. `archiveNames` and `sourceLastModified` each take
 // a single value or a priority list.
+const SYSINFO_TIMEZONE_KEY = /^(?:time\s*zone|timezone|utc)$/i;
+
+// A stealer writes the victim's wall clock with no zone on it, so the parsed
+// value is a naive instant. When the same file states the machine's offset,
+// subtracting it turns that wall clock into a real UTC instant — which is what
+// the cookie expiries it gets compared against already are.
+function sysinfoUtcOffsetMinutes(sysinfoEntries) {
+  for (const [key, value] of Object.entries(sysinfoEntries || {})) {
+    if (!value || !SYSINFO_TIMEZONE_KEY.test(key)) continue;
+    const zone = normaliseTimeZone(value, sysinfoEntries.Country || sysinfoEntries.country);
+    // A bare `TimeZone: 13` on a US machine is as likely a Windows zone index
+    // as an offset. Shifting the capture instant by an offset the country
+    // contradicts would be worse than leaving the wall clock alone.
+    if (zone.offset != null && !zone.countryMismatch) return zone.offset;
+  }
+  return null;
+}
+
+// Some builds stamp the capture line with a zone of their own — an epoch, an
+// ISO offset, or an abbreviation like `18 Sep 25 00:32 EDT` — and a few stamp
+// the panel's zone rather than the victim's. Either way the value is already an
+// absolute instant, so the machine's declared offset must not be applied to it.
+const TZ_ABBREVIATION_PATTERN = new RegExp(`\\b(?:${Object.keys(TZ_OFFSET_HOURS).join('|')})\\b`);
+
+function timestampCarriesZone(value) {
+  if (value instanceof Date) return true;
+  const str = String(value ?? '').trim();
+  if (!str) return false;
+  if (/^\d+(?:\.\d+)?$/.test(str)) return true;
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(str)) return true;
+  return TZ_ABBREVIATION_PATTERN.test(str.toUpperCase());
+}
+
 function resolveCaptureContext({ sysinfoEntries, archiveNames, sourceLastModified, historyMaxDate } = {}) {
   const dayFirst = sysinfoWritesDayFirst(sysinfoEntries);
+  const offsetMinutes = sysinfoUtcOffsetMinutes(sysinfoEntries);
   for (const [key, value] of Object.entries(sysinfoEntries || {})) {
     if (!value || !CAPTURE_TIME_KEYS.some(pattern => pattern.test(key))) continue;
-    const date = parseSysinfoDate(value, dayFirst);
-    if (isPlausibleCaptureDate(date)) return { date, source: 'sysinfo', detail: key };
+    const local = parseSysinfoDate(value, dayFirst);
+    if (!isPlausibleCaptureDate(local)) continue;
+    if (offsetMinutes == null || timestampCarriesZone(value)) {
+      return { date: local, source: 'sysinfo', detail: key, offsetMinutes: null };
+    }
+    const utc = new Date(local.getTime() - offsetMinutes * 60000);
+    if (!isPlausibleCaptureDate(utc)) return { date: local, source: 'sysinfo', detail: key, offsetMinutes: null };
+    return { date: utc, source: 'sysinfo', detail: key, offsetMinutes };
   }
 
   for (const name of [].concat(archiveNames || [])) {
     const date = parseArchiveTimestamp(name || '');
-    if (isPlausibleCaptureDate(date)) return { date, source: 'archive name', detail: String(name) };
+    if (isPlausibleCaptureDate(date)) return { date, source: 'archive name', detail: String(name), offsetMinutes: null };
   }
 
   for (const value of [].concat(sourceLastModified || [])) {
     const date = parseTimestampValue(value);
-    if (isPlausibleCaptureDate(date)) return { date, source: 'file modified', detail: '' };
+    if (isPlausibleCaptureDate(date)) return { date, source: 'file modified', detail: '', offsetMinutes: null };
   }
 
   const history = parseTimestampValue(historyMaxDate);
-  if (isPlausibleCaptureDate(history)) return { date: history, source: 'history', detail: '' };
+  if (isPlausibleCaptureDate(history)) return { date: history, source: 'history', detail: '', offsetMinutes: null };
 
-  return { date: null, source: null, detail: '' };
+  return { date: null, source: null, detail: '', offsetMinutes: null };
 }
 
-const EMPTY_CAPTURE_CONTEXT = { date: null, source: null, detail: '' };
+const EMPTY_CAPTURE_CONTEXT = { date: null, source: null, detail: '', offsetMinutes: null };
 let captureContext = EMPTY_CAPTURE_CONTEXT;
 
 // Analysis resolves the capture instant once per case and publishes it here, so
