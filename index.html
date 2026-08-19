@@ -262,42 +262,42 @@
           <div class="export-cards">
             <div class="export-card">
               <div class="export-card-body">
-                <div class="export-card-kicker">Best for incident handoff</div>
-                <div class="export-card-title">Log Summary</div>
-                <div class="export-card-desc">HTML report with victim profile, credential stats, and cookie analysis. Opens in a new tab for printing.</div>
+                <div class="export-card-kicker">Handoff</div>
+                <h3 class="export-card-title">Log summary</h3>
+                <div class="export-card-desc">HTML, opens in a new tab.</div>
                 <div class="export-card-counts" id="exportSummaryCounts"></div>
               </div>
               <div class="export-card-actions">
-                <button class="export-btn export-btn-primary" id="exportIncidentSummary">Generate Report</button>
+                <button class="export-btn export-btn-primary" id="exportIncidentSummary">Generate</button>
               </div>
             </div>
             <div class="export-card">
               <div class="export-card-body">
-                <div class="export-card-kicker">Best for spreadsheet review</div>
-                <div class="export-card-title">Obfuscated Credentials</div>
-                <div class="export-card-desc">CSV export with passwords partially masked. Safe for sharing in reports without exposing raw credentials.</div>
+                <div class="export-card-kicker">Review</div>
+                <h3 class="export-card-title">Masked credentials</h3>
+                <div class="export-card-desc">CSV, passwords partly masked.</div>
                 <div class="export-card-counts" id="exportCredsCounts"></div>
               </div>
               <div class="export-card-actions">
-                <button class="export-btn export-btn-primary" id="exportObfuscatedCreds">Download CSV</button>
+                <button class="export-btn export-btn-primary" id="exportObfuscatedCreds">Download</button>
               </div>
             </div>
             <div class="export-card">
               <div class="export-card-body">
-                <div class="export-card-kicker">Best for evidence preservation</div>
-                <div class="export-card-title">Parsed Data</div>
-                <div class="export-card-desc">Password-protected ZIP containing parsed credentials, cookies, autofills, notes, history, bookmarks, browser metadata, tokens, wallet/store artifacts, services, downloads, cards, clipboard, grabbed-file metadata, detections, and screenshot files.</div>
+                <div class="export-card-kicker">Evidence</div>
+                <h3 class="export-card-title">Parsed data</h3>
+                <div class="export-card-desc">Every parsed dataset, in a password-protected ZIP.</div>
                 <div class="export-card-counts" id="exportZipCounts"></div>
               </div>
               <div class="export-card-actions">
-                <button class="export-btn export-btn-primary" id="exportEvidenceZip">Generate ZIP</button>
+                <button class="export-btn export-btn-primary" id="exportEvidenceZip">Generate</button>
               </div>
             </div>
           </div>
         </div>
 
       </div>
-      <div class="preview-overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-label="File preview">
+      <div class="preview-overlay" id="previewOverlay" role="dialog" aria-label="File preview">
         <div class="preview-container">
           <div class="preview-header">
             <div class="preview-title">
