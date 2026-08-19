@@ -1,4 +1,5 @@
 import { showNotification } from '../core/shared.js';
+import { openTransientModal } from '../core/modal.js';
 import { escapeHtml, formatBytes } from '../core/utils.js';
 import { LIMITS } from '../core/definitions/patterns.js';
 
@@ -8,36 +9,26 @@ function isAllowedFileUrl(parsedUrl) {
 
 function confirmFileLoad(parsedUrl) {
   return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay visible';
-    overlay.id = 'autoLoadConfirmModal';
-    overlay.innerHTML = `
+    const modal = openTransientModal(`
       <div class="modal">
         <h3>Load file from URL?</h3>
-        <p>Log Atlas was opened with a <code>?file=</code> URL. The file will be loaded into this browser for analysis. Nothing is uploaded.</p>
+        <p>Opened with a <code>?file=</code> URL. Fetched and parsed in this browser only.</p>
         <p><strong>Source:</strong> <code>${escapeHtml(parsedUrl.host)}</code></p>
         <p style="font-size:0.8rem;color:var(--text-muted);">URL: ${escapeHtml(parsedUrl.href)}</p>
         <div class="modal-actions">
           <button class="modal-btn modal-btn-cancel" id="autoLoadCancel">Cancel</button>
-          <button class="modal-btn modal-btn-submit" id="autoLoadProceed">Load File</button>
+          <button class="modal-btn modal-btn-submit" id="autoLoadProceed">Load file</button>
         </div>
       </div>
-    `;
-    document.body.appendChild(overlay);
+    `, { onDismiss: () => resolve(false) });
+    if (!modal) { resolve(false); return; }
 
-    const cleanup = (result) => {
-      overlay.remove();
-      document.removeEventListener('keydown', onKey);
+    const answer = (result) => {
+      modal.close();
       resolve(result);
     };
-    const onKey = (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
-    };
-    document.addEventListener('keydown', onKey);
-
-    overlay.querySelector('#autoLoadCancel').addEventListener('click', () => cleanup(false));
-    overlay.querySelector('#autoLoadProceed').addEventListener('click', () => cleanup(true));
-    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) cleanup(false); });
+    modal.overlay.querySelector('#autoLoadCancel').addEventListener('click', () => answer(false));
+    modal.overlay.querySelector('#autoLoadProceed').addEventListener('click', () => answer(true));
   });
 }
 
