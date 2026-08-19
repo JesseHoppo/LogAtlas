@@ -1,4 +1,4 @@
-// Activity pages: Downloads, Detections, Clipboard, Grabbed Files, Screenshots, Software, Processes
+// Activity pages: Downloads, Detections, Clipboard, Grabbed files, Screenshots, Software, Processes
 
 import { loadFileContent } from '../files/extractor.js';
 import { escapeHtml } from '../core/utils.js';

@@ -1,4 +1,4 @@
-// Asset pages: Tokens, Services, Wallets, Credit Cards
+// Asset pages: Tokens, Services, Wallets, Credit cards
 
 import { escapeHtml } from '../core/utils.js';
 import {

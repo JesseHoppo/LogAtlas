@@ -1,4 +1,4 @@
-// Browser pages: History, Bookmarks, Browser Metadata
+// Browser pages: History, Bookmarks, Browser metadata
 
 import { loadFileContent } from '../files/extractor.js';
 import { escapeHtml } from '../core/utils.js';
