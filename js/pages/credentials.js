@@ -56,6 +56,10 @@ const AUTH_SUBDOMAIN_SERVICE = [
 ];
 const AUTH_PREFIX = /^(auth|login|sso|account|accounts|id|signin|secure)\./i;
 
+// Every password set is folded onto these three; anything else a file carries
+// is appended after them as an extra column.
+const CANONICAL_PASSWORD_HEADERS = ['URL', 'Username', 'Password'];
+
 function titleCaseLabel(value) {
   return String(value || '').split('.')[0].replace(/[-_]+/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase());
@@ -170,7 +174,6 @@ async function loadPasswordsData(fileTree, rootName) {
     return;
   }
 
-  const canonicalHeaders = ['URL', 'Username', 'Password'];
   const extraHeaders = [];
   const parsedFiles = [];
   const failedFiles = [];
@@ -215,7 +218,7 @@ async function loadPasswordsData(fileTree, rootName) {
         if (/^Column \d+$/.test(hdr)) continue;
         let extraIdx = extraHeaders.indexOf(hdr);
         if (extraIdx < 0) { extraIdx = extraHeaders.length; extraHeaders.push(hdr); }
-        colMap.set(i, canonicalHeaders.length + extraIdx);
+        colMap.set(i, CANONICAL_PASSWORD_HEADERS.length + extraIdx);
       }
 
       // A format twin (passwords.txt + passwords.tsv) is one source of
@@ -236,7 +239,7 @@ async function loadPasswordsData(fileTree, rootName) {
     }
   }
 
-  const totalCols = canonicalHeaders.length + extraHeaders.length;
+  const totalCols = CANONICAL_PASSWORD_HEADERS.length + extraHeaders.length;
   const dedupedRows = new Map();
   for (const { path, parsed, colMap } of parsedFiles) {
     for (const row of parsed.rows) {
@@ -268,34 +271,37 @@ async function loadPasswordsData(fileTree, rootName) {
     }
   }
 
-  const headers = [...canonicalHeaders, ...extraHeaders];
+  const headers = [...CANONICAL_PASSWORD_HEADERS, ...extraHeaders];
   const rows = [...dedupedRows.values()].map(({ row, sources }) => ({
     row,
     source: [...sources].join('; '),
   }));
-
-  const { urlIdx: urlColIdx, userIdx: userColIdx, passIdx } = credentialColumnIndices(headers);
-  const domains = new Set();
-  const usernames = new Set();
-  let withPasswords = 0;
-  for (const { row } of rows) {
-    if (passIdx >= 0 && row[passIdx]) withPasswords++;
-    if (urlColIdx >= 0) {
-      const domain = baseDomainFromUrl(row[urlColIdx] || '');
-      if (domain) domains.add(domain);
-    }
-    if (userColIdx >= 0 && row[userColIdx]) usernames.add(row[userColIdx].trim().toLowerCase());
-  }
 
   passwordsData = {
     rows,
     headers,
     fileCount,
     failedFiles,
-    stats: { domains: domains.size, usernames: usernames.size, withPasswords },
+    stats: summarisePasswordRows(rows, headers),
   };
 
   computePasswordDisplay();
+}
+
+function summarisePasswordRows(rows, headers) {
+  const { urlIdx, userIdx, passIdx } = credentialColumnIndices(headers);
+  const domains = new Set();
+  const usernames = new Set();
+  let withPasswords = 0;
+  for (const { row } of rows) {
+    if (passIdx >= 0 && row[passIdx]) withPasswords++;
+    if (urlIdx >= 0) {
+      const domain = baseDomainFromUrl(row[urlIdx] || '');
+      if (domain) domains.add(domain);
+    }
+    if (userIdx >= 0 && row[userIdx]) usernames.add(row[userIdx].trim().toLowerCase());
+  }
+  return { domains: domains.size, usernames: usernames.size, withPasswords };
 }
 
 // Column layout depends on the whole dataset, not on the current filter, so it
