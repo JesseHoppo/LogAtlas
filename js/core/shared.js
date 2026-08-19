@@ -1500,19 +1500,125 @@ function topN(arr, n) {
     .map(([value, count]) => ({ value, count }));
 }
 
-function showNotification(message, type = 'info') {
-  const existing = document.getElementById('notification');
-  if (existing) existing.remove();
+// The toast on screen and the text a screen reader reads out are two separate
+// elements. The toast is fixed-position decoration; the announcing is done by a
+// pair of off-screen live regions, one per politeness, because switching
+// aria-live on a single region in the same breath as its text is not reliably
+// picked up.
+let notificationEl = null;
+let notificationTimer = 0;
+let notificationSeq = 0;
+const announcers = { polite: null, assertive: null };
 
-  const el = document.createElement('div');
-  el.id = 'notification';
+// A live region announces changes made after it joins the accessibility tree,
+// never the content it arrived with, so the regions are built at startup and
+// only ever refilled.
+function initNotifications() {
+  if (!notificationEl?.isConnected) {
+    notificationEl = document.createElement('div');
+    notificationEl.id = 'notification';
+    notificationEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(notificationEl);
+  }
+  for (const [politeness, role] of [['polite', 'status'], ['assertive', 'alert']]) {
+    if (announcers[politeness]) continue;
+    const region = document.createElement('div');
+    region.className = 'sr-only';
+    region.setAttribute('role', role);
+    region.setAttribute('aria-live', politeness);
+    region.setAttribute('aria-atomic', 'true');
+    announcers[politeness] = region;
+  }
+  hostAnnouncers(document.body);
+}
+
+// The open dialog, read off the DOM rather than through the modal stack: this
+// module is imported by the corpus scripts, which have no DOM to load
+// js/core/modal.js against, and any overlay that hides the page counts here
+// whether or not it went on the stack.
+function openDialog() {
+  return document.querySelector('[aria-modal="true"]');
+}
+
+// `aria-modal` on an open dialog takes everything outside it out of the
+// accessibility tree, so while one is open the regions have to sit inside it —
+// and a dialog built on the fly takes them with it when it goes, which is why
+// the host is checked on every message rather than once. Returns false when a
+// region has just moved and is not in the tree yet.
+function hostAnnouncers(host) {
+  let settled = true;
+  for (const region of Object.values(announcers)) {
+    if (!region || region.parentNode === host) continue;
+    host.appendChild(region);
+    settled = false;
+  }
+  return settled;
+}
+
+// Long enough for a region appended this tick to be in the accessibility tree
+// before it is filled, short enough that the toast and the announcement are the
+// same event to the user.
+const ANNOUNCE_SETTLE_MS = 60;
+
+function announce(message, type) {
+  if (!announcers.polite) initNotifications();
+  const settled = hostAnnouncers(openDialog() || document.body);
+  const spoken = type === 'error' ? announcers.assertive : announcers.polite;
+  const silent = type === 'error' ? announcers.polite : announcers.assertive;
+  silent.textContent = '';
+  // Assigning textContent replaces the text node even when the string is
+  // unchanged, so the same message twice over still announces twice.
+  const fill = () => { spoken.textContent = message; };
+  if (settled) fill();
+  else setTimeout(fill, ANNOUNCE_SETTLE_MS);
+}
+
+function buildDismissButton(el, seq) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'notification-dismiss';
+  button.setAttribute('aria-label', 'Dismiss notification');
+  button.textContent = '×';
+  // The toast lets clicks through to the page behind it; the one control on it
+  // has to take its own.
+  button.style.pointerEvents = 'auto';
+  button.addEventListener('click', () => {
+    if (seq !== notificationSeq) return;
+    el.textContent = '';
+    el.setAttribute('aria-hidden', 'true');
+  });
+  return button;
+}
+
+function showNotification(message, type = 'info') {
+  if (!notificationEl?.isConnected) initNotifications();
+  clearTimeout(notificationTimer);
+  const seq = ++notificationSeq;
+  const el = notificationEl;
+
   el.className = `notification notification-${type}`;
   el.textContent = message;
-  document.body.appendChild(el);
+  announce(message, type);
 
-  setTimeout(() => {
+  // An error is the one message worth going back to — a password that would not
+  // open an archive, an export that produced nothing — so it waits to be read
+  // instead of timing out while the analyst is looking elsewhere. The toast
+  // repeats what the live region has already announced and is kept out of the
+  // accessibility tree for it; one that stays has to come back in, or its only
+  // control cannot be reached.
+  if (type === 'error') {
+    el.removeAttribute('aria-hidden');
+    el.appendChild(buildDismissButton(el, seq));
+    return;
+  }
+
+  el.setAttribute('aria-hidden', 'true');
+  notificationTimer = setTimeout(() => {
     el.classList.add('fade-out');
-    el.addEventListener('transitionend', () => el.remove());
+    // A fade left over from an earlier message must not empty a newer one.
+    el.addEventListener('transitionend', () => {
+      if (seq === notificationSeq) el.textContent = '';
+    }, { once: true });
   }, 4000);
 }
 
@@ -1899,6 +2005,7 @@ export {
   collapseSingleWrapper,
   downloadBlob,
   topN,
+  initNotifications,
   showNotification,
   copyToClipboard,
   normalisePath,
