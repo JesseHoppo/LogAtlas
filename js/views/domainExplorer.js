@@ -60,7 +60,6 @@ function buildDomainIndex() {
         queries: {},
         credentialsCount: 0,
         cookiesCount: 0,
-        cookiesValidCount: 0,
         historyCount: 0,
         bookmarksCount: 0,
         downloadsCount: 0,
@@ -107,7 +106,6 @@ function buildDomainIndex() {
       const base = extractBaseDomain(cleanHost) || cleanHost;
       const entry = getEntry(base);
       entry.cookiesCount++;
-      if (validity.status === 'valid') entry.cookiesValidCount++;
       if (entry.cookies.length < SAMPLE) entry.cookies.push({
         host: cleanHost,
         name: nameIdx >= 0 ? (row[nameIdx] || '') : '',
@@ -206,7 +204,6 @@ function buildDomainIndex() {
       notes: data.notesCount,
       subdomains: data.subdomains.size,
       total,
-      suspicious: data.cookiesCount >= SUSPICIOUS_MIN_VALID && data.cookiesValidCount === data.cookiesCount,
       _data: data,
     });
   }
