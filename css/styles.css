@@ -2296,6 +2296,7 @@ body {
   top: 1.5rem;
   left: 50%;
   transform: translateX(-50%);
+  pointer-events: none;
   padding: 0.6rem 1.25rem;
   border-radius: var(--radius-md);
   font-size: 0.8rem;
