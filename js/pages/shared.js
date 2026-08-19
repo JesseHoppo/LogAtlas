@@ -32,7 +32,7 @@ export function bindDebouncedInput(input, onValue, delay = 150) {
 }
 
 export function buildShowMoreButton(remaining, pageId) {
-  return `<button class="data-show-more" data-page="${pageId}">Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)</button>`;
+  return `<button class="data-show-more" data-page="${pageId}">Show ${Math.min(remaining, PAGE_SIZE).toLocaleString()} more (${remaining.toLocaleString()} remaining)</button>`;
 }
 
 export function buildRowsHtml(rowBuilder, items, start, end) {

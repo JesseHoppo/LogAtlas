@@ -1025,7 +1025,7 @@ function handleShowMore(pageId, contentEl) {
   const btn = contentEl.querySelector('.data-show-more');
   const remaining = filtered.length - nextEnd;
   if (remaining > 0 && btn) {
-    btn.textContent = `Show ${Math.min(remaining, PAGE_SIZE)} more (${remaining.toLocaleString()} remaining)`;
+    btn.textContent = `Show ${Math.min(remaining, PAGE_SIZE).toLocaleString()} more (${remaining.toLocaleString()} remaining)`;
   } else if (btn) {
     btn.remove();
   }
