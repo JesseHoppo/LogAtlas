@@ -15,11 +15,14 @@ export const AUTH_COOKIE_NAMES = new Set([
   // Facebook / Meta
   'xs', 'c_user',
 
-  // GitHub
-  'user_session', '__host-user_session_same_site', 'dotcom_user', 'logged_in',
+  // GitHub. `logged_in` is a yes/no flag and `dotcom_user` holds the username;
+  // neither authenticates anything, and between them they were 112 of the
+  // corpus's "live session tokens".
+  'user_session', '__host-user_session_same_site',
 
-  // Twitter / X
-  'auth_token', 'ct0', 'twid',
+  // Twitter / X. `twid` is the account id, not a credential; `ct0` is the CSRF
+  // token that has to accompany `auth_token`, so it is kept.
+  'auth_token', 'ct0',
 
   // Reddit
   'reddit_session', 'token_v2',
@@ -30,8 +33,7 @@ export const AUTH_COOKIE_NAMES = new Set([
   // Cloudflare
   'cf_authorization',
 
-  // Okta
-  'okta-oauth-state',
+  // Okta. `okta-oauth-state` is a CSRF state parameter, not a session.
 
   // Atlassian
   'cloud.session.token', 'tenant.session.token',
