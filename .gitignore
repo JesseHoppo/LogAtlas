@@ -20,6 +20,7 @@ Example Logs/
 *.tgz
 
 # Generated / scratch
+.samples/
 reports/
 scripts/
 processed examples/
@@ -31,3 +32,7 @@ reviews/
 DESIGN.md
 PRODUCT.md
 .impeccable/
+
+# Talk kit — derived aggregates + old-deck screenshots; not for the repo.
+AdelaideSEC-Talk-Kit/
+AdelaideSEC-Talk-Kit.zip
