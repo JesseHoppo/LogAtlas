@@ -1104,18 +1104,21 @@ async function analyseAccountTokens(nodes) {
       const text = await decodeNodeText(node, path);
       if (text == null) continue;
       const hint = path || node.name;
-      const parsed = parseNodeCached(node, 'token', parseAccountTokenFile, text, hint) || parseBareTokenFile(text);
+      const parsed = parseNodeCached(node, 'token', parseAccountTokenFile, text, hint);
       if (!parsed || parsed.rows.length === 0) continue;
 
       fileCount++;
       totalEntries += parsed.rows.length;
       const pathService = inferServiceFromPath(path || node.name);
+      // Every Chromium browser writes a restore token and the type text names
+      // no vendor, so without the browser the account behind it is lost.
+      const browserService = serviceFromBrowser(inferBrowserFromPath(path || node.name));
 
       for (const row of parsed.rows) {
         const type = (row[0] || 'Token').trim();
         const value = (row[1] || '').trim();
         const accountId = (row[2] || '').trim();
-        const service = pathService || serviceFromTokenType(type) || 'Unknown';
+        const service = pathService || serviceFromTokenType(type) || browserService || 'Unknown';
         services.push(service);
         if (type) types.push(type);
         if (value) withValue++;
