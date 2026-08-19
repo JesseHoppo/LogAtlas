@@ -101,12 +101,14 @@ let notesFiltered = [];
 let notesShown = 0;
 
 let hidePasswords = true;
+let hideCookieValues = true;
 let passwordColumnIdx = -1;
 let passwordUrlIdx = -1;
+let cookieValueIdx = -1;
 // Columns come from the parsed file, so the sort keys are resolved on demand:
 // `col<N>` reads that cell, `service` the derived service tag.
 const passwordsSort = createTableSort((key) => {
-  if (key === 'service') return ({ row }) => (passwordUrlIdx >= 0 ? friendlyServiceForUrl(row[passwordUrlIdx]) : '');
+  if (key === 'service') return ({ service }) => service || '';
   const match = /^col(\d+)$/.exec(key);
   if (!match) return null;
   const index = Number(match[1]);
@@ -314,11 +316,16 @@ function computePasswordDisplay() {
 
   passwordColumnIdx = headers.findIndex(h => FIELD_PATTERNS.password.test(h));
   passwordUrlIdx = headers.findIndex(h => FIELD_PATTERNS.url.test(h));
-  passwordShowService = passwordUrlIdx >= 0 && rows.some(({ row }) => friendlyServiceForUrl(row[passwordUrlIdx]));
+  // Settled once per dataset: the tag is read by the row builder, the sort and
+  // the search, and deriving it three times per row per keystroke is waste.
+  for (const entry of rows) {
+    entry.service = passwordUrlIdx >= 0 ? friendlyServiceForUrl(entry.row[passwordUrlIdx]) : '';
+  }
+  passwordShowService = rows.some(({ service }) => service);
   passwordHiddenCols = new Set();
   passwordConstantNotes = [];
 
-  if (rows.length <= 1) return;
+  if (rows.length === 0) return;
 
   for (let c = 0; c < headers.length; c++) {
     if (c === passwordColumnIdx || c === passwordUrlIdx) continue;
@@ -513,17 +520,18 @@ async function loadNotesData(fileTree, rootName) {
 
 // Row builders
 
-function passwordRowBuilder({ row }) {
+const REVEAL_HINT = 'Click or press Enter to reveal';
+
+function passwordRowBuilder({ row, service }) {
   let html = '<tr>';
   if (passwordShowService) {
-    const svc = passwordUrlIdx >= 0 ? friendlyServiceForUrl(row[passwordUrlIdx]) : '';
-    html += `<td>${svc ? `<span class="identity-service-tag">${escapeHtml(svc)}</span>` : ''}</td>`;
+    html += `<td>${service ? `<span class="identity-service-tag">${escapeHtml(service)}</span>` : ''}</td>`;
   }
   for (let i = 0; i < row.length; i++) {
     if (passwordHiddenCols.has(i)) continue;
     const cell = row[i];
     if (hidePasswords && i === passwordColumnIdx) {
-      html += `<td class="password-cell masked" title="Click to reveal">${escapeHtml(maskValue(cell))}</td>`;
+      html += `<td class="password-cell masked" title="${REVEAL_HINT}">${escapeHtml(maskValue(cell))}</td>`;
     } else {
       html += `<td title="${escapeHtml(cell)}">${escapeHtml(cell)}</td>`;
     }
@@ -678,20 +686,21 @@ function renderPasswordsPage(searchQuery = '') {
   if (passwordsData.rows.length === 0) {
     const footprintHtml = buildCredentialFootprintHtml();
     summary.textContent = failedFiles.length > 0
-      ? `No account credentials found (${failedFiles.length.toLocaleString()} candidate file(s) skipped)`
-      : footprintHtml ? 'No account credentials; recovered artifacts only' : 'No passwords found';
+      ? `No account credentials · ${countLabel(failedFiles.length, 'candidate file')} skipped`
+      : footprintHtml ? 'Recovered artifacts only, no account credentials' : '';
     addAdjustColumnsBtn(summary, '_passwordFileHint', 'credentials');
     stats.innerHTML = '';
     content.innerHTML = footprintHtml
       ? `${issuesHtml}${footprintHtml}`
-      : `${issuesHtml}<div class="no-data">No password data available.</div>`;
+      : `${issuesHtml}<div class="no-data">${DATA_PAGE_EMPTY_TEXT.passwords}</div>`;
     return;
   }
 
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
-    passwordsFiltered = passwordsData.rows.filter(({ row }) =>
-      row.some(cell => cell.toLowerCase().includes(q))
+    passwordsFiltered = passwordsData.rows.filter(({ row, service }) =>
+      row.some(cell => cell.toLowerCase().includes(q)) ||
+      (passwordShowService && service.toLowerCase().includes(q))
     );
   } else {
     passwordsFiltered = passwordsData.rows;
