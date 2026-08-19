@@ -1,0 +1,71 @@
+# Corrections to the vendored site-category lists.
+#
+# The upstream classes do not line up with what the label means to an analyst:
+# Wikidata's university class carries the social networks, Matomo files Facebook
+# under search engines, and several classes name a registry suffix as an
+# organisation's official website. Editing the source files is pointless because
+# scripts/refresh-domain-data.sh rewrites them, so the entries below are
+# subtracted when the lists are indexed and a correction survives a refresh.
+#
+# One entry per line: <list> <domain>, where <list> is a file in this directory
+# without its .txt, or * for every list. Blank lines and # comments are ignored.
+# This file only removes. Additions belong in the hand-curated lists
+# (finance, rmm, ddns, gambling), which the refresh script leaves alone.
+#
+# A domain that genuinely belongs to two categories is not listed here — the
+# precedence in js/core/domainCategories.js decides those, and chatgpt.com
+# sitting in both the AI and search lists is the intended shape.
+
+# Registry suffixes, not organisations. Every host under one inherits the label.
+* com
+* com.tw
+* edu.cn
+* gob.mx
+* gob.pe
+* gov.br
+* gov.cn
+* gov.hk
+* gov.pl
+* gov.sg
+* gov.uk
+* gov.za
+* ne.jp
+* net.cn
+
+# Wayback snapshots recorded as an entity's official website. Present in the
+# bank, airline and university classes; belongs to none of them.
+* classic-web.archive.org
+* wayback.archive.org
+* web.archive.org
+
+# Wikidata types the social networks as educational institutions by way of
+# their education pages, and education outranks social, so both render as
+# Education.
+university facebook.com
+university linkedin.com
+
+# Matomo's search-engine list tracks anything that produces a search referrer,
+# which is not the same as being a search engine.
+search-engine cnn.com
+search-engine facebook.com
+search-engine fastweb.it
+search-engine icq.com
+
+# Wikidata's social-networking class picks up the account portals of companies
+# that once ran a social product. Google keeps the search label, Apple and the
+# Microsoft account sign-in have no social component left.
+social-media apple.com
+social-media google.com
+social-media login.live.com
+
+# Nexi is a payments group, and the payments list already has it.
+bank nexigroup.com
+
+# The banking class holds x.com for the 1999 online bank and Matomo files it
+# under AI assistants because Grok is served from it. To every credential in a
+# log that domain is Twitter, which the social list already claims.
+ai-assistant x.com
+bank x.com
+
+# FedEx Express is an airline; a fedex.com credential is a parcel account.
+airline fedex.com
