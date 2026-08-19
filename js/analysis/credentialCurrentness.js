@@ -1,6 +1,6 @@
 import { extractBaseDomain, extractDomain, dedupeDomainKey, classifyAutofillEntries, parseTimestampValue, resolveCaptureContext, getCaptureContext, usernameDedupeKey } from '../core/shared.js';
 import { EMAIL_REGEX, SCAN_EMAIL_REGEX } from '../core/definitions/patterns.js';
-import { classifySiteDomain } from '../core/domainCategories.js';
+import { classifySiteDomain, isFreeEmailProvider, isDisposableEmailDomain } from '../core/domainCategories.js';
 import { isLiveSessionToken } from './sessionCookies.js';
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
@@ -438,7 +438,14 @@ function findEmailAliasMatch(targetEmail, emailSet) {
 
 function isPublicEmailDomain(domain) {
   const normalised = normaliseText(domain);
-  return PUBLIC_EMAIL_DOMAINS.has(normalised) || looksLikePublicEmailTypo(normalised);
+  if (!normalised) return false;
+  if (PUBLIC_EMAIL_DOMAINS.has(normalised)) return true;
+  // The set above is the offline floor — the providers the typo rule needs
+  // spelled out. Everything else is judged against the vendored lists, which
+  // carry the national webmails (naver.com, seznam.cz), the ISP mailboxes and
+  // the throwaway hosts that no hand-written set keeps up with.
+  if (isFreeEmailProvider(normalised) || isDisposableEmailDomain(normalised)) return true;
+  return looksLikePublicEmailTypo(normalised);
 }
 
 function isCorporateEmailDomain(domain) {
