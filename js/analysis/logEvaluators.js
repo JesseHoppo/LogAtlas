@@ -125,6 +125,57 @@ function parseSoftwareLines(lines, entries = [], seen = new Set()) {
   return entries;
 }
 
+// A line in a bare dump is one password, so a line that no password could be
+// still has to be rejected: the resale banners (OTTOMAN, Daisy Cloud, …) are
+// box-drawn rules and sentences that would otherwise be counted as recovered
+// credentials — half of one corpus file's "passwords" were its advertisement.
+const MAX_RECOVERED_PASSWORD_LENGTH = 64;
+
+// Recovered-password dumps from resale brands prepend an ASCII/FIGlet/
+// box-drawing banner; those decorative lines must not count as recovered
+// passwords. ASCII-bearing lines defer to the corpus-tuned classifier;
+// lines with no ASCII alphanumerics are kept only when they are mostly letters,
+// so genuine non-Latin passwords (Arabic/CJK/Thai/…) survive while pure
+// box-drawing/FIGlet art is dropped.
+function isRecoveredPasswordNoise(line) {
+  const t = String(line || '').trim();
+  if (!t) return true;
+  // Shape first: a banner line is laid out, so it runs long, pads with repeated
+  // spaces, carries a box rule, or reads as a sentence. A password with one
+  // space in it (`budi prayogay`) still gets through.
+  if (t.length > MAX_RECOVERED_PASSWORD_LENGTH) return true;
+  if (/\s\s/.test(t) || t.includes('|')) return true;
+  if (t.split(/\s+/).length > 2) return true;
+  if (/([-_*=~#])\1{2,}/.test(t)) return true;
+  if (/[A-Za-z0-9]/.test(t)) return isPromotionalNoiseLine(t);
+  if (/[─-▟]/.test(t)) return true;
+  let letters = 0;
+  for (const ch of t) {
+    if (/\p{L}/u.test(ch)) letters++;
+  }
+  if (letters >= 2 && letters * 2 >= t.length) return false;
+  // No Latin/CJK letters: keep a dense symbol token (4-32 chars, not a repeated
+  // divider) as a plausible symbolic password. Rules repeat one glyph.
+  return !(t.length >= 4 && t.length <= 32 && !/^(.)\1*$/.test(t));
+}
+
+// The passwords a bare dump yields, in file order. `seen` carries across the
+// case so a password shared by two dumps counts once, and `limit` caps what one
+// case may hold; both are the caller's, so the returned list is what this text
+// added and nothing else.
+function evaluateRecoveredPasswords(text, seen = new Set(), limit = Infinity) {
+  const rescued = [];
+  for (const line of String(text || '').split('\n')) {
+    const pass = line.trim();
+    if (!pass || pass.startsWith('#') || /^[-=*#]{3,}$/.test(pass) || seen.has(pass)) continue;
+    if (isRecoveredPasswordNoise(pass)) continue;
+    seen.add(pass);
+    rescued.push(pass);
+    if (seen.size >= limit) break;
+  }
+  return rescued;
+}
+
 // Split a sysinfo file into its inline "Installed Apps:" / "Process List:"
 // blocks. A section the file does not carry comes back null rather than empty,
 // so the caller can tell absent from present-but-empty.
@@ -221,4 +272,6 @@ export {
   parseSoftwareLines,
   splitInlineSections,
   evaluateInlineSections,
+  isRecoveredPasswordNoise,
+  evaluateRecoveredPasswords,
 };

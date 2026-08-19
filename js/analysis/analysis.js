@@ -120,35 +120,6 @@ async function decodeNodeText(node, path, record = true) {
 // topUsernames so they don't outrank real accounts.
 const PLACEHOLDER_USERNAMES = new Set(['unknown', 'unk', 'n/a', 'none', 'null', '-', '?']);
 
-// Dumps that are bare password lists with no account context.
-const RECOVERED_PASSWORD_FILE = /(?:unique[_-]?passwords|brute|all[_-]?passwords|passwords?[_-]?only|wordlist)/i;
-
-// Recovered-password dumps from resale brands (OTTOMAN, Daisy Cloud, …) prepend
-// an ASCII/FIGlet/box-drawing banner; those decorative lines must not count as
-// recovered passwords. ASCII-bearing lines defer to the corpus-tuned classifier;
-// lines with no ASCII alphanumerics are kept only when they are mostly letters,
-// so genuine non-Latin passwords (Arabic/CJK/Thai/…) survive while pure
-// box-drawing/FIGlet art is dropped.
-function isRecoveredPasswordNoise(line) {
-  const t = String(line || '').trim();
-  if (!t) return true;
-  if (/[A-Za-z0-9]/.test(t)) return isPromotionalNoiseLine(t);
-  if (/[─-▟]/.test(t)) return true;
-  let letters = 0;
-  let nonSpace = 0;
-  for (const ch of t) {
-    if (/\s/.test(ch)) continue;
-    nonSpace++;
-    if (/\p{L}/u.test(ch)) letters++;
-  }
-  if (letters >= 2 && letters * 2 >= nonSpace) return false;
-  // No Latin/CJK letters: keep a single dense symbol token (no internal
-  // whitespace, 4-32 chars, not a repeated divider) as a plausible symbolic
-  // password. Box/FIGlet art carries internal spaces, box glyphs or repeats.
-  if (!/\s/.test(t) && t.length >= 4 && t.length <= 32 && !/^(.)\1*$/.test(t)) return false;
-  return true;
-}
-
 function isPlaceholderTopUsername(value) {
   const v = String(value || '').trim().toLowerCase();
   return v === '' || PLACEHOLDER_USERNAMES.has(v);
@@ -222,43 +193,25 @@ async function analyseCredentials(nodes) {
       }
       const parsed = parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
       if (!parsed || parsed.rows.length === 0) {
+        // A bare dump carries no account columns, so the parser rejects it and
+        // the filename is what says the lines are passwords.
         if (RECOVERED_PASSWORD_FILE.test(node.name || '')) {
-          let any = false;
-          for (const line of text.split('\n')) {
-            const pass = line.trim();
-            if (!pass || pass.startsWith('#') || /^[-=*#]{3,}$/.test(pass) || recoveredSeen.has(pass)) continue;
-            if (isRecoveredPasswordNoise(pass)) continue;
-            any = true;
-            recoveredSeen.add(pass);
-            recoveredTotal++;
-            if (recoveredSample.length < 50) recoveredSample.push(pass);
-            if (recoveredSeen.size >= LIMITS.maxRecoveredPasswords) break;
+          const rescued = evaluateRecoveredPasswords(text, recoveredSeen, LIMITS.maxRecoveredPasswords);
+          if (rescued.length > 0) {
+            recoveredTotal += rescued.length;
+            for (const pass of rescued) {
+              if (recoveredSample.length >= 50) break;
+              recoveredSample.push(pass);
+            }
+            recoveredFileCount++;
+            continue;
           }
-          if (any) { recoveredFileCount++; continue; }
         }
         failedFiles.push({ path, reason: 'No credentials parsed' });
         continue;
       }
 
       const { urlIdx, userIdx, passIdx } = credentialColumnIndices(parsed.headers);
-
-      // Passwords-only dumps (unique_passwords.txt / Brute.txt): no account
-      // context, so surface them as recovered plaintext rather than dropping.
-      if (passIdx >= 0 && urlIdx < 0 && userIdx < 0) {
-        let any = false;
-        for (const row of parsed.rows) {
-          const pass = (row[passIdx] || '').trim();
-          if (!pass || recoveredSeen.has(pass)) continue;
-          if (isRecoveredPasswordNoise(pass)) continue;
-          any = true;
-          recoveredSeen.add(pass);
-          recoveredTotal++;
-          if (recoveredSample.length < 50) recoveredSample.push(pass);
-          if (recoveredSeen.size >= LIMITS.maxRecoveredPasswords) break;
-        }
-        if (any) recoveredFileCount++;
-        continue;
-      }
 
       if (passIdx < 0 || (urlIdx < 0 && userIdx < 0)) {
         failedFiles.push({ path, reason: 'Missing credential columns after parsing' });
