@@ -174,6 +174,9 @@ function extractCookieEvents(cookiesData, captureTime) {
       category: 'cookie',
       title: domain,
       detail,
+      // The snapshot table gives each of these its own column; `detail` stays
+      // the one-line form the CSV export and the search box read.
+      cookieStats: stats,
     });
   }
 
@@ -343,11 +346,18 @@ function renderFilters() {
   for (const [cat, info] of Object.entries(CATEGORIES)) {
     const count = timelineEvents.filter(e => e.category === cat).length;
     if (count === 0) continue;
-    const active = activeCategories.has(cat) ? ' active' : '';
-    html += `<button class="timeline-filter-btn${active}" data-cat="${cat}">${info.label} (${count})</button>`;
+    const isActive = activeCategories.has(cat);
+    html += `<button class="timeline-filter-btn${isActive ? ' active' : ''}" data-cat="${cat}" aria-pressed="${isActive}">${info.label} (${count.toLocaleString()})</button>`;
   }
   html += '</div>';
   el.innerHTML = html;
+}
+
+// Toggling a category re-renders the whole strip, which throws away the button
+// that was clicked; without this, focus lands back on the body every time.
+function focusFilterButton(cat) {
+  if (!cat) return;
+  document.querySelector(`#timelineFilters .timeline-filter-btn[data-cat="${cat}"]`)?.focus();
 }
 
 // Cookie events all carry the capture timestamp: they describe the state of
@@ -355,17 +365,59 @@ function renderFilters() {
 // chronology and show them as a snapshot table instead.
 const CAPTURE_STATE_CATEGORIES = new Set(['cookie']);
 
+const EMPTY_CELL = '<span class="cell-empty">\u2014</span>';
+
+// Clicking a header sorts by that column; cycling back returns the table to
+// the ranking the snapshot is built on. Latest expiry sorts on the instant, so
+// two dates written a day apart never collate as text.
+const SNAPSHOT_CAPTION = 'Ordered by cookies still valid at capture.';
+
+const snapshotSort = createTableSort({
+  domain: (ev) => ev.title,
+  valid: (ev) => ev.cookieStats?.valid,
+  expired: (ev) => ev.cookieStats?.expired,
+  live: (ev) => ev.cookieStats?.liveSessions,
+  expiry: (ev) => ev.cookieStats?.latestExpiry,
+});
+
+// A case that grabs hundreds of documents would bury every other event, so
+// these buckets render their most recent entries and declare the rest. The
+// filter counts, the search and the CSV export all still see every event.
+const CHRONOLOGY_CAPS = { notes: 12, grabbed: 12, screenshots: 8 };
+const BUCKET_NOUNS = { notes: 'note', grabbed: 'grabbed file', screenshots: 'screenshot' };
+
+// A day aggregate has no single observation instant. Printing the earliest
+// visit to the minute would read as the time the browsing happened, so these
+// events carry the span they actually cover.
+function eventTimeLabel(ev) {
+  if (!ev.dayLevel || !ev.endTime || ev.endTime.getTime() === ev.time.getTime()) {
+    return formatDateTimeLabel(ev.time);
+  }
+  const hhmm = (date) => `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+  return `${hhmm(ev.time)} - ${hhmm(ev.endTime)} UTC`;
+}
+
 function renderChronology(events) {
   const el = document.getElementById('timelineVisual');
   if (events.length === 0) {
-    el.innerHTML = '<div class="timeline-note">No events with distinct timestamps. See the capture snapshot below for the state of the log at collection time.</div>';
+    el.innerHTML = '<div class="timeline-note">No events with distinct timestamps. See the capture snapshot below.</div>';
     return;
   }
 
-  let html = '<div class="dash-section-title">Activity Chronology</div><div class="timeline-track">';
+  let html = '<h3 class="dash-section-title">Activity chronology</h3><div class="timeline-track">';
   let currentGroup = '';
+  const remaining = { ...CHRONOLOGY_CAPS };
+  const hidden = {};
 
   for (const ev of events) {
+    if (ev.bucket && remaining[ev.bucket] !== undefined) {
+      if (remaining[ev.bucket] === 0) {
+        hidden[ev.bucket] = (hidden[ev.bucket] || 0) + 1;
+        continue;
+      }
+      remaining[ev.bucket]--;
+    }
+
     const group = formatDateLabel(ev.time);
     if (group !== currentGroup) {
       currentGroup = group;
@@ -396,13 +448,23 @@ function renderCaptureSnapshot(events) {
     return;
   }
 
-  const captureLabel = formatDateTimeLabel(events[0].time);
-  let html = `<div class="dash-section-title">Capture Snapshot</div>`;
-  html += `<div class="dash-section-subtitle">State of the log at collection time${captureLabel ? ` (${escapeHtml(captureLabel)})` : ''}. These share the capture instant and are not a chronology.</div>`;
+  const rows = snapshotSort.apply(events);
+  const captureLabel = formatInstantLabel(capture?.date);
+  let html = `<h3 class="dash-section-title">Capture snapshot</h3>`;
+  html += `<div class="dash-section-subtitle">Log state at capture${captureLabel ? ` (${escapeHtml(captureLabel)})` : ''}. Not a chronology.</div>`;
+  if (snapshotSort.order === 'none') html += `<div class="data-table-caption">${SNAPSHOT_CAPTION}</div>`;
   html += '<div class="data-table-container"><table class="data-table">';
-  html += '<thead><tr><th>Domain</th><th>Cookie state at capture</th></tr></thead><tbody>';
-  for (const ev of events) {
-    html += `<tr><td>${escapeHtml(ev.title)}</td><td title="${escapeHtml(ev.detail || '')}">${escapeHtml(ev.detail || '')}</td></tr>`;
+  html += `<thead><tr>${snapshotSort.th('domain', 'Domain')}${snapshotSort.th('valid', 'Valid')}${
+    snapshotSort.th('expired', 'Expired')}${snapshotSort.th('live', 'Live Sessions')}${
+    snapshotSort.th('expiry', 'Latest Expiry')}</tr></thead><tbody>`;
+  for (const ev of rows) {
+    const stats = ev.cookieStats || {};
+    const expiry = formatDateLabel(stats.latestExpiry);
+    html += `<tr><td title="${escapeHtml(ev.title)}">${escapeHtml(ev.title)}</td>`;
+    html += `<td>${(stats.valid || 0).toLocaleString()}</td>`;
+    html += `<td>${(stats.expired || 0).toLocaleString()}</td>`;
+    html += `<td>${(stats.liveSessions || 0).toLocaleString()}</td>`;
+    html += `<td>${expiry ? escapeHtml(expiry) : EMPTY_CELL}</td></tr>`;
   }
   html += '</tbody></table></div>';
   el.innerHTML = html;
@@ -502,7 +564,10 @@ function initTimeline() {
     }
     const searchEl = document.getElementById('timelineSearch');
     renderTimelinePage(searchEl?.value || '');
+    focusFilterButton(cat);
   });
+
+  bindTableSort('timelineContent', snapshotSort, () => renderTimelinePage(search?.value || ''));
 
   document.getElementById('exportTimelineCsv')?.addEventListener('click', exportTimelineCSV);
 
@@ -511,6 +576,7 @@ function initTimeline() {
     capture = null;
     timelineEvents = [];
     timelineBuilt = false;
+    snapshotSort.reset();
     activeCategories = new Set(['stealer', 'file', 'cookie', 'history', 'notes', 'screenshots']);
     document.getElementById('navTimeline').disabled = true;
     const search = document.getElementById('timelineSearch');
