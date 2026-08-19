@@ -125,13 +125,60 @@ export function isSeparatorOnlyLine(line) {
 }
 
 // The first line that is unmistakably a record rather than banner text. Tab
-// columns and the credential key vocabulary are the only shapes that qualify;
-// a bare URL does not, because banners advertise a Telegram channel on their
-// own third line.
+// columns, the credential key vocabulary and the autofill field/value shapes are
+// the only ones that qualify; a bare URL does not, because banners advertise a
+// Telegram channel on their own third line.
 const RECORD_LINE_PATTERNS = [
   /^[^\t]*\t[^\t]*\t[^\t]*\t/,
-  /^\s*(?:url|uri|host(?:name)?|site|website|domain|login|user(?:name)?|pass(?:word|wd)?|pwd|soft(?:ware)?|application|browser|profile)\s*[:=]\s*\S/i,
+  /^\s*(?:url|uri|host(?:name)?|site|website|domain|login|user(?:name)?|pass(?:word|wd)?|pwd|soft(?:ware)?|application|browser|profile|form|field|name|value)\s*[:=]\s*\S/i,
 ];
+
+// A form field name as a dump writes it: one unbroken token, and never an
+// ordinary word — browsers join field names with `_` or `.`, hump their case,
+// number their rows or key them by GUID. A banner's channel link carries `/`
+// or `@` and so never reaches the shape test.
+const FIELD_NAME_TOKEN = /^[A-Za-z0-9_$:.[\]-]{2,120}$/;
+const FIELD_NAME_MARKS = /[0-9_.:[\]-]|[a-z][A-Z]/;
+
+function isFieldNameToken(token) {
+  if (!FIELD_NAME_TOKEN.test(token)) return false;
+  if (!/[A-Za-z]/.test(token) && !/^[\d:.-]+$/.test(token)) return false;
+  return FIELD_NAME_MARKS.test(token.replace(/:$/, ''));
+}
+
+// An autofill record: a form field name and the value captured from it. Some
+// dumps put the value on the line below the name instead, so a lone field name
+// counts as one too.
+function isAutofillRecordLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 400) return false;
+
+  const gap = trimmed.search(/[ \t]/);
+  const colon = trimmed.indexOf(':');
+
+  // A lone token is a field name only where it is joined like one — an
+  // underscore or a case hump. A bare host from a banner's channel line has
+  // neither, so it stays banner text.
+  if (gap < 0) return (trimmed.includes('_') || /[a-z][A-Z]/.test(trimmed)) && isFieldNameToken(trimmed);
+
+  if (colon <= 0 || colon > gap) {
+    const name = trimmed.slice(0, gap);
+    const value = trimmed.slice(gap + 1).trim();
+    if (!value) return false;
+    if (isFieldNameToken(name)) return true;
+    // A plain word for a name is what banner prose looks like too, so the
+    // value has to carry something prose does not: a figure, a mailbox or a
+    // host, in no more words than a captured field holds.
+    if (!/^[A-Za-z_$][A-Za-z0-9_$-]{0,40}$/.test(name)) return false;
+    if (value.split(/\s+/).length > 2) return false;
+    return /\d/.test(value) || value.includes('@') || LINE_CONTAINS_HOST.test(value);
+  }
+
+  // `field: value` reaches this far only for an address — a resale banner puts
+  // a channel link after its colon, not a mailbox.
+  const value = trimmed.slice(colon + 1).trim();
+  return !!value && EMAIL_REGEX.test(value);
+}
 
 // The raw combolist shape, host:user:pass. Scanned rather than matched: three
 // greedy runs around literal colons backtrack catastrophically on the long
@@ -147,7 +194,9 @@ function isCombolistLine(line) {
 }
 
 function isRecordLine(line) {
-  return RECORD_LINE_PATTERNS.some(rx => rx.test(line)) || isCombolistLine(line);
+  return RECORD_LINE_PATTERNS.some(rx => rx.test(line))
+    || isCombolistLine(line)
+    || isAutofillRecordLine(line);
 }
 
 // The banner a stealer stamps above the first record of a dump it exports —
