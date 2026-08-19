@@ -346,39 +346,53 @@ function updateTypeButton() {
 function showPreviewTypeMenu() {
   if (!currentNode) return;
 
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay visible';
-  overlay.innerHTML = `
+  const currentTypes = getNodeFileTypes(currentNode);
+  const modal = openTransientModal(`
     <div class="modal modal-filetype">
-      <h3>Set File Type</h3>
-      <div class="filetype-options">${buildFileTypeOptionsHtml({ includeRemove: true })}</div>
+      <h3>Type for ${escapeHtml(currentNode.name || 'this file')}</h3>
+      <div class="filetype-options">${buildFileTypeOptionsHtml({ includeRemove: true, activeType: currentTypes[0] || null })}</div>
     </div>
-  `;
-  document.body.appendChild(overlay);
+  `, { onDismiss: () => document.removeEventListener('keydown', onNumberKey) });
+  if (!modal) return;
 
-  function close() {
-    overlay.remove();
-    document.removeEventListener('keydown', onKey);
-  }
-  function onKey(e) {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-  }
-  document.addEventListener('keydown', onKey);
+  const { overlay, close } = modal;
+  const options = overlay.querySelector('.filetype-options');
 
-  overlay.querySelector('.filetype-options').addEventListener('click', (ev) => {
-    const btn = ev.target.closest('.filetype-option');
-    if (!btn) return;
-    applyManualType(currentNode, btn.dataset.type);
+  function choose(type) {
+    applyManualType(currentNode, type);
     if (state.fileTree) {
       state.flatFiles = flattenTree(state.fileTree, state.rootZipName);
     }
     close();
+    document.removeEventListener('keydown', onNumberKey);
     updateTypeButton();
+    // The cached table belongs to the old type. Re-derive it, and drop back to
+    // the text view so nothing renders the previous parse under the new label.
+    if (currentDecodedText != null) {
+      const parsed = parsePreviewText(currentDecodedText, currentNode);
+      currentParsedData = hasUsableColumns(parsed) ? parsed : null;
+      showTextView();
+    } else {
+      currentParsedData = null;
+    }
     emit('reanalyze');
-  });
+  }
 
-  overlay.addEventListener('click', (ev) => {
-    if (ev.target === overlay) close();
+  // The options render their number keys, so those keys have to work here too —
+  // the shortcut list promises them.
+  function onNumberKey(event) {
+    if (topModal() !== overlay) return;
+    if (!/^[1-9]$/.test(event.key)) return;
+    const button = [...options.querySelectorAll('.filetype-option')].find(o => o.dataset.key === event.key);
+    if (!button) return;
+    event.preventDefault();
+    choose(button.dataset.type);
+  }
+  document.addEventListener('keydown', onNumberKey);
+
+  options.addEventListener('click', (event) => {
+    const btn = event.target.closest('.filetype-option');
+    if (btn) choose(btn.dataset.type);
   });
 }
 
