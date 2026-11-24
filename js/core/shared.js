@@ -1179,6 +1179,102 @@ function sysinfoWritesDayFirst(entries) {
   return false;
 }
 
+// The mirror case: a sibling whose second field exceeds 12 was written
+// month-first.
+function sysinfoWritesMonthFirst(entries) {
+  for (const value of Object.values(entries || {})) {
+    const match = String(value || '').trim().match(SLASH_DATE);
+    if (match && Number(match[2]) > 12) return true;
+  }
+  return false;
+}
+
+const SLASH_DATE_TIME = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([AaPp][Mm])\b)?)?/;
+
+// Both ways a slash date can be read, or null when the value is not one or
+// only one reading is a date. `ambiguous` holds when both are real dates and
+// differ, which is every value whose first two fields are 12 or under and not
+// equal.
+function slashDateReadings(value) {
+  const match = String(value ?? '').trim().match(SLASH_DATE_TIME);
+  if (!match) return null;
+  const [lead, next] = [Number(match[1]), Number(match[2])];
+  let year = Number(match[3]);
+  if (year < 100) year += 2000;
+  let hour = Number(match[4] || 0);
+  const meridiem = (match[7] || '').toLowerCase();
+  if (meridiem === 'pm' && hour < 12) hour += 12;
+  if (meridiem === 'am' && hour === 12) hour = 0;
+  const clock = [hour, Number(match[5] || 0), Number(match[6] || 0)];
+  const dayFirst = buildLocalDate(year, next, lead, ...clock);
+  const monthFirst = buildLocalDate(year, lead, next, ...clock);
+  return {
+    'day-first': dayFirst,
+    'month-first': monthFirst,
+    twelveHour: Boolean(meridiem),
+    ambiguous: Boolean(dayFirst && monthFirst) && lead !== next,
+  };
+}
+
+// Where Windows writes the short date month-first. Year-first locales (and
+// Canada, which mixes them) are left undecided: an ambiguous slash date from
+// one of those machines came from a format the stealer chose, not the locale.
+const MONTH_FIRST_COUNTRIES = new Set(['US', 'PH', 'FM', 'MH', 'PW', 'GU', 'AS', 'MP', 'VI', 'PR', 'UM']);
+const UNDECIDED_COUNTRIES = new Set(['CA', 'CN', 'JP', 'KR', 'KP', 'TW', 'HU', 'LT', 'MN', 'IR']);
+const COUNTRY_NAME_CODES = new Map([
+  ['united states', 'US'], ['united states of america', 'US'], ['usa', 'US'],
+  ['philippines', 'PH'], ['canada', 'CA'], ['china', 'CN'], ['japan', 'JP'],
+  ['south korea', 'KR'], ['korea', 'KR'], ['taiwan', 'TW'], ['hungary', 'HU'],
+  ['lithuania', 'LT'], ['mongolia', 'MN'], ['iran', 'IR'],
+]);
+const COUNTRY_KEY = /^(?:country(?:\s*code)?|geo)$/i;
+
+function countryDateOrder(entries) {
+  for (const [key, raw] of Object.entries(entries || {})) {
+    if (!raw || !COUNTRY_KEY.test(key)) continue;
+    const value = String(raw).trim();
+    const code = /^[A-Za-z]{2}$/.test(value)
+      ? value.toUpperCase()
+      : (value.match(/\(([A-Z]{2})\)/)?.[1] || COUNTRY_NAME_CODES.get(value.toLowerCase()) || '');
+    if (code && MONTH_FIRST_COUNTRIES.has(code)) return 'month-first';
+    if (code && UNDECIDED_COUNTRIES.has(code)) return null;
+    if (code || isLikelyCountryName(value)) return 'day-first';
+  }
+  return null;
+}
+
+// A log is packed after it is taken and taken after the browsing it holds, so
+// either stamp can rule a reading out. The slack covers a zone's worth of
+// frame error; the two readings of one value are always weeks apart.
+const DATE_ORDER_SLACK_MS = 2 * 24 * 60 * 60 * 1000;
+
+function settleDateOrder(readings, { entries, archiveDate, historyDate }) {
+  const orders = ['day-first', 'month-first'];
+  const siblingDayFirst = !readings.twelveHour && sysinfoWritesDayFirst(entries);
+  const siblingMonthFirst = sysinfoWritesMonthFirst(entries);
+  if (siblingDayFirst !== siblingMonthFirst) {
+    return { order: siblingDayFirst ? 'day-first' : 'month-first', settledBy: 'sysinfo' };
+  }
+  if (archiveDate) {
+    const possible = orders.filter((order) => readings[order].getTime() <= archiveDate.getTime() + DATE_ORDER_SLACK_MS);
+    if (possible.length === 1) return { order: possible[0], settledBy: 'archive name' };
+  }
+  if (historyDate) {
+    const possible = orders.filter((order) => readings[order].getTime() >= historyDate.getTime() - DATE_ORDER_SLACK_MS);
+    if (possible.length === 1) return { order: possible[0], settledBy: 'history' };
+  }
+  // A 12-hour clock is the US short format whatever the machine's country, so
+  // the country only speaks for 24-hour values.
+  const byCountry = readings.twelveHour ? null : countryDateOrder(entries);
+  if (byCountry) return { order: byCountry, settledBy: 'country' };
+  // What the general parser would have picked: month-first, unless that
+  // reading lies in the future.
+  return {
+    order: readings['month-first'].getTime() > Date.now() ? 'day-first' : 'month-first',
+    settledBy: 'default',
+  };
+}
+
 function parseSysinfoDate(value, dayFirst) {
   const raw = String(value || '').trim();
   const match = dayFirst && !/[ap]m\b/i.test(raw) ? raw.match(SLASH_DATE) : null;
@@ -1230,38 +1326,61 @@ function timestampCarriesZone(value) {
   return TZ_ABBREVIATION_PATTERN.test(str.toUpperCase());
 }
 
+function archiveNameDate(names) {
+  for (const name of names) {
+    const date = parseArchiveTimestamp(name || '');
+    if (isPlausibleCaptureDate(date)) return { date, name: String(name) };
+  }
+  return null;
+}
+
+// A sysinfo capture value whose day and month could be either way round is
+// read both ways and settled from the case's own evidence (settleDateOrder).
+// `dateOrder` records which order was used, what settled it, and the reading
+// that was set aside, so an order that was only assumed can be shown as such.
 function resolveCaptureContext({ sysinfoEntries, archiveNames, sourceLastModified, historyMaxDate } = {}) {
   const dayFirst = sysinfoWritesDayFirst(sysinfoEntries);
   const offsetMinutes = sysinfoUtcOffsetMinutes(sysinfoEntries);
+  const names = [].concat(archiveNames || []);
+  const history = parseTimestampValue(historyMaxDate);
+  const plausibleHistory = isPlausibleCaptureDate(history) ? history : null;
+
   for (const [key, value] of Object.entries(sysinfoEntries || {})) {
     if (!value || !CAPTURE_TIME_KEYS.some(pattern => pattern.test(key))) continue;
-    const local = parseSysinfoDate(value, dayFirst);
+    const readings = slashDateReadings(value);
+    const settled = readings?.ambiguous
+      ? settleDateOrder(readings, { entries: sysinfoEntries, archiveDate: archiveNameDate(names)?.date, historyDate: plausibleHistory })
+      : null;
+    const local = settled ? readings[settled.order] : parseSysinfoDate(value, dayFirst);
     if (!isPlausibleCaptureDate(local)) continue;
-    if (offsetMinutes == null || timestampCarriesZone(value)) {
-      return { date: local, source: 'sysinfo', detail: key, offsetMinutes: null };
-    }
-    const utc = new Date(local.getTime() - offsetMinutes * 60000);
-    if (!isPlausibleCaptureDate(utc)) return { date: local, source: 'sysinfo', detail: key, offsetMinutes: null };
-    return { date: utc, source: 'sysinfo', detail: key, offsetMinutes };
+
+    let applied = offsetMinutes != null && !timestampCarriesZone(value);
+    if (applied && !isPlausibleCaptureDate(new Date(local.getTime() - offsetMinutes * 60000))) applied = false;
+    const toInstant = (date) => (applied ? new Date(date.getTime() - offsetMinutes * 60000) : date);
+    const dateOrder = settled
+      ? {
+        order: settled.order,
+        settledBy: settled.settledBy,
+        alternative: toInstant(readings[settled.order === 'day-first' ? 'month-first' : 'day-first']),
+      }
+      : null;
+    return { date: toInstant(local), source: 'sysinfo', detail: key, offsetMinutes: applied ? offsetMinutes : null, dateOrder };
   }
 
-  for (const name of [].concat(archiveNames || [])) {
-    const date = parseArchiveTimestamp(name || '');
-    if (isPlausibleCaptureDate(date)) return { date, source: 'archive name', detail: String(name), offsetMinutes: null };
-  }
+  const fromArchive = archiveNameDate(names);
+  if (fromArchive) return { date: fromArchive.date, source: 'archive name', detail: fromArchive.name, offsetMinutes: null, dateOrder: null };
 
   for (const value of [].concat(sourceLastModified || [])) {
     const date = parseTimestampValue(value);
-    if (isPlausibleCaptureDate(date)) return { date, source: 'file modified', detail: '', offsetMinutes: null };
+    if (isPlausibleCaptureDate(date)) return { date, source: 'file modified', detail: '', offsetMinutes: null, dateOrder: null };
   }
 
-  const history = parseTimestampValue(historyMaxDate);
-  if (isPlausibleCaptureDate(history)) return { date: history, source: 'history', detail: '', offsetMinutes: null };
+  if (plausibleHistory) return { date: plausibleHistory, source: 'history', detail: '', offsetMinutes: null, dateOrder: null };
 
-  return { date: null, source: null, detail: '', offsetMinutes: null };
+  return { date: null, source: null, detail: '', offsetMinutes: null, dateOrder: null };
 }
 
-const EMPTY_CAPTURE_CONTEXT = { date: null, source: null, detail: '', offsetMinutes: null };
+const EMPTY_CAPTURE_CONTEXT = { date: null, source: null, detail: '', offsetMinutes: null, dateOrder: null };
 let captureContext = EMPTY_CAPTURE_CONTEXT;
 
 // Analysis resolves the capture instant once per case and publishes it here, so

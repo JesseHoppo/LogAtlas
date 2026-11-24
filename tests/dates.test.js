@@ -8,6 +8,7 @@ import {
   checkCookieValidity,
   normaliseTimeZone,
 } from '../js/core/shared.js';
+import { captureOrderCheck } from '../js/app/dashboard.js';
 import { analyseCase } from './helpers/case.js';
 import { redlineLog } from './helpers/fixtures.js';
 
@@ -105,4 +106,62 @@ test('the analysis pass publishes one capture instant with its provenance', asyn
   assert.equal(events.capture.detail, 'Log date');
   assert.equal(events.capture.iso, '2025-03-13T23:45:02.000Z');
   assert.equal(events.timezone.offsetMinutes, 570);
+});
+
+// 5 March or 3 May, depending on who wrote it.
+const AMBIGUOUS = '05/03/2025 10:22:11';
+const MARCH_5 = '2025-03-05T10:22:11.000Z';
+const MAY_3 = '2025-05-03T10:22:11.000Z';
+
+const orderOf = (context) => [iso(context.date), context.dateOrder?.order, context.dateOrder?.settledBy];
+
+test('an ambiguous 24-hour stamp is read the way the victim\'s country writes dates', () => {
+  for (const country of ['AU', 'GB', 'BR', 'Germany']) {
+    const context = resolveCaptureContext({ sysinfoEntries: { Country: country, Date: AMBIGUOUS } });
+    assert.deepEqual(orderOf(context), [MARCH_5, 'day-first', 'country'], country);
+    assert.equal(iso(context.dateOrder.alternative), MAY_3);
+  }
+  const us = resolveCaptureContext({ sysinfoEntries: { Country: 'US', Date: AMBIGUOUS } });
+  assert.deepEqual(orderOf(us), [MAY_3, 'month-first', 'country']);
+});
+
+test('a sibling date that reads only one way settles the order for the file', () => {
+  const dayFirst = resolveCaptureContext({ sysinfoEntries: { Country: 'US', 'Install Date': '25/12/2024 08:00', Date: AMBIGUOUS } });
+  assert.deepEqual(orderOf(dayFirst), [MARCH_5, 'day-first', 'sysinfo']);
+  const monthFirst = resolveCaptureContext({ sysinfoEntries: { Country: 'AU', 'Install Date': '12/25/2024 08:00', Date: AMBIGUOUS } });
+  assert.deepEqual(orderOf(monthFirst), [MAY_3, 'month-first', 'sysinfo']);
+});
+
+test('a reading after the archive was packed, or before the newest browsing, is ruled out', () => {
+  const byArchive = resolveCaptureContext({ sysinfoEntries: { Country: 'US', Date: AMBIGUOUS }, archiveNames: ['US_2025-03-06_log.zip'] });
+  assert.deepEqual(orderOf(byArchive), [MARCH_5, 'day-first', 'archive name']);
+  const byHistory = resolveCaptureContext({ sysinfoEntries: { Country: 'GB', Date: AMBIGUOUS }, historyMaxDate: new Date('2025-04-20T00:00:00Z') });
+  assert.deepEqual(orderOf(byHistory), [MAY_3, 'month-first', 'history']);
+});
+
+test('a 12-hour stamp keeps the US reading whatever the country says', () => {
+  const context = resolveCaptureContext({ sysinfoEntries: { Country: 'GB', Date: '5/3/2025 10:22:11 AM' } });
+  assert.deepEqual(orderOf(context), [MAY_3, 'month-first', 'default']);
+});
+
+test('a stamp that reads only one way carries no date-order note', () => {
+  assert.equal(resolveCaptureContext({ sysinfoEntries: { Country: 'AU', Date: '14/03/2025 09:15:02' } }).dateOrder, null);
+  assert.equal(resolveCaptureContext({ sysinfoEntries: { Country: 'AU', Date: '05/05/2025 09:15:02' } }).dateOrder, null);
+  assert.equal(resolveCaptureContext({ sysinfoEntries: { Country: 'AU', Date: '05.03.2025 10:22:11' } }).dateOrder, null);
+});
+
+test('the declared offset applies to both readings', () => {
+  const context = resolveCaptureContext({ sysinfoEntries: { Country: 'AU', TimeZone: '(UTC+09:30) Adelaide', Date: AMBIGUOUS } });
+  assert.equal(context.offsetMinutes, 570);
+  assert.equal(iso(context.date), '2025-03-05T00:52:11.000Z');
+  assert.equal(iso(context.dateOrder.alternative), '2025-05-03T00:52:11.000Z');
+});
+
+test('an assumed order is published with the capture and flagged on the Overview', async () => {
+  const { events } = await analyseCase(redlineLog({ logDate: AMBIGUOUS }));
+  assert.deepEqual(events.capture.dateOrder, { order: 'day-first', settledBy: 'country', alternativeIso: '2025-05-03T00:52:11.000Z' });
+  const check = captureOrderCheck(events.capture);
+  assert.equal(check.variant, 'warn');
+  assert.match(check.text, /taken day-first \(2025-03-05 00:52:11 UTC\), as the victim's country writes dates; month-first would make it 2025-05-03 00:52:11 UTC/);
+  assert.equal(captureOrderCheck({ ...events.capture, dateOrder: { ...events.capture.dateOrder, settledBy: 'history' } }), null);
 });

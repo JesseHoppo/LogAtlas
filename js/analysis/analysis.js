@@ -1768,6 +1768,15 @@ function publishCaptureContext({ sysinfoEntries, historyMaxDate, archiveNames, n
     browserClockLabel: browserClockLabel(clock),
     historyAheadMinutes: ahead ? ahead.minutes : null,
     historyLatestIso: ahead ? ahead.latestVisit.toISOString() : null,
+    // Set when the sysinfo stamp read either way round: which order was used,
+    // what settled it, and the reading that was set aside.
+    dateOrder: context.dateOrder
+      ? {
+        order: context.dateOrder.order,
+        settledBy: context.dateOrder.settledBy,
+        alternativeIso: context.dateOrder.alternative.toISOString(),
+      }
+      : null,
   });
   return context;
 }

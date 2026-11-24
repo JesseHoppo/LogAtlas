@@ -644,6 +644,25 @@ function leadingCcTld(domains) {
   return { tld, count, ranked };
 }
 
+// A capture stamp like 05/03/2025 reads as two dates weeks apart. When nothing
+// in the log settled which, the order was assumed, and every expiry and
+// currentness judgement in the case rests on that assumption.
+export function captureOrderCheck(capture) {
+  const order = capture?.dateOrder;
+  if (!order || !capture.date || !['country', 'default'].includes(order.settledBy)) return null;
+  const alternative = new Date(order.alternativeIso);
+  if (isNaN(alternative.getTime())) return null;
+  const reason = order.settledBy === 'country'
+    ? `, as the victim's country writes dates`
+    : '; nothing in the log settles it';
+  const other = order.order === 'day-first' ? 'month-first' : 'day-first';
+  return {
+    text: `The capture stamp reads either way round. It is taken ${order.order} (${formatInstantLabel(capture.date)})${reason}; `
+      + `${other} would make it ${formatInstantLabel(alternative)}. Cookie validity and currentness are judged against the first.`,
+    variant: 'warn',
+  };
+}
+
 function renderConsistencyChecks({ credentials, cookies, history, countryInfo, capture }) {
   const section = document.getElementById('dashConsistency');
   const body = document.getElementById('dashConsistencyBody');
@@ -653,9 +672,12 @@ function renderConsistencyChecks({ credentials, cookies, history, countryInfo, c
   const credDomains = (credentials?.topDomains || []).map(d => d.value);
   const histDomains = (history?.topDomains || []).map(d => d.value);
 
-  // Leads: a capture instant that cannot be right undermines every other line.
+  // Leads: a capture instant that cannot be right undermines every other line,
+  // and one whose day and month were assumed rests on that assumption.
   const captureConflict = captureBeforeHistory(capture);
   if (captureConflict) checks.push(captureConflict);
+  const assumedOrder = captureOrderCheck(capture);
+  if (assumedOrder) checks.push(assumedOrder);
 
   if (cookies?.totalCookies > 0 && parsedCredentialRows(credentials) === 0) {
     checks.push({ text: 'Cookies recovered, no credentials parsed — credential files may be encrypted or missing.', variant: 'warn' });

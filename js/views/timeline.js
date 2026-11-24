@@ -53,7 +53,11 @@ function extractStealerEvents(entries, captureContext) {
   // A key only conflicts when it names a different instant: the same moment
   // written in a second format is not a rival capture time.
   const captureMs = captureContext.date.getTime();
-  const dayFirst = sysinfoWritesDayFirst(entries);
+  // Sibling keys are read in the order the capture stamp was settled in, so the
+  // same moment written twice is not reported as a rival.
+  const dayFirst = captureContext.dateOrder
+    ? captureContext.dateOrder.order === 'day-first'
+    : sysinfoWritesDayFirst(entries);
   const others = [];
   for (const [key, value] of Object.entries(entries || {})) {
     if (!value || value === captureValue) continue;
