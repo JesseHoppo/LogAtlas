@@ -58,10 +58,10 @@ test('a weak sysinfo name under a grabbed-files root is the victim\'s file, not 
   assert.ok(!grabbed.includes('_sysInfoHint'));
 });
 
-test('a host:user:pass pool with no filename rule is recognised by its content', async () => {
+test('a host:user:pass pool with no filename rule is recognised by its content as a pool', async () => {
   const hints = await hintsFor({
     'UserInformation.txt': 'IP: 192.0.2.1\n',
     '14,4K ULP PRIV.txt': combolist(),
   });
-  assert.ok(hints('14,4K ULP PRIV.txt').includes('_passwordFileHint'));
+  assert.deepEqual(hints('14,4K ULP PRIV.txt'), ['_passwordPoolHint']);
 });

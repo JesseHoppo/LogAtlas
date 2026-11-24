@@ -29,6 +29,9 @@ const ADDITIONAL_HINT_DEFINITIONS = Object.freeze([
   { hint: '_creditsFileHint', label: 'Credits' },
   { hint: '_ftpCredentialHint', label: 'FTP credentials' },
   { hint: '_keylogHint', label: 'Keylog' },
+  // A combolist bundled beside the log: other people's accounts. Setting the
+  // file's type to Credentials is how an analyst claims one for the victim.
+  { hint: '_passwordPoolHint', label: 'Credential pool' },
 ]);
 const ADDITIONAL_HINT_KEYS = Object.freeze(ADDITIONAL_HINT_DEFINITIONS.map(({ hint }) => hint));
 

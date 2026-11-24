@@ -309,6 +309,47 @@ async function analyseCredentials(nodes) {
   });
 }
 
+// Combolist/ULP pools bundled beside the log are other people's accounts. They
+// are counted here and nowhere else: no victim figure, identity or currentness
+// row may draw on them.
+async function analyseCredentialPools(nodes) {
+  const seen = new Set();
+  const files = [];
+  let totalCredentials = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const text = await decodeNodeText(node, path);
+      if (text == null) continue;
+      const parsed = parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
+      if (!parsed || parsed.rows.length === 0) continue;
+      const { urlIdx, userIdx, passIdx } = credentialColumnIndices(parsed.headers);
+      if (passIdx < 0) continue;
+
+      let fileCredentials = 0;
+      let rowIndex = 0;
+      for (const row of parsed.rows) {
+        if (++rowIndex % ROW_YIELD_INTERVAL === 0) await yieldToEventLoop();
+        const pass = (row[passIdx] || '').trim();
+        if (!pass) continue;
+        fileCredentials++;
+        const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
+        const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
+        seen.add(dedupeDomainKey(url) + DEDUPE_KEY_SEP + usernameDedupeKey(user) + DEDUPE_KEY_SEP + pass);
+      }
+      if (fileCredentials === 0) continue;
+      totalCredentials += fileCredentials;
+      files.push({ path: path || node.name || '', credentials: fileCredentials });
+    } catch {
+      // skip
+    }
+  }
+
+  emit('analysis:credentialPools', files.length > 0
+    ? { fileCount: files.length, totalCredentials, uniqueCredentials: seen.size, files }
+    : null);
+}
+
 // Cookies
 
 async function analyseCookies(nodes, captureDate = null) {
@@ -1788,6 +1829,7 @@ async function analyseTree(fileTree, rootName) {
 
   const tasks = [
     analyseCredentials(buckets._passwordFileHint),
+    analyseCredentialPools(buckets._passwordPoolHint),
     analyseCookies(buckets._cookieFileHint, capture.date),
     analyseAutofills(buckets._autofillHint),
     analyseNotes(buckets._notesHint),

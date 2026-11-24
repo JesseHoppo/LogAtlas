@@ -10,7 +10,7 @@ import { runAnalysis } from '../../js/analysis/analysis.js';
 
 const ANALYSIS_EVENTS = [
   'sysinfo', 'software', 'processList', 'timezone', 'history', 'browserclock',
-  'capture', 'credentials', 'cookies', 'autofill', 'notes', 'bookmarks',
+  'capture', 'credentials', 'credentialPools', 'cookies', 'autofill', 'notes', 'bookmarks',
   'browserMetadata', 'stealerDebug', 'accountTokens', 'serviceArtifacts',
   'wallets', 'downloads', 'creditCards', 'domainDetect', 'clipboard',
   'grabbedFiles', 'screenshot', 'fingerprint', 'readErrors', 'complete',
@@ -49,7 +49,12 @@ export async function analyseCase(files, { root = 'case' } = {}) {
   resetState();
   const list = Object.entries(files).map(([path, spec]) => toFile(root ? `${root}/${path}` : path, spec));
   await addFilesToTree(list, { trustMtime: true });
+  return reanalyseCase();
+}
 
+// Runs analysis again over the loaded case, as the app does after the analyst
+// changes a file's type.
+export async function reanalyseCase() {
   collecting = { events: {}, emitted: {} };
   try {
     await runAnalysis(state.fileTree, state.rootZipName);

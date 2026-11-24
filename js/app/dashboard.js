@@ -25,6 +25,7 @@ const LURE_LABELS = {
 
 const overviewState = {
   credentials: null,
+  credentialPools: null,
   cookies: null,
   history: null,
   sysinfo: null,
@@ -467,6 +468,7 @@ function renderTriageOverview() {
   const autofill = overviewState.autofill;
   const notes = overviewState.notes;
   const readErrors = overviewState.readErrors;
+  const pools = overviewState.credentialPools;
 
   const osUser = findSysinfoValue(sysinfo, [/^user\s*name$/i, /^username$/i, /^os user$/i]);
   const pi = overviewState.identity?.primaryIdentity;
@@ -499,6 +501,11 @@ function renderTriageOverview() {
       text: `${countLabel(cards.withCvc, 'payment card')} recovered with a CVC value; treat as full card compromise.`,
       variant: 'warn',
     });
+  }
+  // Every figure above leaves these out, so the analyst has to be told they
+  // exist, and that claiming one for the victim is a type change away.
+  if (pools?.uniqueCredentials > 0) {
+    riskItems.push(`${countLabel(pools.fileCount, 'bundled credential pool')} with ${countLabel(pools.uniqueCredentials, 'credential')} kept out of the victim's figures: combolist data, not this machine's. Set a file's type to Credentials to include it.`);
   }
   if (credentials?.failedFiles?.length > 0) {
     riskItems.push(`${countLabel(credentials.failedFiles.length, 'password file')} could not be parsed cleanly; review manually.`);
@@ -658,6 +665,7 @@ const DOMAIN_DETECT_PER_CATEGORY = 5;
 
 const COUNTED_HINTS = [
   '_passwordFileHint',
+  '_passwordPoolHint',
   '_cookieFileHint',
   '_autofillHint',
   '_notesHint',
@@ -688,6 +696,7 @@ const COUNTED_HINTS = [
 const RECOGNISED_HINTS = COUNTED_HINTS.filter((key) => key !== '_browserPluginHint');
 
 const EXTRA_ARTIFACTS = [
+  { hint: '_passwordPoolHint', icon: 'CP', noun: 'credential pool file' },
   { hint: '_creditCardHint', icon: 'CC', noun: 'credit card file', warning: true },
   { hint: '_cryptoWalletHint', icon: 'W', noun: 'crypto wallet file' },
   { hint: '_accountTokenHint', icon: 'TK', noun: 'account token file', warning: true },
@@ -1256,6 +1265,10 @@ export function initDashboard() {
 
   on('analysis:creditCards', (data) => {
     setOverviewState('creditCards', data);
+  });
+
+  on('analysis:credentialPools', (data) => {
+    setOverviewState('credentialPools', data);
   });
 
   on('analysis:accountTokens', (data) => {
