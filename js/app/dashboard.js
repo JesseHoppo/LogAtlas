@@ -43,6 +43,7 @@ const overviewState = {
   identity: null,
   readErrors: null,
   capture: null,
+  logRoots: null,
 };
 
 function setOverviewState(key, value) {
@@ -523,6 +524,7 @@ function renderTriageOverview() {
   }
 
   renderSeedBanner(wallets, notes);
+  renderMultiLogBanner(overviewState.logRoots);
   renderNationalIds(credentials);
   renderConsistencyChecks({ credentials, cookies, history, countryInfo, capture: exfilInfo });
 }
@@ -548,6 +550,36 @@ function renderSeedBanner(wallets, notes) {
   const banner = document.getElementById('dashSeedBanner');
   if (!banner) return;
   const text = seedBannerText(wallets, notes);
+  banner.classList.toggle('hidden', !text);
+  banner.textContent = text;
+}
+
+const MULTI_LOG_LISTED = 3;
+
+// A case is read as one victim. When the archive holds several logs, every
+// figure on the page combines them and the identity, capture date and verdict
+// are the first log's, so the analyst is told before reading any of it.
+export function multiLogBannerText(logRoots) {
+  const logs = logRoots?.logs || [];
+  if (logs.length < 2) return '';
+  const describe = (log) => {
+    const who = [log.user, log.computer && `on ${log.computer}`].filter(Boolean).join(' ');
+    const facts = [who, log.country, log.family].filter(Boolean).join(', ');
+    const name = log.name || log.path;
+    return facts ? `${name} (${facts})` : name;
+  };
+  const listed = logs.slice(0, MULTI_LOG_LISTED).map(describe);
+  const more = logs.length - listed.length;
+  if (more > 0) listed.push(countLabel(more, 'other log'));
+  return `This archive holds ${logs.length.toLocaleString()} separate logs: ${joinNaturalList(listed)}. `
+    + 'Every figure below combines them, and the identity, capture date and stealer verdict shown are the first log\'s. '
+    + 'Load each log\'s folder on its own for per-victim results.';
+}
+
+function renderMultiLogBanner(logRoots) {
+  const banner = document.getElementById('dashMultiLogBanner');
+  if (!banner) return;
+  const text = multiLogBannerText(logRoots);
   banner.classList.toggle('hidden', !text);
   banner.textContent = text;
 }
@@ -782,6 +814,7 @@ export function resetOverviewState() {
 
 const OVERVIEW_SECTION_IDS = [
   'dashSeedBanner',
+  'dashMultiLogBanner',
   'dashFingerprint',
   'dashCaseContext',
   'dashVerdictCards',
@@ -804,6 +837,7 @@ const OVERVIEW_SECTION_IDS = [
 
 const OVERVIEW_BODY_IDS = [
   'dashSeedBanner',
+  'dashMultiLogBanner',
   'dashFingerprintBody',
   'dashCaseContext',
   'dashVerdictCards',
@@ -1309,6 +1343,8 @@ export function initDashboard() {
   });
 
   on('analysis:identity', (data) => setOverviewState('identity', data));
+
+  on('analysis:logRoots', (data) => setOverviewState('logRoots', data));
 
   on('analysis:readErrors', (data) => setOverviewState('readErrors', data));
 }

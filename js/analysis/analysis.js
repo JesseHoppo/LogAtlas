@@ -77,6 +77,7 @@ const CLIPBOARD_BRANDING_BUDGET = 1536;
 import { inferServiceFromPath, serviceFromBrowser, serviceFromTokenType } from '../core/serviceRegistry.js';
 import { classifyCookie, hasReplayableValue, isLiveSessionToken } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
+import { findLogRoots, describeLogRoot } from './logRoots.js';
 import { classifySiteDomain, loadDomainCategories } from '../core/domainCategories.js';
 import { detectNationalIds } from './structuredPii.js';
 import { FIELD_PATTERNS, CLIPBOARD_LURE_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
@@ -1434,9 +1435,8 @@ function findScreenshot(nodes) {
 
 // Stealer fingerprinting
 
-// `root` arrives already collapsed past any single-directory wrappers, so
-// paths line up with the signatures without descending again here.
-async function runFingerprint(root, rootName) {
+// `root` is the log's own directory, so paths line up with the signatures.
+async function runFingerprint(root) {
   const ctx = { dirs: [], files: [], sysinfoNodes: [], sysinfoCandidates: [], creditsNodes: [], creditsText: null, clipboardNodes: [], clipboardText: null, passwordNode: null, passwordHeaderText: null };
 
   collectContext(root, '', ctx);
@@ -1540,8 +1540,28 @@ async function runFingerprint(root, rootName) {
     if (headerTexts.length > 0) ctx.browserHeaderText = headerTexts.join('\n');
   }
 
-  const result = fingerprintStealer(ctx);
-  emit('analysis:fingerprint', result);
+  return fingerprintStealer(ctx);
+}
+
+// Each log is fingerprinted from its own directory. With no profile anywhere
+// the archive's layout is all there is, read from the collapsed root. Several
+// logs are each identified and described, so the Overview can say whose data
+// it is combining; the headline verdict is the first log's, the one whose
+// profile the merged sysinfo shows.
+async function fingerprintLogs(root, logRoots) {
+  const targets = logRoots.length > 0 ? logRoots.map(entry => entry.node) : [root];
+  const verdicts = [];
+  for (const target of targets) verdicts.push(await runFingerprint(target));
+
+  emit('analysis:fingerprint', verdicts[0] || null);
+  emit('analysis:logRoots', {
+    count: logRoots.length,
+    logs: logRoots.map((entry, i) => ({
+      ...describeLogRoot(entry),
+      family: verdicts[i]?.family || null,
+      confidence: verdicts[i]?.confidence || null,
+    })),
+  });
 }
 
 // Installed software
@@ -1793,6 +1813,7 @@ async function analyseTree(fileTree, rootName) {
   const root = collapseSingleWrapper(fileTree) || fileTree;
   const treeRootName = root === fileTree ? rootName : (root.name || rootName);
   const buckets = bucketHintedNodes(root, treeRootName);
+  const logRoots = findLogRoots(root);
   readFailures = [];
 
   findScreenshot(buckets._screenshotHint);
@@ -1849,7 +1870,7 @@ async function analyseTree(fileTree, rootName) {
     analyseProcessList(buckets._processListHint),
     analyseClipboard(buckets._clipboardHint),
     analyseGrabbedFiles(buckets._grabbedFileHint),
-    runFingerprint(root, treeRootName),
+    fingerprintLogs(root, logRoots),
   ];
 
   reportRejections(await Promise.allSettled(tasks));

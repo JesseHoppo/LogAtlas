@@ -13,7 +13,7 @@ const ANALYSIS_EVENTS = [
   'capture', 'credentials', 'credentialPools', 'cookies', 'autofill', 'notes', 'bookmarks',
   'browserMetadata', 'stealerDebug', 'accountTokens', 'serviceArtifacts',
   'wallets', 'downloads', 'creditCards', 'domainDetect', 'clipboard',
-  'grabbedFiles', 'screenshot', 'fingerprint', 'readErrors', 'complete',
+  'grabbedFiles', 'screenshot', 'fingerprint', 'logRoots', 'readErrors', 'complete',
 ];
 
 // The bus has no unsubscribe, so one listener per event routes into whichever
