@@ -2,6 +2,7 @@ import './helpers/env.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseWalletArtifact } from '../js/analysis/walletArtifacts.js';
+import { seedBannerText } from '../js/app/dashboard.js';
 import { analyseCase } from './helpers/case.js';
 import { redlineLog } from './helpers/fixtures.js';
 
@@ -45,4 +46,29 @@ test('the wallet summary covers every store in the case', async () => {
   const { events } = await analyseCase(files);
   assert.equal(events.wallets.fileCount, 2);
   assert.deepEqual(events.wallets.services.map((s) => s.value).sort(), ['Exodus', 'MetaMask']);
+});
+
+test('the Overview seed banner stays down for a store holding only UI keywords', async () => {
+  const files = redlineLog();
+  files[`${METAMASK_DIR}/000003.log`] = '{"vault":"{\\"data\\":\\"x\\"}","i18n":"Reveal Secret Recovery Phrase"}';
+  files['Wallets/MetaMask/state.json'] = '{"OnboardingController":{"seedPhraseBackedUp":true}}';
+  const { events } = await analyseCase(files);
+  assert.equal(events.wallets.withSeedPhrase, 0);
+  assert.equal(seedBannerText(events.wallets, events.notes), '');
+});
+
+test('the Overview seed banner goes up for a seed written down in a wallet folder', async () => {
+  const files = redlineLog();
+  files['Wallets/Exodus/seed.txt'] = SEED;
+  const { events } = await analyseCase(files);
+  assert.equal(events.wallets.withSeedPhrase, 1);
+  assert.match(seedBannerText(events.wallets, events.notes), /^1 wallet store with seed/);
+});
+
+test('a seed kept in a note raises the same banner', async () => {
+  const files = redlineLog();
+  files['Notes/backup.txt'] = `my wallet words\n${SEED}\n`;
+  const { events } = await analyseCase(files);
+  assert.equal(events.notes.seedPhraseNotes, 1);
+  assert.match(seedBannerText(events.wallets, events.notes), /^1 note with seed/);
 });

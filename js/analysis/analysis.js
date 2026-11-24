@@ -1337,7 +1337,10 @@ async function analyseWalletArtifacts(nodes) {
     fileCount: entries.length,
     totalEntries: entries.length,
     services: topN(services, 10),
+    // Keyword hints land in every wallet's own UI strings; only a seed-length
+    // run of BIP39 words is evidence that a recovery phrase is in the store.
     withSeedHints: entries.filter(entry => entry.seedHints > 0).length,
+    withSeedPhrase: entries.filter(entry => entry.seedPhraseCount > 0).length,
     withTokenSignals: entries.filter(entry => entry.tokenCount > 0).length,
     signalHits,
   });

@@ -529,22 +529,27 @@ function renderTriageOverview() {
 
 // A recovery phrase is as good as the wallet whether it sits in the wallet
 // store or in a text file the victim kept it in, so both sources raise the
-// same banner and it names the ones that fired.
-function renderSeedBanner(wallets, notes) {
-  const banner = document.getElementById('dashSeedBanner');
-  if (!banner) return;
-  const stores = wallets?.withSeedHints || 0;
+// same banner and it names the ones that fired. A store only counts when it
+// holds a seed-length run of BIP39 words: the `seed phrase` / `mnemonic`
+// keywords sit in every wallet extension's UI strings, so keying on them raised
+// this banner for stores holding nothing but a vault, and missed a seed that
+// was written down without the words "seed phrase" beside it.
+export function seedBannerText(wallets, notes) {
+  const stores = wallets?.withSeedPhrase || 0;
   const seedNotes = notes?.seedPhraseNotes || 0;
-  if (stores === 0 && seedNotes === 0) {
-    banner.classList.add('hidden');
-    banner.textContent = '';
-    return;
-  }
+  if (stores === 0 && seedNotes === 0) return '';
   const bits = [];
   if (stores > 0) bits.push(countLabel(stores, 'wallet store'));
   if (seedNotes > 0) bits.push(countLabel(seedNotes, 'note'));
-  banner.classList.remove('hidden');
-  banner.textContent = `${joinNaturalList(bits)} with seed / recovery-phrase material — treat as full wallet compromise.`;
+  return `${joinNaturalList(bits)} with seed / recovery-phrase material — treat as full wallet compromise.`;
+}
+
+function renderSeedBanner(wallets, notes) {
+  const banner = document.getElementById('dashSeedBanner');
+  if (!banner) return;
+  const text = seedBannerText(wallets, notes);
+  banner.classList.toggle('hidden', !text);
+  banner.textContent = text;
 }
 
 function renderNationalIds(credentials) {
