@@ -77,6 +77,7 @@ const CLIPBOARD_BRANDING_BUDGET = 1536;
 import { inferServiceFromPath, serviceFromBrowser, serviceFromTokenType } from '../core/serviceRegistry.js';
 import { classifyCookie, hasReplayableValue, isLiveSessionToken } from './sessionCookies.js';
 import { collectContext, fingerprintStealer } from './stealerFingerprint.js';
+import { findLogRoots, describeLogRoot } from './logRoots.js';
 import { classifySiteDomain, loadDomainCategories } from '../core/domainCategories.js';
 import { detectNationalIds } from './structuredPii.js';
 import { FIELD_PATTERNS, CLIPBOARD_LURE_PATTERNS, LIMITS } from '../core/definitions/patterns.js';
@@ -307,6 +308,47 @@ async function analyseCredentials(nodes) {
       : null,
     failedFiles,
   });
+}
+
+// Combolist/ULP pools bundled beside the log are other people's accounts. They
+// are counted here and nowhere else: no victim figure, identity or currentness
+// row may draw on them.
+async function analyseCredentialPools(nodes) {
+  const seen = new Set();
+  const files = [];
+  let totalCredentials = 0;
+
+  for (const { node, path } of nodes) {
+    try {
+      const text = await decodeNodeText(node, path);
+      if (text == null) continue;
+      const parsed = parseNodeCached(node, 'password', parsePasswordFile, text, node._parseConfig || null);
+      if (!parsed || parsed.rows.length === 0) continue;
+      const { urlIdx, userIdx, passIdx } = credentialColumnIndices(parsed.headers);
+      if (passIdx < 0) continue;
+
+      let fileCredentials = 0;
+      let rowIndex = 0;
+      for (const row of parsed.rows) {
+        if (++rowIndex % ROW_YIELD_INTERVAL === 0) await yieldToEventLoop();
+        const pass = (row[passIdx] || '').trim();
+        if (!pass) continue;
+        fileCredentials++;
+        const url = urlIdx >= 0 ? (row[urlIdx] || '').trim() : '';
+        const user = userIdx >= 0 ? (row[userIdx] || '').trim() : '';
+        seen.add(dedupeDomainKey(url) + DEDUPE_KEY_SEP + usernameDedupeKey(user) + DEDUPE_KEY_SEP + pass);
+      }
+      if (fileCredentials === 0) continue;
+      totalCredentials += fileCredentials;
+      files.push({ path: path || node.name || '', credentials: fileCredentials });
+    } catch {
+      // skip
+    }
+  }
+
+  emit('analysis:credentialPools', files.length > 0
+    ? { fileCount: files.length, totalCredentials, uniqueCredentials: seen.size, files }
+    : null);
 }
 
 // Cookies
@@ -1296,7 +1338,10 @@ async function analyseWalletArtifacts(nodes) {
     fileCount: entries.length,
     totalEntries: entries.length,
     services: topN(services, 10),
+    // Keyword hints land in every wallet's own UI strings; only a seed-length
+    // run of BIP39 words is evidence that a recovery phrase is in the store.
     withSeedHints: entries.filter(entry => entry.seedHints > 0).length,
+    withSeedPhrase: entries.filter(entry => entry.seedPhraseCount > 0).length,
     withTokenSignals: entries.filter(entry => entry.tokenCount > 0).length,
     signalHits,
   });
@@ -1390,9 +1435,8 @@ function findScreenshot(nodes) {
 
 // Stealer fingerprinting
 
-// `root` arrives already collapsed past any single-directory wrappers, so
-// paths line up with the signatures without descending again here.
-async function runFingerprint(root, rootName) {
+// `root` is the log's own directory, so paths line up with the signatures.
+async function runFingerprint(root) {
   const ctx = { dirs: [], files: [], sysinfoNodes: [], sysinfoCandidates: [], creditsNodes: [], creditsText: null, clipboardNodes: [], clipboardText: null, passwordNode: null, passwordHeaderText: null };
 
   collectContext(root, '', ctx);
@@ -1496,8 +1540,28 @@ async function runFingerprint(root, rootName) {
     if (headerTexts.length > 0) ctx.browserHeaderText = headerTexts.join('\n');
   }
 
-  const result = fingerprintStealer(ctx);
-  emit('analysis:fingerprint', result);
+  return fingerprintStealer(ctx);
+}
+
+// Each log is fingerprinted from its own directory. With no profile anywhere
+// the archive's layout is all there is, read from the collapsed root. Several
+// logs are each identified and described, so the Overview can say whose data
+// it is combining; the headline verdict is the first log's, the one whose
+// profile the merged sysinfo shows.
+async function fingerprintLogs(root, logRoots) {
+  const targets = logRoots.length > 0 ? logRoots.map(entry => entry.node) : [root];
+  const verdicts = [];
+  for (const target of targets) verdicts.push(await runFingerprint(target));
+
+  emit('analysis:fingerprint', verdicts[0] || null);
+  emit('analysis:logRoots', {
+    count: logRoots.length,
+    logs: logRoots.map((entry, i) => ({
+      ...describeLogRoot(entry),
+      family: verdicts[i]?.family || null,
+      confidence: verdicts[i]?.confidence || null,
+    })),
+  });
 }
 
 // Installed software
@@ -1704,6 +1768,15 @@ function publishCaptureContext({ sysinfoEntries, historyMaxDate, archiveNames, n
     browserClockLabel: browserClockLabel(clock),
     historyAheadMinutes: ahead ? ahead.minutes : null,
     historyLatestIso: ahead ? ahead.latestVisit.toISOString() : null,
+    // Set when the sysinfo stamp read either way round: which order was used,
+    // what settled it, and the reading that was set aside.
+    dateOrder: context.dateOrder
+      ? {
+        order: context.dateOrder.order,
+        settledBy: context.dateOrder.settledBy,
+        alternativeIso: context.dateOrder.alternative.toISOString(),
+      }
+      : null,
   });
   return context;
 }
@@ -1749,6 +1822,7 @@ async function analyseTree(fileTree, rootName) {
   const root = collapseSingleWrapper(fileTree) || fileTree;
   const treeRootName = root === fileTree ? rootName : (root.name || rootName);
   const buckets = bucketHintedNodes(root, treeRootName);
+  const logRoots = findLogRoots(root);
   readFailures = [];
 
   findScreenshot(buckets._screenshotHint);
@@ -1788,6 +1862,7 @@ async function analyseTree(fileTree, rootName) {
 
   const tasks = [
     analyseCredentials(buckets._passwordFileHint),
+    analyseCredentialPools(buckets._passwordPoolHint),
     analyseCookies(buckets._cookieFileHint, capture.date),
     analyseAutofills(buckets._autofillHint),
     analyseNotes(buckets._notesHint),
@@ -1804,7 +1879,7 @@ async function analyseTree(fileTree, rootName) {
     analyseProcessList(buckets._processListHint),
     analyseClipboard(buckets._clipboardHint),
     analyseGrabbedFiles(buckets._grabbedFileHint),
-    runFingerprint(root, treeRootName),
+    fingerprintLogs(root, logRoots),
   ];
 
   reportRejections(await Promise.allSettled(tasks));

@@ -1028,6 +1028,12 @@ body {
   color: var(--error);
 }
 
+.dash-banner-warn {
+  background: var(--warning-dim);
+  border: 1px solid var(--warning-dim-strong);
+  color: var(--text-primary);
+}
+
 .dash-ioc-badge {
   font-family: var(--font-ui);
   font-size: 0.6rem;
@@ -2391,6 +2397,7 @@ body {
 
 .dash-fingerprint-result {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
 }
@@ -2483,6 +2490,12 @@ body {
   color: var(--text-secondary);
   padding: 0.15rem 0 0.15rem 0.75rem;
   border-left: 2px solid var(--border);
+}
+
+.dash-fingerprint-list li.dash-fingerprint-runner-up {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  border-left-style: dashed;
 }
 
 /* Victim Profile / Identity Graph (Overview) */

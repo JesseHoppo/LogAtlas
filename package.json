@@ -1,0 +1,12 @@
+{
+  "name": "logatlas",
+  "private": true,
+  "description": "Client-side infostealer log analysis. No build step; this manifest only drives the headless test suite.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  }
+}

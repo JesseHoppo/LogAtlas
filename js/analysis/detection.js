@@ -249,11 +249,15 @@ function isLikelyPasswordPool(text) {
 
 // Content fallback for files no filename rule claimed. Combolist/ULP pools carry
 // no usable name, so they can only be recognised once their text is loaded.
+// What the shape identifies is a resale bundle of other people's accounts, not
+// the browser store the stealer took from this machine, so it is marked as a
+// pool rather than a password file: thousands of strangers' rows would
+// otherwise become the victim's credential count, domains and identities.
 function applyContentDetectionHints(node, text) {
   if (!node) return false;
   if (Object.entries(node).some(([key, value]) => value && key.endsWith('Hint'))) return false;
   if (!isLikelyPasswordPool(text)) return false;
-  node._passwordFileHint = true;
+  node._passwordPoolHint = true;
   return true;
 }
 

@@ -1306,10 +1306,6 @@ function scoreCredential(entry, context) {
     addScore(result, 8, `Credential site is the user's email domain (${usernameDomain})`, 'identity');
   }
 
-  if (isAppCredential && isCorporateEmailDomain(usernameDomain)) {
-    addScore(result, 6, 'App-stored credential (mobile app actively signed in)', 'site');
-  }
-
   let siteSignalCount = 0;
   // Multi-tenant SaaS hosts (acme.atlassian.net, contoso.sharepoint.com, etc.)
   // share a base domain across unrelated organisations. Score those by full
@@ -1519,14 +1515,18 @@ function scoreCredential(entry, context) {
 // time, independent of confidence score. Live > recent > stored > legacy.
 const ACTIONABILITY_RANK = { live: 0, recent: 1, stored: 2, legacy: 3 };
 
-// Live = the credential's site is provably accessible right now (cookie session
-// or app-stored). A token email match is identity-level evidence and feeds the
-// score, but doesn't make a non-token site "live": having a Google token
-// doesn't mean the user is signed in to Netflix. A live session is takeover-ready
-// regardless of a competing employer identity, so it outranks the conflict demotion.
+// Live = a session for the credential's site was live at capture. A token email
+// match is identity-level evidence and feeds the score, but doesn't make a
+// non-token site "live": having a Google token doesn't mean the user is signed
+// in to Netflix. A live session is takeover-ready regardless of a competing
+// employer identity, so it outranks the conflict demotion.
+//
+// An android:// row is a password the victim saved on their phone, synced into
+// the browser's store. It shows the account exists, not that any session is
+// open, so it is judged on the same evidence as every other row; a package the
+// domain map knows picks up its site's cookies and history that way.
 function classifyActionability(result) {
   if (result.hasLiveSession) return 'live';
-  if (result.isAppCredential) return 'live';
   if (result.conflictDomain) return 'legacy';
   if (result.hasRecentVisit) return 'recent';
   return 'stored';

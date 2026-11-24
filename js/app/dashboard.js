@@ -25,6 +25,7 @@ const LURE_LABELS = {
 
 const overviewState = {
   credentials: null,
+  credentialPools: null,
   cookies: null,
   history: null,
   sysinfo: null,
@@ -42,6 +43,7 @@ const overviewState = {
   identity: null,
   readErrors: null,
   capture: null,
+  logRoots: null,
 };
 
 function setOverviewState(key, value) {
@@ -467,6 +469,7 @@ function renderTriageOverview() {
   const autofill = overviewState.autofill;
   const notes = overviewState.notes;
   const readErrors = overviewState.readErrors;
+  const pools = overviewState.credentialPools;
 
   const osUser = findSysinfoValue(sysinfo, [/^user\s*name$/i, /^username$/i, /^os user$/i]);
   const pi = overviewState.identity?.primaryIdentity;
@@ -500,6 +503,11 @@ function renderTriageOverview() {
       variant: 'warn',
     });
   }
+  // Every figure above leaves these out, so the analyst has to be told they
+  // exist, and that claiming one for the victim is a type change away.
+  if (pools?.uniqueCredentials > 0) {
+    riskItems.push(`${countLabel(pools.fileCount, 'bundled credential pool')} with ${countLabel(pools.uniqueCredentials, 'credential')} kept out of the victim's figures: combolist data, not this machine's. Set a file's type to Credentials to include it.`);
+  }
   if (credentials?.failedFiles?.length > 0) {
     riskItems.push(`${countLabel(credentials.failedFiles.length, 'password file')} could not be parsed cleanly; review manually.`);
   }
@@ -516,28 +524,64 @@ function renderTriageOverview() {
   }
 
   renderSeedBanner(wallets, notes);
+  renderMultiLogBanner(overviewState.logRoots);
   renderNationalIds(credentials);
   renderConsistencyChecks({ credentials, cookies, history, countryInfo, capture: exfilInfo });
 }
 
 // A recovery phrase is as good as the wallet whether it sits in the wallet
 // store or in a text file the victim kept it in, so both sources raise the
-// same banner and it names the ones that fired.
-function renderSeedBanner(wallets, notes) {
-  const banner = document.getElementById('dashSeedBanner');
-  if (!banner) return;
-  const stores = wallets?.withSeedHints || 0;
+// same banner and it names the ones that fired. A store only counts when it
+// holds a seed-length run of BIP39 words: the `seed phrase` / `mnemonic`
+// keywords sit in every wallet extension's UI strings, so keying on them raised
+// this banner for stores holding nothing but a vault, and missed a seed that
+// was written down without the words "seed phrase" beside it.
+export function seedBannerText(wallets, notes) {
+  const stores = wallets?.withSeedPhrase || 0;
   const seedNotes = notes?.seedPhraseNotes || 0;
-  if (stores === 0 && seedNotes === 0) {
-    banner.classList.add('hidden');
-    banner.textContent = '';
-    return;
-  }
+  if (stores === 0 && seedNotes === 0) return '';
   const bits = [];
   if (stores > 0) bits.push(countLabel(stores, 'wallet store'));
   if (seedNotes > 0) bits.push(countLabel(seedNotes, 'note'));
-  banner.classList.remove('hidden');
-  banner.textContent = `${joinNaturalList(bits)} with seed / recovery-phrase material — treat as full wallet compromise.`;
+  return `${joinNaturalList(bits)} with seed / recovery-phrase material — treat as full wallet compromise.`;
+}
+
+function renderSeedBanner(wallets, notes) {
+  const banner = document.getElementById('dashSeedBanner');
+  if (!banner) return;
+  const text = seedBannerText(wallets, notes);
+  banner.classList.toggle('hidden', !text);
+  banner.textContent = text;
+}
+
+const MULTI_LOG_LISTED = 3;
+
+// A case is read as one victim. When the archive holds several logs, every
+// figure on the page combines them and the identity, capture date and verdict
+// are the first log's, so the analyst is told before reading any of it.
+export function multiLogBannerText(logRoots) {
+  const logs = logRoots?.logs || [];
+  if (logs.length < 2) return '';
+  const describe = (log) => {
+    const who = [log.user, log.computer && `on ${log.computer}`].filter(Boolean).join(' ');
+    const facts = [who, log.country, log.family].filter(Boolean).join(', ');
+    const name = log.name || log.path;
+    return facts ? `${name} (${facts})` : name;
+  };
+  const listed = logs.slice(0, MULTI_LOG_LISTED).map(describe);
+  const more = logs.length - listed.length;
+  if (more > 0) listed.push(countLabel(more, 'other log'));
+  return `This archive holds ${logs.length.toLocaleString()} separate logs: ${joinNaturalList(listed)}. `
+    + 'Every figure below combines them, and the identity, capture date and stealer verdict shown are the first log\'s. '
+    + 'Load each log\'s folder on its own for per-victim results.';
+}
+
+function renderMultiLogBanner(logRoots) {
+  const banner = document.getElementById('dashMultiLogBanner');
+  if (!banner) return;
+  const text = multiLogBannerText(logRoots);
+  banner.classList.toggle('hidden', !text);
+  banner.textContent = text;
 }
 
 function renderNationalIds(credentials) {
@@ -600,6 +644,25 @@ function leadingCcTld(domains) {
   return { tld, count, ranked };
 }
 
+// A capture stamp like 05/03/2025 reads as two dates weeks apart. When nothing
+// in the log settled which, the order was assumed, and every expiry and
+// currentness judgement in the case rests on that assumption.
+export function captureOrderCheck(capture) {
+  const order = capture?.dateOrder;
+  if (!order || !capture.date || !['country', 'default'].includes(order.settledBy)) return null;
+  const alternative = new Date(order.alternativeIso);
+  if (isNaN(alternative.getTime())) return null;
+  const reason = order.settledBy === 'country'
+    ? `, as the victim's country writes dates`
+    : '; nothing in the log settles it';
+  const other = order.order === 'day-first' ? 'month-first' : 'day-first';
+  return {
+    text: `The capture stamp reads either way round. It is taken ${order.order} (${formatInstantLabel(capture.date)})${reason}; `
+      + `${other} would make it ${formatInstantLabel(alternative)}. Cookie validity and currentness are judged against the first.`,
+    variant: 'warn',
+  };
+}
+
 function renderConsistencyChecks({ credentials, cookies, history, countryInfo, capture }) {
   const section = document.getElementById('dashConsistency');
   const body = document.getElementById('dashConsistencyBody');
@@ -609,9 +672,12 @@ function renderConsistencyChecks({ credentials, cookies, history, countryInfo, c
   const credDomains = (credentials?.topDomains || []).map(d => d.value);
   const histDomains = (history?.topDomains || []).map(d => d.value);
 
-  // Leads: a capture instant that cannot be right undermines every other line.
+  // Leads: a capture instant that cannot be right undermines every other line,
+  // and one whose day and month were assumed rests on that assumption.
   const captureConflict = captureBeforeHistory(capture);
   if (captureConflict) checks.push(captureConflict);
+  const assumedOrder = captureOrderCheck(capture);
+  if (assumedOrder) checks.push(assumedOrder);
 
   if (cookies?.totalCookies > 0 && parsedCredentialRows(credentials) === 0) {
     checks.push({ text: 'Cookies recovered, no credentials parsed — credential files may be encrypted or missing.', variant: 'warn' });
@@ -658,6 +724,7 @@ const DOMAIN_DETECT_PER_CATEGORY = 5;
 
 const COUNTED_HINTS = [
   '_passwordFileHint',
+  '_passwordPoolHint',
   '_cookieFileHint',
   '_autofillHint',
   '_notesHint',
@@ -688,6 +755,7 @@ const COUNTED_HINTS = [
 const RECOGNISED_HINTS = COUNTED_HINTS.filter((key) => key !== '_browserPluginHint');
 
 const EXTRA_ARTIFACTS = [
+  { hint: '_passwordPoolHint', icon: 'CP', noun: 'credential pool file' },
   { hint: '_creditCardHint', icon: 'CC', noun: 'credit card file', warning: true },
   { hint: '_cryptoWalletHint', icon: 'W', noun: 'crypto wallet file' },
   { hint: '_accountTokenHint', icon: 'TK', noun: 'account token file', warning: true },
@@ -768,6 +836,7 @@ export function resetOverviewState() {
 
 const OVERVIEW_SECTION_IDS = [
   'dashSeedBanner',
+  'dashMultiLogBanner',
   'dashFingerprint',
   'dashCaseContext',
   'dashVerdictCards',
@@ -790,6 +859,7 @@ const OVERVIEW_SECTION_IDS = [
 
 const OVERVIEW_BODY_IDS = [
   'dashSeedBanner',
+  'dashMultiLogBanner',
   'dashFingerprintBody',
   'dashCaseContext',
   'dashVerdictCards',
@@ -1115,6 +1185,16 @@ export function initDashboard() {
     const distributor = data.distributor
       ? `<span class="dash-fingerprint-source" title="Resale brand stamped on the log.">via ${escapeHtml(data.distributor)}</span>`
       : '';
+    // Families that share a codebase share layouts; when the next one scored
+    // nearly as well on the same evidence, the pick is a close call.
+    const closeCall = data.ambiguous && data.runnerUp
+      ? `<span class="dash-fingerprint-source" title="The next family scored nearly as well on the same tier of evidence.">close call: ${escapeHtml(data.runnerUp.family)}</span>`
+      : '';
+    // Each share is of that family's own signature, which is the margin the
+    // ranking actually weighed.
+    const runnerUp = data.runnerUp
+      ? `<li class="dash-fingerprint-runner-up">Next closest: ${escapeHtml(data.runnerUp.family)}, ${Math.round(data.runnerUp.score * 100)}% of its signature against ${Math.round(data.score * 100)}%</li>`
+      : '';
 
     body.innerHTML = `
     <div>
@@ -1126,11 +1206,13 @@ export function initDashboard() {
         </span>
         ${structureOnly}
         ${distributor}
+        ${closeCall}
       </div>
       <div class="dash-fingerprint-signals">
         <button class="dash-fingerprint-toggle" id="${signalsId}Btn" aria-expanded="false" aria-controls="${signalsId}">&#9656; Matched signals (${data.matchedSignals.length.toLocaleString()})</button>
         <ul class="dash-fingerprint-list" id="${signalsId}">
           ${data.matchedSignals.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+          ${runnerUp}
         </ul>
       </div>
     </div>`;
@@ -1258,6 +1340,10 @@ export function initDashboard() {
     setOverviewState('creditCards', data);
   });
 
+  on('analysis:credentialPools', (data) => {
+    setOverviewState('credentialPools', data);
+  });
+
   on('analysis:accountTokens', (data) => {
     setOverviewState('accountTokens', data);
   });
@@ -1279,6 +1365,8 @@ export function initDashboard() {
   });
 
   on('analysis:identity', (data) => setOverviewState('identity', data));
+
+  on('analysis:logRoots', (data) => setOverviewState('logRoots', data));
 
   on('analysis:readErrors', (data) => setOverviewState('readErrors', data));
 }

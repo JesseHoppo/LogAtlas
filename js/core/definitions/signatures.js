@@ -11,10 +11,12 @@ export const SIGNAL_WEIGHTS = {
   ASCII_BANNER:    6,
 };
 
+// Shares of a family's own signature. A share never earns "high" on its own:
+// that takes a self-ID, or the family's sysinfo file plus two kinds of
+// distinctive evidence (see stealerFingerprint.js).
 export const CONFIDENCE_THRESHOLDS = {
   min:    0.25,   // below this = no match
   medium: 0.40,   // >= this = "medium"
-  high:   0.60,   // >= this = "high"
 };
 
 // selfId patterns are matched across sysinfo, credits, clipboard and the
@@ -46,7 +48,8 @@ export const SIGNATURES = {
     sysinfoContent: [
       { pattern: /VIDAR/i, label: 'Sysinfo header: VIDAR branding' },
       { pattern: /vidars\.su/i, label: 'Sysinfo content: vidars.su URL' },
-      { pattern: /[\u0400-\u04FF]{3,}/u, label: 'Sysinfo content: Cyrillic text' },
+      // No "Cyrillic text" signal: it measured the victim's locale, and was
+      // enough to move a generic Information.txt from one family to Vidar.
       { pattern: /^\s*Version\s*:\s*.+\r?\n\s*Date\s*:\s*.+\r?\n\s*MachineID\s*:/im, label: 'Sysinfo content: Version/Date/MachineID ordering' },
       { pattern: /^\[Hardware\]$/m, label: 'Sysinfo section: [Hardware]' },
       { pattern: /^\[Network\]$/m, label: 'Sysinfo section: [Network]' },
@@ -899,7 +902,7 @@ export const SIGNATURES = {
 
   RLStealer: {
     selfId: [
-      { pattern: /rl\s*stealer/i, label: 'Self-ID: RL Stealer' },
+      { pattern: /\brl\s*stealer\b/i, label: 'Self-ID: RL Stealer' },
     ],
     sysinfoFile: { pattern: /^System(?:\s*)?Info(?:rmation)?\.txt$/i, weight: SIGNAL_WEIGHTS.SYSINFO_FILE },
     sysinfoKeys: [
@@ -911,7 +914,7 @@ export const SIGNATURES = {
       { pattern: /^BSSID\s*$/i, label: 'Sysinfo key: BSSID' },
     ],
     sysinfoContent: [
-      { pattern: /RL\s*Stealer/i, label: 'Sysinfo content: RL Stealer branding' },
+      { pattern: /\bRL\s*Stealer\b/i, label: 'Sysinfo content: RL Stealer branding' },
     ],
     folders: [],
     files: [

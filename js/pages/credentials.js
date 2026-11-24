@@ -91,6 +91,7 @@ let cookiesData = { rows: [], headers: [], fileCount: 0 };
 let autofillsData = { entries: [], fileCount: 0 };
 let notesData = { entries: [], fileCount: 0 };
 let credAnalysis = null;
+let poolAnalysis = null;
 
 let passwordsFiltered = [];
 let passwordsShown = 0;
@@ -647,6 +648,10 @@ function buildCredentialFootprintHtml() {
     cards.push(buildFootprintCard('Tor / .onion credentials',
       `${countLabel(onion, 'credential domain')} on the Tor network.`));
   }
+  if (poolAnalysis?.uniqueCredentials > 0) {
+    cards.push(buildFootprintCard('Bundled credential pools',
+      `${countLabel(poolAnalysis.fileCount, 'combolist file')} with ${countLabel(poolAnalysis.uniqueCredentials, 'credential')} of other people's accounts, left out of this page. Set a file's type to Credentials to include it.`));
+  }
   if (localNetwork.length > 0) {
     cards.push(buildFootprintCard('Local network',
       'Credentials for router / NAS / intranet hosts.', buildBarList(localNetwork)));
@@ -1190,6 +1195,7 @@ function resetCredentials() {
   autofillsData = { entries: [], fileCount: 0 };
   notesData = { entries: [], fileCount: 0 };
   credAnalysis = null;
+  poolAnalysis = null;
   passwordsFiltered = []; passwordsShown = 0;
   cookiesFiltered = []; cookiesShown = 0;
   passwordsSort.reset();
@@ -1217,6 +1223,13 @@ function initCredentials() {
 
   on('analysis:credentials', (payload) => {
     credAnalysis = payload || null;
+    if (document.getElementById('pagePasswords')?.classList.contains('active')) {
+      renderPasswordsPage(passwordsSearch?.value || '');
+    }
+  });
+
+  on('analysis:credentialPools', (payload) => {
+    poolAnalysis = payload || null;
     if (document.getElementById('pagePasswords')?.classList.contains('active')) {
       renderPasswordsPage(passwordsSearch?.value || '');
     }

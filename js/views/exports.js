@@ -384,6 +384,7 @@ function buildLogSummaryHtml(data) {
     const caveats = [];
     if (fp.source === 'structure-only') caveats.push('Inferred from folder and file layout; no sysinfo present.');
     if (fp.distributor) caveats.push(`Sold under the ${fp.distributor} brand; the shop that resold the log is not the stealer that took it.`);
+    if (fp.ambiguous && fp.runnerUp) caveats.push(`A close call: ${fp.runnerUp.family} scored nearly as well on the same evidence.`);
     sections += `<section>
       <h2>Stealer identification</h2>
       <div class="stat-row">
