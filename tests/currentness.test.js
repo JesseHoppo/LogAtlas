@@ -74,3 +74,23 @@ test('a corporate account is demoted when another employer is better corroborate
   assert.equal(legacy.actionability, 'legacy');
   assert.equal(result.summary.primaryIdentity.email, 'jt@newco.example');
 });
+
+test('a password synced from an Android app is not live on that alone', () => {
+  const result = model({
+    credentials: [{ url: 'android://AbCdEf123==@com.example.bankapp/', username: 'someone@example.org', password: 'pw-app', source: 'a' }],
+  });
+  const row = result.rows[0];
+  assert.equal(row.isAppCredential, true);
+  assert.equal(row.actionability, 'stored');
+  assert.ok(!row.evidence.some((line) => /signed in/i.test(line)));
+  assert.equal(result.summary.liveCount, 0);
+  assert.equal(result.summary.appCount, 1);
+});
+
+test('an app credential for a known site is live when that site\'s session is', () => {
+  const result = model({
+    credentials: [{ url: 'android://AbCdEf123==@com.netflix.mediaclient/', username: 'jt@example.net', password: 'pw-app', source: 'a' }],
+    cookies: [{ host: 'www.netflix.com', name: 'SecureNetflixId', validityStatus: 'valid', sessionType: 'auth', hasValue: true }],
+  });
+  assert.equal(result.rows[0].actionability, 'live');
+});

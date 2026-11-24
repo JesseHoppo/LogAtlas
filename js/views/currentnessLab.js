@@ -245,14 +245,16 @@ function buildHeroLine(summary) {
   ].filter(Boolean).join(' · ');
 
   // Live evidence: the most actionable summary on the page. App-stored rows are
-  // live by definition, so they ride inside the live figure rather than beside
-  // it — added up as siblings they double-count the same credentials.
-  const appNote = summary.appCount > 0 ? ` (${summary.appCount.toLocaleString()} app-stored)` : '';
+  // passwords synced from the victim's phone and are live only when their
+  // site's session was, so they are counted beside the live figure, not in it.
   const liveBits = [
     summary.liveCount > 0
-      ? `<span class="lab-hero-live" title="Valid session or app-stored"><strong>${summary.liveCount.toLocaleString()}</strong> live-access evidence${appNote}</span>`
+      ? `<span class="lab-hero-live" title="A session for the site was live at capture"><strong>${summary.liveCount.toLocaleString()}</strong> live-access evidence</span>`
       : '',
     summary.recentCount > 0 ? `<span><strong>${summary.recentCount.toLocaleString()}</strong> recent</span>` : '',
+    summary.appCount > 0
+      ? `<span title="Passwords synced from Android apps into the browser's store"><strong>${summary.appCount.toLocaleString()}</strong> app-stored</span>`
+      : '',
     summary.reuseGroups > 0 ? `<span><strong>${summary.reuseGroups.toLocaleString()}</strong> reused passwords</span>` : '',
   ].filter(Boolean);
 
@@ -472,7 +474,7 @@ function renderCredDetail(row) {
     : '<li class="lab-detail-empty">No evidence captured.</li>';
 
   const actionLabel = {
-    live: 'Live-access evidence (valid session or app-stored)',
+    live: 'Live-access evidence (session live at capture)',
     recent: 'Used recently (history within 30 days)',
     stored: 'Stored in browser, no live evidence',
     legacy: 'Legacy / conflicting',
