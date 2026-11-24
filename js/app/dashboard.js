@@ -1129,6 +1129,16 @@ export function initDashboard() {
     const distributor = data.distributor
       ? `<span class="dash-fingerprint-source" title="Resale brand stamped on the log.">via ${escapeHtml(data.distributor)}</span>`
       : '';
+    // Families that share a codebase share layouts; when the next one scored
+    // nearly as well on the same evidence, the pick is a close call.
+    const closeCall = data.ambiguous && data.runnerUp
+      ? `<span class="dash-fingerprint-source" title="The next family scored nearly as well on the same tier of evidence.">close call: ${escapeHtml(data.runnerUp.family)}</span>`
+      : '';
+    // Each share is of that family's own signature, which is the margin the
+    // ranking actually weighed.
+    const runnerUp = data.runnerUp
+      ? `<li class="dash-fingerprint-runner-up">Next closest: ${escapeHtml(data.runnerUp.family)}, ${Math.round(data.runnerUp.score * 100)}% of its signature against ${Math.round(data.score * 100)}%</li>`
+      : '';
 
     body.innerHTML = `
     <div>
@@ -1140,11 +1150,13 @@ export function initDashboard() {
         </span>
         ${structureOnly}
         ${distributor}
+        ${closeCall}
       </div>
       <div class="dash-fingerprint-signals">
         <button class="dash-fingerprint-toggle" id="${signalsId}Btn" aria-expanded="false" aria-controls="${signalsId}">&#9656; Matched signals (${data.matchedSignals.length.toLocaleString()})</button>
         <ul class="dash-fingerprint-list" id="${signalsId}">
           ${data.matchedSignals.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+          ${runnerUp}
         </ul>
       </div>
     </div>`;

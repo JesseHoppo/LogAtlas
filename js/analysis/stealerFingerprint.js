@@ -2,12 +2,73 @@
 
 import { SIGNAL_WEIGHTS as W, SIGNATURES, CONFIDENCE_THRESHOLDS } from '../core/definitions/signatures.js';
 import { FILE_TYPE_PATTERNS } from '../core/definitions/fileTypes.js';
+import { isPlaceholderUserName } from '../core/shared.js';
 import { isLikelySystemInfoFile } from './detection.js';
 
 // Signals shared across many families — credential/cookie/screenshot dumps and
-// negation-based layout tests. They don't distinguish one family from another,
-// so the structure-only fallback ignores them when judging distinctiveness.
+// negation-based layout tests. They don't distinguish one family from another.
+// They still score, because they rank families against each other, but they
+// never count as the distinctive evidence a confident verdict needs.
 const GENERIC_LABELS = /^(?:File: (?:All |unique_)?[Pp]asswords?\.txt(?: \(root\))?|File: [Cc]ookies?\.txt|File: cookie_list\.txt|File: [Ss]creenshot\.(?:png|jpg)|File: Screen\.png|File: domain detect\.txt|File: DomainDetects?\.txt|Structure: flat layout|Structure: top-level Autofills\/Cookies)/;
+const GENERIC_FOLDER_LABEL = /^Folder: (?:Autofills?|Cookies|History|CC|Downloads|Plugins|CreditCards|Browsers?|Wallets|Extensions|Applications|Chrome|Edge)\/$/i;
+// Sysinfo keys nearly every family writes. A generic Information.txt carrying
+// these and a Passwords.txt beside it used to come back as a named family at
+// high confidence on 18% of that family's signature.
+const GENERIC_SYSINFO_KEY = /^(?:ip(?:\s*address)?|country(?:\s*code)?|city|zip(?:\s*code)?|isp|region|location|user|user\s*name|username|computer(?:\s*name)?|pc\s*name|host\s*name|hostname|hwid|os(?:\s*version)?|operating\s*system|cpu|gpu|ram|time\s*zone|timezone|(?:screen|display)\s*resolution|screenresolution|version|build|log\s*date|date|local\s*date|current\s*time|antivirus|mac|(?:display\s*|keyboard\s*)?languages?)$/i;
+
+const SIGNAL_CATEGORIES = ['sysinfoKey', 'sysinfoContent', 'folder', 'file', 'structure'];
+
+// Runner-up within this share of the winner's score, on the same tier of
+// evidence: a close call, reported as one and held below high confidence.
+const AMBIGUITY_SHARE = 0.85;
+
+// The victim's own identity is written into the sysinfo text, so a short brand
+// (`amos`, `skalka`, `vidar`) matched against it can name the family after the
+// user. Identity values — the user, the machine, the profile folder — are
+// masked before any self-ID or content pattern runs. Keys are left alone so
+// layout patterns still see the lines they anchor on.
+const SYSINFO_LINE = /^(\s*[-*•>]*\s*)([^:=\r\n]{1,60}?)(\s*[:=]\s*)(.*)$/;
+const IDENTITY_KEY = /^(?:user(?:\s*name)?|username|pc\s*user|login|account(?:\s*name)?|owner|full\s*name|computer(?:\s*name)?|computername|host\s*name|hostname|pc(?:\s*name)?|machine\s*name|netbios(?:\s*name)?|device\s*name|domain(?:\s*name)?|username\s*\(computername\))$/i;
+const PROFILE_PATH = /(?:[A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+|\/Users\/|\/home\/)([^\\/\r\n:*?"<>|]+)/gi;
+const IDENTITY_MASK = '<identity>';
+
+function identityTokens(text) {
+  const tokens = new Set();
+  const add = (value) => {
+    for (const piece of String(value).split(/[\s()[\],;\\/]+/)) {
+      const token = piece.trim().toLowerCase();
+      // Placeholder names (`user`, `admin`, `windows`) cannot be a brand, and
+      // masking them would blank words the layout patterns read.
+      if (token.length >= 3 && !isPlaceholderUserName(token)) tokens.add(token);
+    }
+  };
+  for (const line of text.split('\n')) {
+    const kv = line.match(SYSINFO_LINE);
+    if (kv && IDENTITY_KEY.test(kv[2].trim())) add(kv[4]);
+  }
+  for (const match of text.matchAll(PROFILE_PATH)) add(match[1]);
+  return tokens;
+}
+
+function maskIdentity(text) {
+  if (!text) return text || '';
+  const tokens = identityTokens(text);
+  if (tokens.size === 0) return text;
+  const alternation = [...tokens]
+    .sort((a, b) => b.length - a.length)
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternation})(?![\\p{L}\\p{N}])`, 'giu');
+  return text.split('\n').map((line) => {
+    const kv = line.match(SYSINFO_LINE);
+    if (!kv) return line.replace(pattern, IDENTITY_MASK);
+    return kv[1] + kv[2] + kv[3] + kv[4].replace(pattern, IDENTITY_MASK);
+  }).join('\n');
+}
+
+function distinctiveCategoryCount(counts) {
+  return SIGNAL_CATEGORIES.reduce((n, category) => n + (counts.distinctive?.[category] > 0 ? 1 : 0), 0);
+}
 
 // A self-ID that also reads as ordinary text ("ottoman", "xfiles", "amos")
 // carries `scope: 'sysinfo'` in its signature: a captured password, cookie
@@ -28,15 +89,21 @@ function scoreFamily(familyName, sig, ctx) {
     folder: 0,
     file: 0,
     structure: 0,
+    // Matches that tell this family apart from the rest. Confidence is built
+    // on these; the counts above include every generic match as well.
+    distinctive: { sysinfoKey: 0, sysinfoContent: 0, folder: 0, file: 0, structure: 0 },
   };
+  const { distinctive } = matchedCounts;
 
   // 1. Self-identification (stealer names itself explicitly).
   // SELF_ID + ASCII banners are case-global signals — pull from
   // `combinedSysinfoText` (all candidates joined) so multi-file cases
   // don't lose evidence when the per-candidate `sysinfoText` doesn't
-  // happen to include the banner.
-  const globalText = [ctx.combinedSysinfoText || ctx.sysinfoText, ctx.creditsText, ctx.passwordHeaderText, ctx.clipboardText, ctx.browserHeaderText].filter(Boolean).join('\n');
-  const sysinfoOnlyText = ctx.combinedSysinfoText || ctx.sysinfoText || '';
+  // happen to include the banner. Sysinfo text is read with the victim's
+  // identity masked out.
+  const brandingSysinfoText = ctx.combinedBrandingText ?? (ctx.combinedSysinfoText || ctx.sysinfoText || '');
+  const globalText = [brandingSysinfoText, ctx.creditsText, ctx.passwordHeaderText, ctx.clipboardText, ctx.browserHeaderText].filter(Boolean).join('\n');
+  const sysinfoOnlyText = brandingSysinfoText;
   if (sig.selfId && sig.selfId.length > 0) {
     maxScore += W.SELF_ID;
     for (const si of sig.selfId) {
@@ -63,20 +130,24 @@ function scoreFamily(familyName, sig, ctx) {
   // 3. Sysinfo keys
   for (const sk of sig.sysinfoKeys) {
     maxScore += W.SYSINFO_KEY;
-    if (ctx.sysinfoKeys.some(k => sk.pattern.test(k))) {
+    const key = ctx.sysinfoKeys.find(k => sk.pattern.test(k));
+    if (key !== undefined) {
       score += W.SYSINFO_KEY;
       matched.push(sk.label);
       matchedCounts.sysinfoKey++;
+      if (!GENERIC_SYSINFO_KEY.test(String(key).trim())) distinctive.sysinfoKey++;
     }
   }
 
   // 4. Sysinfo content patterns
+  const contentText = ctx.brandingText ?? ctx.sysinfoText;
   for (const sc of sig.sysinfoContent) {
     maxScore += W.SYSINFO_CONTENT;
-    if (ctx.sysinfoText && sc.pattern.test(ctx.sysinfoText)) {
+    if (contentText && sc.pattern.test(contentText)) {
       score += W.SYSINFO_CONTENT;
       matched.push(sc.label);
       matchedCounts.sysinfoContent++;
+      distinctive.sysinfoContent++;
     }
   }
 
@@ -104,6 +175,7 @@ function scoreFamily(familyName, sig, ctx) {
       score += W.FOLDER;
       matched.push(f.label);
       matchedCounts.folder++;
+      if (!GENERIC_FOLDER_LABEL.test(f.label)) distinctive.folder++;
     }
   }
 
@@ -114,6 +186,7 @@ function scoreFamily(familyName, sig, ctx) {
       score += W.FILE_PATTERN;
       matched.push(fp.label);
       matchedCounts.file++;
+      if (!GENERIC_LABELS.test(fp.label)) distinctive.file++;
     }
   }
 
@@ -124,6 +197,7 @@ function scoreFamily(familyName, sig, ctx) {
       score += W.STRUCTURE;
       matched.push(s.label);
       matchedCounts.structure++;
+      if (!GENERIC_LABELS.test(s.label)) distinctive.structure++;
     }
   }
 
@@ -278,17 +352,30 @@ function scoreStructureOnly(familyName, sig, ctx) {
   return { family: familyName, score, maxScore, matched, distinctive, osClass: sig.osClass || null, kind: sig.kind || 'family' };
 }
 
+const CONFIDENCE_STEPS = ['low', 'medium', 'high'];
+
+function stepDown(confidence) {
+  const index = CONFIDENCE_STEPS.indexOf(confidence);
+  return index > 0 ? CONFIDENCE_STEPS[index - 1] : confidence;
+}
+
+function summariseRunnerUp(result) {
+  return result ? { family: result.family, score: Math.round(result.pct * 100) / 100 } : null;
+}
+
 function fingerprintStealer(ctx) {
   const results = [];
-  const sysinfoCandidates = ctx.sysinfoCandidates && ctx.sysinfoCandidates.length > 0
+  const sysinfoCandidates = (ctx.sysinfoCandidates && ctx.sysinfoCandidates.length > 0
     ? ctx.sysinfoCandidates
-    : [{ sysinfoFilename: null, sysinfoText: null, sysinfoKeys: [] }];
+    : [{ sysinfoFilename: null, sysinfoText: null, sysinfoKeys: [] }])
+    .map((candidate) => ({ ...candidate, brandingText: maskIdentity(candidate.sysinfoText) }));
+  const combinedBrandingText = maskIdentity(ctx.combinedSysinfoText || ctx.sysinfoText || '');
 
   for (const [family, sig] of Object.entries(SIGNATURES)) {
     let bestForFamily = null;
 
     for (const candidate of sysinfoCandidates) {
-      const result = scoreFamily(family, sig, { ...ctx, ...candidate });
+      const result = scoreFamily(family, sig, { ...ctx, ...candidate, combinedBrandingText });
       if (result.maxScore <= 0) continue;
       result.pct = result.score / result.maxScore;
 
@@ -306,20 +393,21 @@ function fingerprintStealer(ctx) {
     }
   }
 
-  const strongCategoryCount = (c) => (c.sysinfoKey > 0 ? 1 : 0) + (c.sysinfoContent > 0 ? 1 : 0) +
-    (c.folder > 0 ? 1 : 0) + (c.file > 0 ? 1 : 0) + (c.structure > 0 ? 1 : 0);
-
   // A matched self-ID dominates; next a keyed sysinfo match with corroborating
   // categories (so a long optional signature list can't dilute it below a folder-only
   // score); then the proportional gate; raw evidence breaks ties within a band.
+  // Only distinctive matches corroborate, and the proportional gate needs one as
+  // well: HWID, User Name and a Passwords.txt are in nearly every log, so on
+  // their own they name no family at all.
   // Banner art is only text, and text travels — a reseller stamps it over someone
   // else's log, a README or a pasted sample carries it with none of the family's
   // own layout underneath — so it ranks on its weight like any other signal.
   const evidenceTier = (r) => {
     const c = r.matchedCounts;
     if (r.selfIdMatched) return 3;
-    if (c.sysinfoFile > 0 && strongCategoryCount(c) >= 2) return 2;
-    if (r.pct >= CONFIDENCE_THRESHOLDS.min) return 1;
+    const distinct = distinctiveCategoryCount(c);
+    if (c.sysinfoFile > 0 && distinct >= 2) return 2;
+    if (r.pct >= CONFIDENCE_THRESHOLDS.min && distinct >= 1) return 1;
     return 0;
   };
 
@@ -361,16 +449,26 @@ function fingerprintStealer(ctx) {
 
   if (best && evidenceTier(best) >= 1) {
     const c = best.matchedCounts;
-    const strongCats = strongCategoryCount(c);
+    const distinct = distinctiveCategoryCount(c);
     const hasSysinfoFile = c.sysinfoFile > 0;
 
+    // High needs the family to have named itself, or its own sysinfo file plus
+    // two independent kinds of distinctive evidence. Share of the signature
+    // alone never reaches high: a short signature fills up on generic matches.
     let confidence;
-    if (best.selfIdMatched) confidence = 'high';
-    else if (hasSysinfoFile && strongCats >= 2) confidence = 'high';
-    else if (hasSysinfoFile || strongCats >= 2) confidence = 'medium';
-    else if (best.pct >= CONFIDENCE_THRESHOLDS.high) confidence = 'high';
-    else if (best.pct >= CONFIDENCE_THRESHOLDS.medium) confidence = 'medium';
+    if (best.selfIdMatched || (hasSysinfoFile && distinct >= 2)) confidence = 'high';
+    else if (distinct >= 2 || hasSysinfoFile || best.pct >= CONFIDENCE_THRESHOLDS.medium) confidence = 'medium';
     else confidence = 'low';
+
+    // Families that share a codebase share layouts too (Lumma and StealC both
+    // write Chrome/<profile>, Debug.txt and Cookies/Cookies_*). When the next
+    // family stands on the same tier of evidence and nearly the same score, the
+    // verdict is a close call and is reported as one.
+    const contender = familyResults.find(r => r !== best && osEligible(r) && evidenceTier(r) >= 1);
+    const ambiguous = Boolean(contender)
+      && evidenceTier(contender) === evidenceTier(best)
+      && contender.score >= best.score * AMBIGUITY_SHARE;
+    if (ambiguous) confidence = stepDown(confidence);
 
     return {
       family: best.family,
@@ -378,6 +476,8 @@ function fingerprintStealer(ctx) {
       score: Math.round(best.pct * 100) / 100,
       matchedSignals: best.matched,
       distributor,
+      runnerUp: summariseRunnerUp(contender),
+      ambiguous,
     };
   }
 
@@ -399,6 +499,7 @@ function fingerprintStealer(ctx) {
 
   if (structBest) {
     if (structBest.distinctive >= 2) {
+      const contender = structureResults.find(r => r !== structBest && osEligible(r) && r.distinctive >= 2);
       return {
         family: structBest.family,
         confidence: 'low',
@@ -406,6 +507,8 @@ function fingerprintStealer(ctx) {
         matchedSignals: structBest.matched,
         source: 'structure-only',
         distributor,
+        runnerUp: summariseRunnerUp(contender),
+        ambiguous: Boolean(contender) && contender.score >= structBest.score * AMBIGUITY_SHARE,
       };
     }
     return {
@@ -415,6 +518,8 @@ function fingerprintStealer(ctx) {
       matchedSignals: structBest.matched,
       source: 'structure-only',
       distributor,
+      runnerUp: null,
+      ambiguous: false,
     };
   }
 
@@ -426,6 +531,8 @@ function fingerprintStealer(ctx) {
       score: 0,
       matchedSignals: resellerResults[0]?.matched || [],
       distributor,
+      runnerUp: null,
+      ambiguous: false,
     };
   }
 
